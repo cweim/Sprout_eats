@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from unittest.mock import patch
 
 from database.models import Base, Place
 
@@ -16,6 +17,21 @@ def test_db():
     yield session
 
     session.close()
+    Base.metadata.drop_all(engine)
+
+
+@pytest.fixture
+def test_db_with_repository(monkeypatch):
+    """Create in-memory SQLite database and patch SessionLocal for repository tests."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    TestSession = sessionmaker(bind=engine)
+
+    # Patch SessionLocal in the repository module
+    monkeypatch.setattr("database.repository.SessionLocal", TestSession)
+
+    yield TestSession
+
     Base.metadata.drop_all(engine)
 
 
