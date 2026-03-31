@@ -58,7 +58,11 @@ Features:
 **Goal**: Extract and save multiple places from a single video
 **Depends on**: Phase 2
 **Research**: Unlikely (extending existing patterns)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [x] 03-01: Backend multi-place support (places service + repository)
+- [ ] 03-02: Bot handlers update (place selection + delete command)
 
 Features:
 - Return all places from `search_places_from_text()` (up to 5)
@@ -152,7 +156,7 @@ Contents:
 |-------|----------------|--------|-----------|
 | 1. Testing Foundation | 4/4 | Complete | 2026-03-31 |
 | 2. Reliability | 2/2 | Complete | 2026-04-01 |
-| 3. Multi-Place Support | 0/TBD | Not started | - |
+| 3. Multi-Place Support | 1/2 | In progress | - |
 | 4. Enhanced Metadata | 0/TBD | Not started | - |
 | 5. Language Support | 0/TBD | Not started | - |
 | 6. Interactive Viewer | 0/TBD | Not started | - |
