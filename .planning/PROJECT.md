@@ -29,11 +29,18 @@ Send an Instagram or TikTok URL to the bot. It downloads the video, transcribes 
 
 ### Active
 
-- [ ] Add automated test suite (pytest)
-- [ ] Add README with setup instructions
-- [ ] Add error retry logic for transient failures
-- [ ] Add download timeout protection
-- [ ] Pre-load Whisper model on startup
+See `.planning/ROADMAP.md` for full phase breakdown (9 phases).
+
+**v1.1 Milestone:**
+- [ ] Phase 1: Testing Foundation (pytest)
+- [ ] Phase 2: Reliability (retry logic, timeouts)
+- [ ] Phase 3: Multi-Place Support (save multiple, delete individual)
+- [ ] Phase 4: Enhanced Metadata (hashtags, categories, photos, hours)
+- [ ] Phase 5: Language Support (multi-language transcription)
+- [ ] Phase 6: Interactive Viewer (Telegram Mini App)
+- [ ] Phase 7: Proximity Features (nearby alerts)
+- [ ] Phase 8: Performance (Whisper preload)
+- [ ] Phase 9: Documentation (README)
 
 ### Out of Scope
 
@@ -44,6 +51,11 @@ Send an Instagram or TikTok URL to the bot. It downloads the video, transcribes 
 - Place sharing between users — single user
 
 ## Constraints
+
+**Design:**
+- Bot personality: Cute, friendly, encouraging tone in all messages
+- Error messages should be helpful, not scary
+- Celebrate user actions (place saved, etc.)
 
 **Technical:**
 - Python 3.11+ required
@@ -65,6 +77,9 @@ Send an Instagram or TikTok URL to the bot. It downloads the video, transcribes 
 | Whisper local vs API | Privacy, no per-request costs | ✓ Works, slow cold start |
 | yt-dlp over custom scrapers | Handles platform changes, well-maintained | ✓ Reliable |
 | Async architecture | Non-blocking for multiple requests | ✓ Clean design |
+| Telegram Mini App for viewer | Interactive maps without Google account linking | Planned |
+| Leaflet.js for maps | Free, open source, no API key needed | Planned |
+| Cute/friendly bot personality | Better UX, memorable experience | Planned |
 
 ## Success Metrics
 
