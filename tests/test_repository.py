@@ -1,6 +1,13 @@
 import time
 
-from database.repository import add_place, get_all_places, get_place_count, clear_all_places
+from database.repository import (
+    add_place,
+    get_all_places,
+    get_place_count,
+    clear_all_places,
+    get_place_by_id,
+    delete_place,
+)
 
 
 class TestAddPlace:
@@ -155,3 +162,54 @@ class TestClearAllPlaces:
         # Should return 0 and not raise error when clearing empty database
         deleted_count = clear_all_places()
         assert deleted_count == 0
+
+
+class TestGetPlaceById:
+    def test_get_existing_place(self, test_db_with_repository):
+        place = add_place(
+            name="Test Cafe",
+            latitude=1.234,
+            longitude=103.567,
+            address="123 Test Street",
+        )
+
+        retrieved = get_place_by_id(place.id)
+
+        assert retrieved is not None
+        assert retrieved.id == place.id
+        assert retrieved.name == "Test Cafe"
+        assert retrieved.latitude == 1.234
+        assert retrieved.longitude == 103.567
+        assert retrieved.address == "123 Test Street"
+
+    def test_get_nonexistent_place(self, test_db_with_repository):
+        result = get_place_by_id(99999)
+        assert result is None
+
+
+class TestDeletePlace:
+    def test_delete_existing_place(self, test_db_with_repository):
+        place = add_place(name="Delete Me", latitude=1.0, longitude=2.0)
+        place_id = place.id
+
+        # Verify place exists
+        assert get_place_count() == 1
+
+        # Delete place
+        result = delete_place(place_id)
+
+        # Verify deletion
+        assert result is True
+        assert get_place_count() == 0
+        assert get_place_by_id(place_id) is None
+
+    def test_delete_nonexistent_place(self, test_db_with_repository):
+        result = delete_place(99999)
+        assert result is False
+
+    def test_delete_returns_true(self, test_db_with_repository):
+        place = add_place(name="Test Cafe", latitude=1.0, longitude=2.0)
+
+        result = delete_place(place.id)
+
+        assert result is True
