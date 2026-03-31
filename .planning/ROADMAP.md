@@ -43,7 +43,11 @@ Plans:
 **Goal**: Add retry logic for transient failures and timeout protection for downloads
 **Depends on**: Phase 1
 **Research**: Unlikely (standard retry patterns with tenacity or similar)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [x] 02-01: Add tenacity retry to API calls (places.py, maps.py)
+- [ ] 02-02: Add download timeout and friendly error messages
 
 Features:
 - Retry decorator for API calls (Google Places, etc.)
@@ -147,7 +151,7 @@ Contents:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Testing Foundation | 4/4 | Complete | 2026-03-31 |
-| 2. Reliability | 0/TBD | Not started | - |
+| 2. Reliability | 1/2 | In progress | - |
 | 3. Multi-Place Support | 0/TBD | Not started | - |
 | 4. Enhanced Metadata | 0/TBD | Not started | - |
 | 5. Language Support | 0/TBD | Not started | - |
