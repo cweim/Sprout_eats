@@ -3,7 +3,7 @@ import logging
 
 import aiohttp
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union, overload, Literal
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -40,7 +40,23 @@ class PlaceResult:
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
-async def search_place(query: str, region: Optional[str] = None) -> Optional[PlaceResult]:
+async def search_place(
+    query: str,
+    region: Optional[str] = None,
+    max_results: int = 1,
+) -> Union[Optional[PlaceResult], list[PlaceResult]]:
+    """
+    Search for places using Google Places API.
+
+    Args:
+        query: Search query text
+        region: Optional region code (e.g., "SG" for Singapore)
+        max_results: Maximum number of results to return (default 1 for backward compat)
+
+    Returns:
+        - If max_results=1: Optional[PlaceResult] (None if no results)
+        - If max_results>1: list[PlaceResult] (empty list if no results)
+    """
     if not config.GOOGLE_API_KEY:
         raise ValueError("GOOGLE_API_KEY not configured")
 
@@ -63,32 +79,51 @@ async def search_place(query: str, region: Optional[str] = None) -> Optional[Pla
             data = await response.json()
 
             if "places" not in data or not data["places"]:
-                return None
+                return [] if max_results > 1 else None
 
-            place = data["places"][0]
-            location = place.get("location", {})
+            places_data = data["places"][:max_results]
+            results = []
 
-            return PlaceResult(
-                name=place.get("displayName", {}).get("text", ""),
-                address=place.get("formattedAddress", ""),
-                latitude=location.get("latitude", 0),
-                longitude=location.get("longitude", 0),
-                place_id=place.get("id", ""),
-            )
+            for place in places_data:
+                location = place.get("location", {})
+                results.append(
+                    PlaceResult(
+                        name=place.get("displayName", {}).get("text", ""),
+                        address=place.get("formattedAddress", ""),
+                        latitude=location.get("latitude", 0),
+                        longitude=location.get("longitude", 0),
+                        place_id=place.get("id", ""),
+                    )
+                )
+
+            # Backward compatibility: return single result or None when max_results=1
+            if max_results == 1:
+                return results[0] if results else None
+
+            return results
 
 
 async def search_places_from_text(text: str, max_results: int = 5) -> list[PlaceResult]:
     """
     Extract potential place names from text and search for them.
-    This is a simple approach - looks for capitalized phrases that might be place names.
+    Uses Google Places API to find places from natural language.
+
+    Args:
+        text: Text to search for places in
+        max_results: Maximum number of results to return (default 5)
+
+    Returns:
+        List of PlaceResult objects (up to max_results)
     """
     if not text:
         return []
 
-    # Simple heuristic: search the entire text as a query
-    # Google Places API is good at finding places from natural language
-    result = await search_place(text)
-    if result:
-        return [result]
+    # Search the entire text as a query - Google Places API handles natural language well
+    results = await search_place(text, max_results=max_results)
 
-    return []
+    # search_place returns list when max_results > 1
+    if isinstance(results, list):
+        return results
+
+    # Handle backward compat case (shouldn't happen with max_results=5)
+    return [results] if results else []
