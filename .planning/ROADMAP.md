@@ -31,14 +31,13 @@ None
 **Goal**: Establish pytest infrastructure with tests for core functionality
 **Depends on**: Nothing (first phase)
 **Research**: Unlikely (standard pytest patterns)
-**Plans**: TBD
+**Plans**: 4 plans
 
-Key areas to test:
-- Video download (mock yt-dlp)
-- Transcription (mock Whisper)
-- Place search (mock Google API)
-- Database operations
-- Bot command handlers
+Plans:
+- [ ] 01-01: pytest infrastructure (requirements-dev.txt, conftest.py, pytest.ini)
+- [ ] 01-02: Test downloader service (detect_platform, is_valid_url, cleanup_files)
+- [ ] 01-03: Test places service (search_place, search_places_from_text with mocked HTTP)
+- [ ] 01-04: Test database repository (CRUD operations, deduplication)
 
 ### Phase 2: Reliability
 **Goal**: Add retry logic for transient failures and timeout protection for downloads
@@ -147,7 +146,7 @@ Contents:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Testing Foundation | 0/TBD | Not started | - |
+| 1. Testing Foundation | 0/4 | Not started | - |
 | 2. Reliability | 0/TBD | Not started | - |
 | 3. Multi-Place Support | 0/TBD | Not started | - |
 | 4. Enhanced Metadata | 0/TBD | Not started | - |
