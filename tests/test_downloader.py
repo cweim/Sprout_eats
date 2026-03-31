@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from services.downloader import detect_platform, is_valid_url, cleanup_files
+from services.downloader import (
+    detect_platform,
+    is_valid_url,
+    cleanup_files,
+    DownloadTimeoutError,
+    DOWNLOAD_TIMEOUT,
+)
 
 
 class TestDetectPlatform:
@@ -94,3 +100,15 @@ class TestCleanupFiles:
         # Should not raise any errors when None is passed
         cleanup_files(None)
         cleanup_files(None, None)
+
+
+class TestDownloadTimeout:
+    def test_timeout_error_attributes(self):
+        """Test that DownloadTimeoutError has expected attributes."""
+        error = DownloadTimeoutError("Test timeout message")
+        assert str(error) == "Test timeout message"
+        assert isinstance(error, Exception)
+
+    def test_download_timeout_constant(self):
+        """Test that DOWNLOAD_TIMEOUT is set to expected value."""
+        assert DOWNLOAD_TIMEOUT == 120  # 2 minutes
