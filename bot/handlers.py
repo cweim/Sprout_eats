@@ -5,7 +5,7 @@ from telegram.ext import ContextTypes
 
 from services.downloader import download_content, is_valid_url, cleanup_files, DownloadTimeoutError
 from services.transcriber import transcribe_audio
-from services.places import search_place
+from services.places import search_place, search_places_from_text
 from services.maps import generate_map_image
 from database import repository
 from database.models import init_db
@@ -204,17 +204,17 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text("Downloading video...")
         result = await download_content(text)
 
-        # Step 2: Try to find place using caption/title first
-        place = None
+        # Step 2: Try to find places using caption/title first
+        places = []
         metadata_text = f"{result.title} {result.description}".strip()
         transcript = ""
 
         if metadata_text:
             await status_msg.edit_text("Searching using video caption...")
-            place = await search_place(metadata_text)
+            places = await search_places_from_text(metadata_text)
 
         # Step 3: If not found, fallback to transcribing audio
-        if not place and result.audio_path and result.audio_path.exists():
+        if not places and result.audio_path and result.audio_path.exists():
             await status_msg.edit_text("Transcribing audio to find location...")
             try:
                 transcript = await transcribe_audio(result.audio_path)
@@ -223,10 +223,10 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             if transcript:
                 await status_msg.edit_text("Searching using audio transcript...")
-                place = await search_place(transcript)
+                places = await search_places_from_text(transcript)
 
         # Handle case where no location could be found
-        if not place:
+        if not places:
             combined_text = f"{metadata_text} {transcript}".strip()
             if not combined_text:
                 await status_msg.edit_text(
@@ -244,29 +244,58 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cleanup_files(result.video_path, result.audio_path)
             return
 
-        # Step 4: Save and respond
-        saved_place = repository.add_place(
-            name=place.name,
-            address=place.address,
-            latitude=place.latitude,
-            longitude=place.longitude,
-            google_place_id=place.place_id,
-            source_url=text,
-            source_platform=result.platform,
-        )
+        # Step 4: Handle results based on count
+        if len(places) == 1:
+            # Single place: auto-save (backward compatible behavior)
+            place = places[0]
+            saved_place = repository.add_place(
+                name=place.name,
+                address=place.address,
+                latitude=place.latitude,
+                longitude=place.longitude,
+                google_place_id=place.place_id,
+                source_url=text,
+                source_platform=result.platform,
+            )
 
-        await status_msg.delete()
+            await status_msg.delete()
 
-        # Send location pin
-        await update.message.reply_location(
-            latitude=place.latitude,
-            longitude=place.longitude,
-        )
+            # Send location pin
+            await update.message.reply_location(
+                latitude=place.latitude,
+                longitude=place.longitude,
+            )
 
-        await update.message.reply_text(
-            f"Found and saved: {place.name}\n"
-            f"Address: {place.address}"
-        )
+            await update.message.reply_text(
+                f"Found and saved: {place.name} 🎉\n"
+                f"Address: {place.address}"
+            )
+        else:
+            # Multiple places: show selection keyboard
+            # Store places in user_data for callback
+            context.user_data["pending_places"] = [
+                {
+                    "name": p.name,
+                    "address": p.address,
+                    "latitude": p.latitude,
+                    "longitude": p.longitude,
+                    "place_id": p.place_id,
+                }
+                for p in places
+            ]
+            context.user_data["pending_url"] = text
+            context.user_data["pending_platform"] = result.platform
+
+            # Build keyboard with place options
+            keyboard = []
+            for i, place in enumerate(places):
+                name = place.name[:30] + "..." if len(place.name) > 30 else place.name
+                keyboard.append([InlineKeyboardButton(name, callback_data=f"select_place_{i}")])
+
+            await status_msg.edit_text(
+                f"I found {len(places)} places! Which one did you mean? 📍",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
 
         # Cleanup temp files
         cleanup_files(result.video_path, result.audio_path)
