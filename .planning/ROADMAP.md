@@ -36,7 +36,7 @@ None
 Plans:
 - [x] 01-01: pytest infrastructure (requirements-dev.txt, conftest.py, pytest.ini)
 - [x] 01-02: Test downloader service (detect_platform, is_valid_url, cleanup_files)
-- [ ] 01-03: Test places service (search_place, search_places_from_text with mocked HTTP)
+- [x] 01-03: Test places service (search_place, search_places_from_text with mocked HTTP)
 - [ ] 01-04: Test database repository (CRUD operations, deduplication)
 
 ### Phase 2: Reliability
@@ -146,7 +146,7 @@ Contents:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Testing Foundation | 2/4 | In progress | - |
+| 1. Testing Foundation | 3/4 | In progress | - |
 | 2. Reliability | 0/TBD | Not started | - |
 | 3. Multi-Place Support | 0/TBD | Not started | - |
 | 4. Enhanced Metadata | 0/TBD | Not started | - |
