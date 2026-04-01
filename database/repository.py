@@ -19,6 +19,9 @@ def add_place(
     place_rating_count: Optional[int] = None,
     place_price_level: Optional[str] = None,
     place_opening_hours: Optional[str] = None,
+    source_language: Optional[str] = None,
+    source_transcript: Optional[str] = None,
+    source_transcript_en: Optional[str] = None,
 ) -> Place:
     with SessionLocal() as session:
         # Check for duplicate by google_place_id
@@ -44,6 +47,9 @@ def add_place(
             place_rating_count=place_rating_count,
             place_price_level=place_price_level,
             place_opening_hours=place_opening_hours,
+            source_language=source_language,
+            source_transcript=source_transcript,
+            source_transcript_en=source_transcript_en,
         )
         session.add(place)
         session.commit()

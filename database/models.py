@@ -33,6 +33,11 @@ class Place(Base):
     place_price_level = Column(String)  # "FREE", "INEXPENSIVE", "MODERATE", etc.
     place_opening_hours = Column(String)  # e.g., "Monday: 9:00 AM – 10:00 PM"
 
+    # Language/transcription metadata
+    source_language = Column(String)  # ISO code like "en", "ja", "ko"
+    source_transcript = Column(String)  # Original transcription text
+    source_transcript_en = Column(String)  # English translation (if different)
+
     def __repr__(self):
         return f"<Place(name='{self.name}', address='{self.address}')>"
 
