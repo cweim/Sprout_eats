@@ -15,9 +15,11 @@ from bot.handlers import (
     places_command,
     map_command,
     clear_command,
+    delete_command,
     clear_callback,
     action_callback,
     select_place_callback,
+    delete_place_callback,
     handle_text,
 )
 
@@ -35,6 +37,7 @@ async def post_init(application):
         BotCommand("start", "Show welcome message"),
         BotCommand("places", "List all saved places"),
         BotCommand("map", "View all places on a map"),
+        BotCommand("delete", "Delete a saved place"),
         BotCommand("clear", "Clear all saved places"),
     ])
     logger.info("Bot commands menu configured")
@@ -56,9 +59,11 @@ def main():
     app.add_handler(CommandHandler("places", places_command))
     app.add_handler(CommandHandler("map", map_command))
     app.add_handler(CommandHandler("clear", clear_command))
+    app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(CallbackQueryHandler(clear_callback, pattern="^clear_"))
     app.add_handler(CallbackQueryHandler(action_callback, pattern="^action_"))
     app.add_handler(CallbackQueryHandler(select_place_callback, pattern="^select_place_"))
+    app.add_handler(CallbackQueryHandler(delete_place_callback, pattern="^delete_place_"))
 
     # Handle text messages (URLs and place name responses)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

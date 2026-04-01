@@ -20,6 +20,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🗺 View Map", callback_data="action_map"),
         ],
         [
+            InlineKeyboardButton("🗑️ Delete One", callback_data="action_delete"),
             InlineKeyboardButton("🗑 Clear All", callback_data="action_clear"),
         ],
     ]
@@ -171,6 +172,26 @@ async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
+    elif query.data == "action_delete":
+        places = repository.get_all_places()
+        if not places:
+            await query.edit_message_text(
+                "No places to delete! Your list is empty. 📭",
+                reply_markup=get_menu_keyboard(),
+            )
+            return
+
+        keyboard = []
+        for place in places:
+            name = place.name[:25] + "..." if len(place.name) > 25 else place.name
+            keyboard.append([InlineKeyboardButton(name, callback_data=f"delete_place_{place.id}")])
+        keyboard.append([InlineKeyboardButton("« Back", callback_data="action_menu")])
+
+        await query.edit_message_text(
+            "Which place would you like to remove? 🗑️",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
     elif query.data == "action_menu":
         await query.edit_message_text(
             "Welcome to Discovery Bot!\n\n"
@@ -186,6 +207,7 @@ def get_menu_keyboard():
             InlineKeyboardButton("🗺 View Map", callback_data="action_map"),
         ],
         [
+            InlineKeyboardButton("🗑️ Delete One", callback_data="action_delete"),
             InlineKeyboardButton("🗑 Clear All", callback_data="action_clear"),
         ],
     ])
@@ -439,3 +461,43 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(
             "I couldn't find that place. Could you try a different name or be more specific? 🔍"
         )
+
+
+async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show list of places to delete."""
+    places = repository.get_all_places()
+
+    if not places:
+        await update.message.reply_text("No places to delete! Your list is empty. 📭")
+        return
+
+    keyboard = []
+    for place in places:
+        name = place.name[:25] + "..." if len(place.name) > 25 else place.name
+        keyboard.append([InlineKeyboardButton(name, callback_data=f"delete_place_{place.id}")])
+
+    await update.message.reply_text(
+        "Which place would you like to remove? 🗑️",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def delete_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle place deletion from inline keyboard."""
+    query = update.callback_query
+    await query.answer()
+
+    # Extract place_id from callback data (format: "delete_place_{id}")
+    try:
+        place_id = int(query.data.replace("delete_place_", ""))
+    except ValueError:
+        await query.edit_message_text("Oops, something went wrong. Try again! 🙈")
+        return
+
+    # Delete the place
+    deleted = repository.delete_place(place_id)
+
+    if deleted:
+        await query.edit_message_text("Removed! Your places are tidied up. ✨")
+    else:
+        await query.edit_message_text("That place was already gone! 👻")
