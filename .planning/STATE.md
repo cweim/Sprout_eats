@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 
 ## Current Position
 
-Phase: 4 of 9 (Enhanced Metadata)
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 2026-04-01 — Completed 04-03-PLAN.md
+Phase: 5 of 9 (Language Support)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-04-01 — Completed 05-01-PLAN.md
 
-Progress: █████░░░░░ 44% (4/9 phases complete)
+Progress: █████░░░░░ 44% (4/9 phases complete, plan 1/2 in Phase 5)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
+- Total plans completed: 12
 - Average duration: ~2.5 min
-- Total execution time: ~28 min
+- Total execution time: ~30 min
 
 **By Phase:**
 
@@ -31,9 +31,10 @@ Progress: █████░░░░░ 44% (4/9 phases complete)
 | 2. Reliability | 2 | ~5 min | ~2.5 min |
 | 3. Multi-Place | 2 | ~5 min | ~2.5 min |
 | 4. Enhanced Metadata | 3 | ~7 min | ~2.3 min |
+| 5. Language Support | 1 | ~2 min | ~2 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-01, 03-02, 04-01, 04-02, 04-03
+- Last 5 plans: 03-02, 04-01, 04-02, 04-03, 05-01
 - Trend: Stable, consistent execution
 
 ## Accumulated Context
@@ -53,6 +54,7 @@ Recent decisions affecting current work:
 - Parse priceLevel by removing "PRICE_LEVEL_" prefix
 - Limit types display to first 2 for readability
 - Use title case for types display
+- Two-pass Whisper transcription for non-English (transcribe then translate)
 
 ### Deferred Issues
 
@@ -65,5 +67,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-01
-Stopped at: Completed 04-03-PLAN.md (Bot handler display updates) - Phase 4 complete
+Stopped at: Completed 05-01-PLAN.md (Language detection + database schema)
 Resume file: None

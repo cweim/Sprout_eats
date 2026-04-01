@@ -96,7 +96,7 @@ Features:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01: Language detection and translation in transcriber + database schema
+- [x] 05-01: Language detection and translation in transcriber + database schema
 - [ ] 05-02: Handler integration for translated search + language display
 
 Features:
@@ -167,7 +167,7 @@ Contents:
 | 2. Reliability | 2/2 | Complete | 2026-04-01 |
 | 3. Multi-Place Support | 2/2 | Complete | 2026-04-01 |
 | 4. Enhanced Metadata | 3/3 | Complete | 2026-04-01 |
-| 5. Language Support | 0/TBD | Not started | - |
+| 5. Language Support | 1/2 | In progress | - |
 | 6. Interactive Viewer | 0/TBD | Not started | - |
 | 7. Proximity Features | 0/TBD | Not started | - |
 | 8. Performance | 0/TBD | Not started | - |
