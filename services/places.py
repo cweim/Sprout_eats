@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 import aiohttp
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Union, overload, Literal
 from tenacity import (
     retry,
@@ -31,6 +31,11 @@ class PlaceResult:
     latitude: float
     longitude: float
     place_id: str
+    types: list[str] = field(default_factory=list)  # e.g., ["restaurant", "food"]
+    rating: Optional[float] = None  # 1.0-5.0
+    rating_count: Optional[int] = None
+    price_level: Optional[str] = None  # "FREE", "INEXPENSIVE", etc.
+    opening_hours: Optional[str] = None  # First line of weekday descriptions
 
 
 @retry(
@@ -63,7 +68,7 @@ async def search_place(
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": config.GOOGLE_API_KEY,
-        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location,places.id",
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location,places.id,places.types,places.rating,places.userRatingCount,places.priceLevel,places.regularOpeningHours",
     }
 
     body = {
@@ -86,6 +91,16 @@ async def search_place(
 
             for place in places_data:
                 location = place.get("location", {})
+
+                # Parse price level (remove PRICE_LEVEL_ prefix)
+                raw_price = place.get("priceLevel", "")
+                price_level = raw_price.replace("PRICE_LEVEL_", "") if raw_price else None
+
+                # Parse opening hours (first line of weekday descriptions)
+                hours_data = place.get("regularOpeningHours", {})
+                weekday_desc = hours_data.get("weekdayDescriptions", [])
+                opening_hours = weekday_desc[0] if weekday_desc else None
+
                 results.append(
                     PlaceResult(
                         name=place.get("displayName", {}).get("text", ""),
@@ -93,6 +108,11 @@ async def search_place(
                         latitude=location.get("latitude", 0),
                         longitude=location.get("longitude", 0),
                         place_id=place.get("id", ""),
+                        types=place.get("types", []),
+                        rating=place.get("rating"),
+                        rating_count=place.get("userRatingCount"),
+                        price_level=price_level,
+                        opening_hours=opening_hours,
                     )
                 )
 
