@@ -239,8 +239,9 @@ async def select_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
     # Get source info
     source_url = context.user_data.get("pending_url", "")
     source_platform = context.user_data.get("pending_platform", "unknown")
+    video_meta = context.user_data.get("pending_video_meta", {})
 
-    # Save to database
+    # Save to database with all metadata
     saved_place = repository.add_place(
         name=place_data["name"],
         address=place_data["address"],
@@ -249,12 +250,22 @@ async def select_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
         google_place_id=place_data.get("place_id"),
         source_url=source_url,
         source_platform=source_platform,
+        source_title=video_meta.get("source_title"),
+        source_uploader=video_meta.get("source_uploader"),
+        source_duration=video_meta.get("source_duration"),
+        source_hashtags=video_meta.get("source_hashtags"),
+        place_types=",".join(place_data.get("types", [])) if place_data.get("types") else None,
+        place_rating=place_data.get("rating"),
+        place_rating_count=place_data.get("rating_count"),
+        place_price_level=place_data.get("price_level"),
+        place_opening_hours=place_data.get("opening_hours"),
     )
 
     # Clear pending data
     context.user_data.pop("pending_places", None)
     context.user_data.pop("pending_url", None)
     context.user_data.pop("pending_platform", None)
+    context.user_data.pop("pending_video_meta", None)
 
     # Delete selection message
     await query.delete_message()
@@ -265,11 +276,20 @@ async def select_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
         longitude=place_data["longitude"],
     )
 
-    # Send confirmation
-    await query.message.reply_text(
-        f"Saved: {place_data['name']}! 🎉\n"
-        f"Address: {place_data['address']}"
-    )
+    # Build rich confirmation message
+    confirmation = f"Found and saved: {place_data['name']}! 🎉\n📍 {place_data['address']}"
+    if place_data.get("rating"):
+        rating_text = f"⭐ {place_data['rating']}/5"
+        if place_data.get("rating_count"):
+            rating_text += f" ({place_data['rating_count']} reviews)"
+        confirmation += f"\n{rating_text}"
+    if place_data.get("types"):
+        types_display = ", ".join(t.replace("_", " ").title() for t in place_data["types"][:2])
+        confirmation += f"\n🏷️ {types_display}"
+    if video_meta.get("source_uploader"):
+        confirmation += f"\n📺 From @{video_meta['source_uploader']}"
+
+    await query.message.reply_text(confirmation)
 
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -325,6 +345,12 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cleanup_files(result.video_path, result.audio_path)
             return
 
+        # Extract video metadata for storage
+        source_title = result.title
+        source_uploader = result.uploader
+        source_duration = result.duration
+        source_hashtags = ",".join(result.hashtags) if result.hashtags else None
+
         # Step 4: Handle results based on count
         if len(places) == 1:
             # Single place: auto-save (backward compatible behavior)
@@ -337,6 +363,15 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 google_place_id=place.place_id,
                 source_url=text,
                 source_platform=result.platform,
+                source_title=source_title,
+                source_uploader=source_uploader,
+                source_duration=source_duration,
+                source_hashtags=source_hashtags,
+                place_types=",".join(place.types) if place.types else None,
+                place_rating=place.rating,
+                place_rating_count=place.rating_count,
+                place_price_level=place.price_level,
+                place_opening_hours=place.opening_hours,
             )
 
             await status_msg.delete()
@@ -347,13 +382,23 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 longitude=place.longitude,
             )
 
-            await update.message.reply_text(
-                f"Found and saved: {place.name} 🎉\n"
-                f"Address: {place.address}"
-            )
+            # Build rich confirmation message
+            confirmation = f"Found and saved: {place.name}! 🎉\n📍 {place.address}"
+            if place.rating:
+                rating_text = f"⭐ {place.rating}/5"
+                if place.rating_count:
+                    rating_text += f" ({place.rating_count} reviews)"
+                confirmation += f"\n{rating_text}"
+            if place.types:
+                types_display = ", ".join(t.replace("_", " ").title() for t in place.types[:2])
+                confirmation += f"\n🏷️ {types_display}"
+            if source_uploader:
+                confirmation += f"\n📺 From @{source_uploader}"
+
+            await update.message.reply_text(confirmation)
         else:
             # Multiple places: show selection keyboard
-            # Store places in user_data for callback
+            # Store places in user_data for callback (include metadata)
             context.user_data["pending_places"] = [
                 {
                     "name": p.name,
@@ -361,11 +406,23 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "latitude": p.latitude,
                     "longitude": p.longitude,
                     "place_id": p.place_id,
+                    "types": p.types,
+                    "rating": p.rating,
+                    "rating_count": p.rating_count,
+                    "price_level": p.price_level,
+                    "opening_hours": p.opening_hours,
                 }
                 for p in places
             ]
             context.user_data["pending_url"] = text
             context.user_data["pending_platform"] = result.platform
+            # Store video metadata for later
+            context.user_data["pending_video_meta"] = {
+                "source_title": source_title,
+                "source_uploader": source_uploader,
+                "source_duration": source_duration,
+                "source_hashtags": source_hashtags,
+            }
 
             # Build keyboard with place options
             keyboard = []
