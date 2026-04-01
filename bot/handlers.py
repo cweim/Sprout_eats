@@ -295,6 +295,9 @@ async def select_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
         place_rating_count=place_data.get("rating_count"),
         place_price_level=place_data.get("price_level"),
         place_opening_hours=place_data.get("opening_hours"),
+        source_language=video_meta.get("source_language"),
+        source_transcript=video_meta.get("source_transcript"),
+        source_transcript_en=video_meta.get("source_transcript_en"),
     )
 
     # Clear pending data
@@ -324,6 +327,10 @@ async def select_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
         confirmation += f"\n🏷️ {types_display}"
     if video_meta.get("source_uploader"):
         confirmation += f"\n📺 From @{video_meta['source_uploader']}"
+    # Show detected language if non-English
+    source_lang = video_meta.get("source_language")
+    if source_lang and source_lang != "en":
+        confirmation += f"\n🌏 Detected: {get_language_name(source_lang)}"
 
     await query.message.reply_text(confirmation)
 
