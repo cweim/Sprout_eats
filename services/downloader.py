@@ -1,7 +1,7 @@
 import re
 import asyncio
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import yt_dlp
 
@@ -23,6 +23,9 @@ class DownloadResult:
     title: str
     description: str
     platform: str  # 'instagram' or 'tiktok'
+    uploader: Optional[str] = None
+    duration: Optional[int] = None
+    hashtags: list[str] = field(default_factory=list)
 
 
 def detect_platform(url: str) -> Optional[str]:
@@ -97,6 +100,9 @@ async def download_content(url: str) -> DownloadResult:
 
     title = info.get("title", "")
     description = info.get("description", "") or ""
+    uploader = info.get("uploader") or info.get("uploader_id")
+    duration = info.get("duration")  # Already an int in seconds
+    hashtags = info.get("tags", []) or []  # yt-dlp uses "tags" not "hashtags"
 
     return DownloadResult(
         video_path=video_path,
@@ -104,6 +110,9 @@ async def download_content(url: str) -> DownloadResult:
         title=title,
         description=description,
         platform=platform,
+        uploader=uploader,
+        duration=duration,
+        hashtags=hashtags,
     )
 
 
