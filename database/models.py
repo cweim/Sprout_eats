@@ -26,6 +26,13 @@ class Place(Base):
     source_duration = Column(Integer)  # Video duration in seconds
     source_hashtags = Column(String)  # Comma-separated hashtags
 
+    # Place metadata from Google Places API
+    place_types = Column(String)  # Comma-separated types like "restaurant,food"
+    place_rating = Column(Float)  # 1.0-5.0
+    place_rating_count = Column(Integer)  # Number of reviews
+    place_price_level = Column(String)  # "FREE", "INEXPENSIVE", "MODERATE", etc.
+    place_opening_hours = Column(String)  # e.g., "Monday: 9:00 AM – 10:00 PM"
+
     def __repr__(self):
         return f"<Place(name='{self.name}', address='{self.address}')>"
 

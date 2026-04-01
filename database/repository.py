@@ -14,6 +14,11 @@ def add_place(
     source_uploader: Optional[str] = None,
     source_duration: Optional[int] = None,
     source_hashtags: Optional[str] = None,
+    place_types: Optional[str] = None,
+    place_rating: Optional[float] = None,
+    place_rating_count: Optional[int] = None,
+    place_price_level: Optional[str] = None,
+    place_opening_hours: Optional[str] = None,
 ) -> Place:
     with SessionLocal() as session:
         # Check for duplicate by google_place_id
@@ -34,6 +39,11 @@ def add_place(
             source_uploader=source_uploader,
             source_duration=source_duration,
             source_hashtags=source_hashtags,
+            place_types=place_types,
+            place_rating=place_rating,
+            place_rating_count=place_rating_count,
+            place_price_level=place_price_level,
+            place_opening_hours=place_opening_hours,
         )
         session.add(place)
         session.commit()
