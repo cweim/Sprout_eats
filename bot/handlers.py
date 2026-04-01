@@ -12,6 +12,27 @@ from database.models import init_db
 
 logger = logging.getLogger(__name__)
 
+# Language code to friendly name mapping
+LANGUAGE_NAMES = {
+    "en": "English",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "zh": "Chinese",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "th": "Thai",
+    "vi": "Vietnamese",
+    "id": "Indonesian",
+}
+
+
+def get_language_name(code: str) -> str:
+    """Get friendly language name from ISO code."""
+    return LANGUAGE_NAMES.get(code, code.upper())
+
 
 def format_place_line(place, index: int) -> str:
     """Format a place for display in listings with optional metadata."""
@@ -323,7 +344,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Step 2: Try to find places using caption/title first
         places = []
         metadata_text = f"{result.title} {result.description}".strip()
-        transcript = ""
+        transcription_result = None
 
         if metadata_text:
             await status_msg.edit_text("Searching using video caption...")
@@ -333,25 +354,33 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not places and result.audio_path and result.audio_path.exists():
             await status_msg.edit_text("Transcribing audio to find location...")
             try:
-                transcript = await transcribe_audio(result.audio_path)
+                transcription_result = await transcribe_audio(result.audio_path)
             except Exception as e:
                 logger.warning(f"Transcription failed: {e}")
 
-            if transcript:
+            if transcription_result:
                 await status_msg.edit_text("Searching using audio transcript...")
-                places = await search_places_from_text(transcript)
+                # Use English text for better Google Places API results
+                search_text = transcription_result.english_text or transcription_result.text
+                places = await search_places_from_text(search_text)
 
         # Handle case where no location could be found
         if not places:
-            combined_text = f"{metadata_text} {transcript}".strip()
+            transcript_text = transcription_result.text if transcription_result else ""
+            combined_text = f"{metadata_text} {transcript_text}".strip()
             if not combined_text:
                 await status_msg.edit_text(
                     "Could not extract any text or audio from the video. "
                     "Please reply with the place name manually."
                 )
             else:
+                # Show detected language if transcription was used
+                lang_hint = ""
+                if transcription_result and transcription_result.language != "en":
+                    lang_name = get_language_name(transcription_result.language)
+                    lang_hint = f" (detected: {lang_name})"
                 await status_msg.edit_text(
-                    f"Could not find a specific location.\n\n"
+                    f"Could not find a specific location{lang_hint}.\n\n"
                     f"Text found: {combined_text[:200]}...\n\n"
                     "Please reply with the place name to search for."
                 )
@@ -387,6 +416,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 place_rating_count=place.rating_count,
                 place_price_level=place.price_level,
                 place_opening_hours=place.opening_hours,
+                source_language=transcription_result.language if transcription_result else None,
+                source_transcript=transcription_result.text if transcription_result else None,
+                source_transcript_en=transcription_result.english_text if transcription_result else None,
             )
 
             await status_msg.delete()
@@ -431,12 +463,15 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             context.user_data["pending_url"] = text
             context.user_data["pending_platform"] = result.platform
-            # Store video metadata for later
+            # Store video metadata for later (including language info)
             context.user_data["pending_video_meta"] = {
                 "source_title": source_title,
                 "source_uploader": source_uploader,
                 "source_duration": source_duration,
                 "source_hashtags": source_hashtags,
+                "source_language": transcription_result.language if transcription_result else None,
+                "source_transcript": transcription_result.text if transcription_result else None,
+                "source_transcript_en": transcription_result.english_text if transcription_result else None,
             }
 
             # Build keyboard with place options
