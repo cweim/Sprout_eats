@@ -191,6 +191,65 @@ def get_menu_keyboard():
     ])
 
 
+async def select_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle place selection from inline keyboard."""
+    query = update.callback_query
+    await query.answer()
+
+    # Check if pending_places exists
+    pending_places = context.user_data.get("pending_places")
+    if not pending_places:
+        await query.edit_message_text(
+            "Hmm, that selection expired. Send the link again! 🔄"
+        )
+        return
+
+    # Extract index from callback data (format: "select_place_{index}")
+    try:
+        index = int(query.data.replace("select_place_", ""))
+        place_data = pending_places[index]
+    except (ValueError, IndexError):
+        await query.edit_message_text(
+            "Oops, something went wrong with that selection. Try again! 🙈"
+        )
+        return
+
+    # Get source info
+    source_url = context.user_data.get("pending_url", "")
+    source_platform = context.user_data.get("pending_platform", "unknown")
+
+    # Save to database
+    saved_place = repository.add_place(
+        name=place_data["name"],
+        address=place_data["address"],
+        latitude=place_data["latitude"],
+        longitude=place_data["longitude"],
+        google_place_id=place_data.get("place_id"),
+        source_url=source_url,
+        source_platform=source_platform,
+    )
+
+    # Clear pending data
+    context.user_data.pop("pending_places", None)
+    context.user_data.pop("pending_url", None)
+    context.user_data.pop("pending_platform", None)
+
+    # Delete selection message
+    await query.delete_message()
+
+    # Send location pin
+    await query.message.reply_location(
+        latitude=place_data["latitude"],
+        longitude=place_data["longitude"],
+    )
+
+    # Send confirmation
+    await query.message.reply_text(
+        f"Saved: {place_data['name']}! 🎉\n"
+        f"Address: {place_data['address']}"
+    )
+
+
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
