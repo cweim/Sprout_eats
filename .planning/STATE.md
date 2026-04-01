@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Save places from travel videos so you never lose track of discoveries
-**Current focus:** Phase 5 — Language Support
+**Current focus:** Phase 6 — Interactive Viewer
 
 ## Current Position
 
-Phase: 5 of 9 (Language Support)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-04-01 — Completed 05-01-PLAN.md
+Phase: 6 of 9 (Interactive Viewer)
+Plan: 0 of TBD in current phase
+Status: Not started
+Last activity: 2026-04-02 — Completed Phase 5 (Language Support)
 
-Progress: █████░░░░░ 44% (4/9 phases complete, plan 1/2 in Phase 5)
+Progress: ██████░░░░ 56% (5/9 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
+- Total plans completed: 13
 - Average duration: ~2.5 min
-- Total execution time: ~30 min
+- Total execution time: ~32 min
 
 **By Phase:**
 
@@ -31,10 +31,10 @@ Progress: █████░░░░░ 44% (4/9 phases complete, plan 1/2 in P
 | 2. Reliability | 2 | ~5 min | ~2.5 min |
 | 3. Multi-Place | 2 | ~5 min | ~2.5 min |
 | 4. Enhanced Metadata | 3 | ~7 min | ~2.3 min |
-| 5. Language Support | 1 | ~2 min | ~2 min |
+| 5. Language Support | 2 | ~4 min | ~2 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-02, 04-01, 04-02, 04-03, 05-01
+- Last 5 plans: 04-01, 04-02, 04-03, 05-01, 05-02
 - Trend: Stable, consistent execution
 
 ## Accumulated Context
@@ -55,6 +55,8 @@ Recent decisions affecting current work:
 - Limit types display to first 2 for readability
 - Use title case for types display
 - Two-pass Whisper transcription for non-English (transcribe then translate)
+- Use english_text for Google Places search (better results for non-English)
+- Show detected language only for non-English content
 
 ### Deferred Issues
 
@@ -66,6 +68,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-01
-Stopped at: Completed 05-01-PLAN.md (Language detection + database schema)
+Last session: 2026-04-02
+Stopped at: Completed Phase 5 (Language Support)
 Resume file: None

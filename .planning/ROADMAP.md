@@ -19,7 +19,7 @@ None
 - [x] **Phase 2: Reliability** - Error retry logic and download timeout protection
 - [x] **Phase 3: Multi-Place Support** - Save all detected locations, delete individual places
 - [x] **Phase 4: Enhanced Metadata** - Hashtags, location tags, categories, photos, ratings, hours
-- [ ] **Phase 5: Language Support** - Explicit language handling and optional translation
+- [x] **Phase 5: Language Support** - Explicit language handling and optional translation
 - [ ] **Phase 6: Interactive Viewer** - Telegram Mini App with map, list, search, and links
 - [ ] **Phase 7: Proximity Features** - Nearby alerts and distance-based grouping
 - [ ] **Phase 8: Performance** - Pre-load Whisper model on startup
@@ -97,7 +97,7 @@ Features:
 
 Plans:
 - [x] 05-01: Language detection and translation in transcriber + database schema
-- [ ] 05-02: Handler integration for translated search + language display
+- [x] 05-02: Handler integration for translated search + language display
 
 Features:
 - Detect language from transcription
@@ -167,7 +167,7 @@ Contents:
 | 2. Reliability | 2/2 | Complete | 2026-04-01 |
 | 3. Multi-Place Support | 2/2 | Complete | 2026-04-01 |
 | 4. Enhanced Metadata | 3/3 | Complete | 2026-04-01 |
-| 5. Language Support | 1/2 | In progress | - |
+| 5. Language Support | 2/2 | Complete | 2026-04-02 |
 | 6. Interactive Viewer | 0/TBD | Not started | - |
 | 7. Proximity Features | 0/TBD | Not started | - |
 | 8. Performance | 0/TBD | Not started | - |
