@@ -17,7 +17,7 @@ None
 
 - [x] **Phase 1: Testing Foundation** - pytest infrastructure and initial test coverage
 - [x] **Phase 2: Reliability** - Error retry logic and download timeout protection
-- [ ] **Phase 3: Multi-Place Support** - Save all detected locations, delete individual places
+- [x] **Phase 3: Multi-Place Support** - Save all detected locations, delete individual places
 - [ ] **Phase 4: Enhanced Metadata** - Hashtags, location tags, categories, photos, ratings, hours
 - [ ] **Phase 5: Language Support** - Explicit language handling and optional translation
 - [ ] **Phase 6: Interactive Viewer** - Telegram Mini App with map, list, search, and links
@@ -62,7 +62,7 @@ Features:
 
 Plans:
 - [x] 03-01: Backend multi-place support (places service + repository)
-- [ ] 03-02: Bot handlers update (place selection + delete command)
+- [x] 03-02: Bot handlers update (place selection + delete command)
 
 Features:
 - Return all places from `search_places_from_text()` (up to 5)
@@ -156,7 +156,7 @@ Contents:
 |-------|----------------|--------|-----------|
 | 1. Testing Foundation | 4/4 | Complete | 2026-03-31 |
 | 2. Reliability | 2/2 | Complete | 2026-04-01 |
-| 3. Multi-Place Support | 1/2 | In progress | - |
+| 3. Multi-Place Support | 2/2 | Complete | 2026-04-01 |
 | 4. Enhanced Metadata | 0/TBD | Not started | - |
 | 5. Language Support | 0/TBD | Not started | - |
 | 6. Interactive Viewer | 0/TBD | Not started | - |
