@@ -93,7 +93,11 @@ Features:
 **Depends on**: Phase 4
 **Research**: Likely (Whisper language options, translation approaches)
 **Research topics**: Whisper language parameter, task="translate" option, accuracy tradeoffs
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 05-01: Language detection and translation in transcriber + database schema
+- [ ] 05-02: Handler integration for translated search + language display
 
 Features:
 - Detect language from transcription
