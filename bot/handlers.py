@@ -13,6 +13,27 @@ from database.models import init_db
 logger = logging.getLogger(__name__)
 
 
+def format_place_line(place, index: int) -> str:
+    """Format a place for display in listings with optional metadata."""
+    lines = [f"{index}. {place.name}"]
+    if place.address:
+        lines.append(f"   {place.address}")
+
+    # Build metadata line (rating + types)
+    meta_parts = []
+    if place.place_rating:
+        meta_parts.append(f"⭐ {place.place_rating}/5")
+    if place.place_types:
+        # Parse comma-separated types, title case, limit to 2
+        types_list = [t.replace("_", " ").title() for t in place.place_types.split(",")[:2]]
+        meta_parts.append(", ".join(types_list))
+
+    if meta_parts:
+        lines.append(f"   {' • '.join(meta_parts)}")
+
+    return "\n".join(lines)
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
@@ -40,12 +61,9 @@ async def places_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No places saved yet. Send me an Instagram or TikTok link!")
         return
 
-    text = f"Saved places ({len(places)}):\n\n"
+    text = f"📍 Saved places ({len(places)}):\n\n"
     for i, place in enumerate(places, 1):
-        text += f"{i}. {place.name}\n"
-        if place.address:
-            text += f"   {place.address}\n"
-        text += "\n"
+        text += format_place_line(place, i) + "\n\n"
 
     await update.message.reply_text(text)
 
@@ -119,10 +137,7 @@ async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = f"📍 Saved places ({len(places)}):\n\n"
         for i, place in enumerate(places, 1):
-            text += f"{i}. {place.name}\n"
-            if place.address:
-                text += f"   {place.address}\n"
-            text += "\n"
+            text += format_place_line(place, i) + "\n\n"
 
         await query.edit_message_text(text, reply_markup=get_menu_keyboard())
 
