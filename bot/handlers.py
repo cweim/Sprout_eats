@@ -1,8 +1,9 @@
 import logging
 from io import BytesIO
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
 
+import config
 from services.downloader import download_content, is_valid_url, cleanup_files, DownloadTimeoutError
 from services.transcriber import transcribe_audio
 from services.places import search_place, search_places_from_text
@@ -66,6 +67,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🗑 Clear All", callback_data="action_clear"),
         ],
     ]
+
+    # Add viewer button if WEBAPP_URL is configured
+    if config.WEBAPP_URL:
+        keyboard.append([
+            InlineKeyboardButton(
+                "✨ Open Viewer",
+                web_app=WebAppInfo(url=config.WEBAPP_URL)
+            )
+        ])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
@@ -115,6 +126,28 @@ async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "I had trouble making the map. Let me know if this keeps happening! 🗺️"
         )
+
+
+async def viewer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Open the interactive Mini App viewer."""
+    if not config.WEBAPP_URL:
+        await update.message.reply_text(
+            "The viewer isn't set up yet. Check back later!"
+        )
+        return
+
+    keyboard = [[
+        InlineKeyboardButton(
+            "✨ Open Viewer",
+            web_app=WebAppInfo(url=config.WEBAPP_URL)
+        )
+    ]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "Tap below to explore your saved places!",
+        reply_markup=reply_markup,
+    )
 
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -237,7 +270,7 @@ async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def get_menu_keyboard():
-    return InlineKeyboardMarkup([
+    keyboard = [
         [
             InlineKeyboardButton("📍 View Places", callback_data="action_places"),
             InlineKeyboardButton("🗺 View Map", callback_data="action_map"),
@@ -246,7 +279,18 @@ def get_menu_keyboard():
             InlineKeyboardButton("🗑️ Delete One", callback_data="action_delete"),
             InlineKeyboardButton("🗑 Clear All", callback_data="action_clear"),
         ],
-    ])
+    ]
+
+    # Add viewer button if WEBAPP_URL is configured
+    if config.WEBAPP_URL:
+        keyboard.append([
+            InlineKeyboardButton(
+                "✨ Open Viewer",
+                web_app=WebAppInfo(url=config.WEBAPP_URL)
+            )
+        ])
+
+    return InlineKeyboardMarkup(keyboard)
 
 
 async def select_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

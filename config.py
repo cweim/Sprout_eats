@@ -21,3 +21,6 @@ WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
 # Database
 DATABASE_PATH = os.getenv("DATABASE_PATH", "discovery_bot.db")
 DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+
+# Mini App
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")
