@@ -1,9 +1,22 @@
+import math
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from database import repository
+
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate distance between two points in kilometers."""
+    R = 6371  # Earth radius in km
+    d_lat = math.radians(lat2 - lat1)
+    d_lon = math.radians(lon2 - lon1)
+    a = (math.sin(d_lat/2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+         math.sin(d_lon/2) ** 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
 
 router = APIRouter(prefix="/api")
 
@@ -48,6 +61,30 @@ async def get_places():
     """Get all saved places."""
     places = repository.get_all_places()
     return {"places": [place_to_dict(p) for p in places]}
+
+
+@router.get("/places/nearby")
+async def get_nearby_places(lat: float, lng: float, radius_km: float = 5.0):
+    """
+    Get places within radius of given coordinates.
+
+    Returns places sorted by distance, with distance included.
+    """
+    all_places = repository.get_all_places()
+
+    nearby = []
+    for place in all_places:
+        if place.latitude and place.longitude:
+            dist = haversine_distance(lat, lng, place.latitude, place.longitude)
+            if dist <= radius_km:
+                place_dict = place_to_dict(place)
+                place_dict['distance_km'] = round(dist, 2)
+                nearby.append(place_dict)
+
+    # Sort by distance
+    nearby.sort(key=lambda p: p['distance_km'])
+
+    return {"places": nearby, "count": len(nearby), "radius_km": radius_km}
 
 
 @router.get("/places/{place_id}")
