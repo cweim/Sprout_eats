@@ -471,3 +471,214 @@ body {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
 }
+
+/* Visited badge */
+.visited-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.place-card.visited {
+    border-left: 3px solid #4caf50;
+}
+
+/* Visited toggle in popup */
+.visited-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--secondary-bg);
+}
+
+.visited-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--secondary-bg);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    border-radius: 16px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.visited-toggle-btn.active {
+    background-color: #e8f5e9;
+    border-color: #4caf50;
+    color: #2e7d32;
+}
+
+.visited-toggle-btn:active {
+    transform: scale(0.95);
+}
+
+/* Notes indicator */
+.notes-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background-color: var(--secondary-bg);
+    color: var(--hint-color);
+    border-radius: 10px;
+    font-size: 11px;
+}
+
+.notes-preview {
+    font-size: 12px;
+    color: var(--hint-color);
+    font-style: italic;
+    margin-top: 6px;
+    padding: 6px 8px;
+    background-color: var(--secondary-bg);
+    border-radius: 6px;
+    max-height: 40px;
+    overflow: hidden;
+}
+
+.add-notes-btn {
+    padding: 4px 10px;
+    border: 1px dashed var(--hint-color);
+    background: transparent;
+    color: var(--hint-color);
+    border-radius: 12px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.add-notes-btn:hover {
+    border-style: solid;
+    color: var(--text-color);
+}
+
+/* Notes Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 3000;
+}
+
+.modal-content {
+    width: 100%;
+    max-width: 500px;
+    background-color: var(--bg-color);
+    border-radius: 16px 16px 0 0;
+    padding: 20px;
+    animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.modal-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.modal-close-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background-color: var(--secondary-bg);
+    color: var(--text-color);
+    border-radius: 50%;
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.modal-body {
+    margin-bottom: 16px;
+}
+
+#notes-textarea {
+    width: 100%;
+    height: 120px;
+    padding: 12px;
+    border: 1px solid var(--secondary-bg);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    border-radius: 12px;
+    font-size: 15px;
+    font-family: inherit;
+    resize: none;
+    outline: none;
+}
+
+#notes-textarea:focus {
+    border-color: var(--button-color);
+}
+
+.notes-char-count {
+    text-align: right;
+    font-size: 12px;
+    color: var(--hint-color);
+    margin-top: 4px;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.modal-btn {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 20px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    background-color: var(--secondary-bg);
+    color: var(--text-color);
+}
+
+.modal-btn.primary {
+    background-color: var(--button-color);
+    color: var(--button-text-color);
+}
+
+.modal-btn:active {
+    transform: scale(0.98);
+}
+
+/* Place card footer for visited/notes */
+.place-card-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--secondary-bg);
+}

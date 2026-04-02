@@ -14,6 +14,9 @@ let activeCategories = new Set();
 let sortBy = 'newest';
 let searchDebounceTimer = null;
 
+// Notes modal state
+let currentEditingPlaceId = null;
+
 // Initialize Telegram WebApp
 function initTelegram() {
     if (window.Telegram && window.Telegram.WebApp) {
@@ -59,7 +62,9 @@ async function fetchPlaces() {
                 place_rating_count: 120,
                 source_url: 'https://instagram.com/p/example',
                 source_platform: 'instagram',
-                created_at: '2026-04-01'
+                created_at: '2026-04-01',
+                is_visited: true,
+                notes: 'Great coffee and cozy atmosphere!'
             },
             {
                 id: 2,
@@ -73,7 +78,9 @@ async function fetchPlaces() {
                 place_rating_count: 250,
                 source_url: 'https://tiktok.com/@user/video/123',
                 source_platform: 'tiktok',
-                created_at: '2026-04-02'
+                created_at: '2026-04-02',
+                is_visited: false,
+                notes: null
             },
             {
                 id: 3,
@@ -87,7 +94,9 @@ async function fetchPlaces() {
                 place_rating_count: 85,
                 source_url: 'https://instagram.com/p/sunset',
                 source_platform: 'instagram',
-                created_at: '2026-03-30'
+                created_at: '2026-03-30',
+                is_visited: false,
+                notes: null
             }
         ];
     }
@@ -161,7 +170,7 @@ function formatPlaceTypes(typesString) {
 
 // Create popup content for a place
 function createPopupContent(place) {
-    let html = '<div class="place-popup">';
+    let html = `<div class="place-popup" data-place-id="${place.id}">`;
 
     // Name
     html += `<div class="place-popup-name">${place.name}</div>`;
@@ -186,6 +195,20 @@ function createPopupContent(place) {
         html += `<div class="place-popup-meta">${metaHtml}</div>`;
     }
 
+    // Visited toggle
+    const visitedClass = place.is_visited ? ' active' : '';
+    const visitedText = place.is_visited ? '✓ Visited' : 'Mark visited';
+    html += `<div class="visited-toggle">
+        <button class="visited-toggle-btn${visitedClass}" onclick="toggleVisited(${place.id})">${visitedText}</button>
+        <button class="add-notes-btn" onclick="openNotesForPlace(${place.id})">📝 ${place.notes ? 'Edit notes' : 'Add notes'}</button>
+    </div>`;
+
+    // Notes preview
+    if (place.notes) {
+        const truncated = place.notes.length > 60 ? place.notes.substring(0, 60) + '...' : place.notes;
+        html += `<div class="notes-preview">${truncated}</div>`;
+    }
+
     // Action buttons
     html += '<div class="place-popup-actions">';
 
@@ -206,6 +229,22 @@ function createPopupContent(place) {
     html += '</div></div>';
 
     return html;
+}
+
+// Toggle visited status from popup
+function toggleVisited(placeId) {
+    const place = places.find(p => p.id === placeId);
+    if (place) {
+        updatePlaceVisited(placeId, !place.is_visited);
+    }
+}
+
+// Open notes modal from popup
+function openNotesForPlace(placeId) {
+    const place = places.find(p => p.id === placeId);
+    if (place) {
+        openNotesModal(place);
+    }
 }
 
 // Add markers for all places
@@ -352,7 +391,7 @@ function getPrimaryCategory(typesString) {
 // Create a place card element
 function createPlaceCard(place) {
     const card = document.createElement('div');
-    card.className = 'place-card';
+    card.className = 'place-card' + (place.is_visited ? ' visited' : '');
     card.dataset.placeId = place.id;
 
     // Name row with platform icon
@@ -379,7 +418,20 @@ function createPlaceCard(place) {
     }
     metaHtml += '</div>';
 
-    card.innerHTML = nameHtml + addressHtml + metaHtml;
+    // Footer with visited badge and notes indicator
+    let footerHtml = '';
+    if (place.is_visited || place.notes) {
+        footerHtml = '<div class="place-card-footer">';
+        if (place.is_visited) {
+            footerHtml += '<span class="visited-badge">✓ Visited</span>';
+        }
+        if (place.notes) {
+            footerHtml += '<span class="notes-indicator">📝 Has notes</span>';
+        }
+        footerHtml += '</div>';
+    }
+
+    card.innerHTML = nameHtml + addressHtml + metaHtml + footerHtml;
 
     // Click handler - show on map
     card.addEventListener('click', () => showPlaceOnMap(place));
@@ -599,6 +651,140 @@ function setupListControls() {
     renderFilterChips();
 }
 
+// ========== VISITED & NOTES FUNCTIONALITY ==========
+
+// Trigger haptic feedback if available
+function hapticFeedback(style = 'light') {
+    if (window.Telegram?.WebApp?.HapticFeedback) {
+        window.Telegram.WebApp.HapticFeedback.impactOccurred(style);
+    }
+}
+
+// Update place visited status via API
+async function updatePlaceVisited(placeId, isVisited) {
+    // Update local state immediately
+    const place = places.find(p => p.id === placeId);
+    if (place) {
+        place.is_visited = isVisited;
+    }
+
+    // Haptic feedback
+    hapticFeedback('light');
+
+    // Show feedback
+    showToast(isVisited ? '✓ Marked as visited!' : 'Unmarked');
+
+    // If API is configured, persist to server
+    if (API_URL) {
+        try {
+            const response = await fetch(`${API_URL}/api/places/${placeId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_visited: isVisited })
+            });
+            if (!response.ok) {
+                throw new Error('Failed to update');
+            }
+        } catch (error) {
+            console.error('Failed to update visited status:', error);
+            // Revert local state on error
+            if (place) place.is_visited = !isVisited;
+            showToast('Failed to save');
+        }
+    }
+
+    // Re-render affected views
+    applyFilters();
+    displayPlacesOnMap();
+}
+
+// Update place notes via API
+async function updatePlaceNotes(placeId, notes) {
+    // Update local state immediately
+    const place = places.find(p => p.id === placeId);
+    if (place) {
+        place.notes = notes;
+    }
+
+    // Haptic feedback
+    hapticFeedback('light');
+
+    // Show feedback
+    showToast('Notes saved!');
+
+    // If API is configured, persist to server
+    if (API_URL) {
+        try {
+            const response = await fetch(`${API_URL}/api/places/${placeId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ notes: notes })
+            });
+            if (!response.ok) {
+                throw new Error('Failed to update');
+            }
+        } catch (error) {
+            console.error('Failed to update notes:', error);
+            showToast('Failed to save notes');
+        }
+    }
+
+    // Re-render affected views
+    applyFilters();
+    displayPlacesOnMap();
+}
+
+// Open notes editor modal
+function openNotesModal(place) {
+    currentEditingPlaceId = place.id;
+    const modal = document.getElementById('notes-modal');
+    const textarea = document.getElementById('notes-textarea');
+    const charCount = document.getElementById('char-count');
+
+    textarea.value = place.notes || '';
+    charCount.textContent = textarea.value.length;
+
+    modal.style.display = 'flex';
+    textarea.focus();
+
+    // Update character count on input
+    textarea.oninput = () => {
+        charCount.textContent = textarea.value.length;
+    };
+}
+
+// Close notes modal
+function closeNotesModal() {
+    const modal = document.getElementById('notes-modal');
+    modal.style.display = 'none';
+    currentEditingPlaceId = null;
+}
+
+// Save notes from modal
+function saveNotesFromModal() {
+    if (currentEditingPlaceId === null) return;
+
+    const textarea = document.getElementById('notes-textarea');
+    const notes = textarea.value.trim();
+
+    updatePlaceNotes(currentEditingPlaceId, notes || null);
+    closeNotesModal();
+}
+
+// Setup notes modal event listeners
+function setupNotesModal() {
+    document.getElementById('modal-close').addEventListener('click', closeNotesModal);
+    document.getElementById('notes-cancel').addEventListener('click', closeNotesModal);
+    document.getElementById('notes-save').addEventListener('click', saveNotesFromModal);
+
+    // Close on backdrop click
+    document.getElementById('notes-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'notes-modal') {
+            closeNotesModal();
+        }
+    });
+}
+
 // Switch view
 function switchView(view) {
     currentView = view;
@@ -657,6 +843,9 @@ async function initApp() {
 
     // Setup list controls (search, filters, sort)
     setupListControls();
+
+    // Setup notes modal
+    setupNotesModal();
 
     // Render list view
     renderPlacesList(places);

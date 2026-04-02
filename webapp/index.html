@@ -75,6 +75,24 @@
         </div>
     </main>
 
+    <!-- Notes Editor Modal -->
+    <div id="notes-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Notes</h2>
+                <button id="modal-close" class="modal-close-btn">×</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="notes-textarea" placeholder="Add your notes here..." maxlength="500"></textarea>
+                <div class="notes-char-count"><span id="char-count">0</span>/500</div>
+            </div>
+            <div class="modal-footer">
+                <button id="notes-cancel" class="modal-btn">Cancel</button>
+                <button id="notes-save" class="modal-btn primary">Save</button>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 </html>
