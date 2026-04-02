@@ -43,14 +43,28 @@ async function fetchPlaces() {
             {
                 id: 1,
                 name: 'Sample Cafe',
-                address: '123 Main Street',
+                address: '123 Main Street, Tokyo',
                 latitude: 35.6762,
                 longitude: 139.6503,
+                google_place_id: 'ChIJN1t_tDeuEmsRUsoyG83frY4',
                 place_types: 'cafe,restaurant',
                 place_rating: 4.5,
                 place_rating_count: 120,
                 source_url: 'https://instagram.com/p/example',
                 source_platform: 'instagram'
+            },
+            {
+                id: 2,
+                name: 'Mountain View Restaurant',
+                address: '456 Hill Road, Kyoto',
+                latitude: 35.0116,
+                longitude: 135.7681,
+                google_place_id: 'ChIJ8cM8zdaoAWARPR27azYdlsA',
+                place_types: 'restaurant,japanese_restaurant',
+                place_rating: 4.8,
+                place_rating_count: 250,
+                source_url: 'https://tiktok.com/@user/video/123',
+                source_platform: 'tiktok'
             }
         ];
     }
@@ -112,6 +126,65 @@ function initMap() {
     return map;
 }
 
+// Format place types for display (title case, first 2)
+function formatPlaceTypes(typesString) {
+    if (!typesString) return '';
+    const types = typesString.split(',')
+        .slice(0, 2)
+        .map(t => t.trim().replace(/_/g, ' '))
+        .map(t => t.charAt(0).toUpperCase() + t.slice(1));
+    return types.join(', ');
+}
+
+// Create popup content for a place
+function createPopupContent(place) {
+    let html = '<div class="place-popup">';
+
+    // Name
+    html += `<div class="place-popup-name">${place.name}</div>`;
+
+    // Address
+    if (place.address) {
+        html += `<div class="place-popup-address">${place.address}</div>`;
+    }
+
+    // Meta info (rating and types)
+    let metaHtml = '';
+    if (place.place_rating) {
+        const ratingCount = place.place_rating_count ? ` (${place.place_rating_count})` : '';
+        metaHtml += `<span>⭐ ${place.place_rating}/5${ratingCount}</span>`;
+    }
+    const types = formatPlaceTypes(place.place_types);
+    if (types) {
+        if (metaHtml) metaHtml += ' · ';
+        metaHtml += `<span>${types}</span>`;
+    }
+    if (metaHtml) {
+        html += `<div class="place-popup-meta">${metaHtml}</div>`;
+    }
+
+    // Action buttons
+    html += '<div class="place-popup-actions">';
+
+    // Google Maps link
+    if (place.google_place_id) {
+        html += `<a href="https://www.google.com/maps/place/?q=place_id:${place.google_place_id}"
+                    target="_blank" class="popup-action-btn primary">📍 Google Maps</a>`;
+    } else if (place.latitude && place.longitude) {
+        html += `<a href="https://www.google.com/maps?q=${place.latitude},${place.longitude}"
+                    target="_blank" class="popup-action-btn primary">📍 Google Maps</a>`;
+    }
+
+    // Original reel link
+    if (place.source_url) {
+        html += `<a href="${place.source_url}" target="_blank" class="popup-action-btn">▶ Original</a>`;
+    }
+
+    html += '</div></div>';
+
+    return html;
+}
+
 // Add markers for all places
 function displayPlacesOnMap() {
     if (!map || !markersLayer) return;
@@ -129,7 +202,14 @@ function displayPlacesOnMap() {
     places.forEach(place => {
         if (place.latitude && place.longitude) {
             const marker = L.marker([place.latitude, place.longitude]);
-            marker.placeData = place; // Store place data on marker
+            marker.placeData = place;
+
+            // Bind popup with place details
+            marker.bindPopup(createPopupContent(place), {
+                maxWidth: 280,
+                className: 'custom-popup'
+            });
+
             markersLayer.addLayer(marker);
         }
     });
