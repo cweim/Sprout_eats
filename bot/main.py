@@ -10,6 +10,7 @@ from telegram.ext import (
 
 import config
 from database.models import init_db
+from services.transcriber import preload_model
 from bot.handlers import (
     start_command,
     places_command,
@@ -49,6 +50,11 @@ async def post_init(application):
 def main():
     # Initialize database
     init_db()
+
+    # Pre-load Whisper model (takes a few seconds)
+    logger.info("Loading Whisper model...")
+    preload_model()
+    logger.info("Whisper model ready")
 
     if not config.TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not set. Please check your .env file.")
