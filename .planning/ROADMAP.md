@@ -21,7 +21,7 @@ None
 - [x] **Phase 4: Enhanced Metadata** - Hashtags, location tags, categories, photos, ratings, hours
 - [x] **Phase 5: Language Support** - Explicit language handling and optional translation
 - [x] **Phase 6: Interactive Viewer** - Telegram Mini App with map, list, search, and links
-- [ ] **Phase 7: Proximity Features** - Nearby alerts and distance-based grouping
+- [x] **Phase 7: Proximity Features** - Nearby alerts and distance-based grouping
 - [ ] **Phase 8: Performance** - Pre-load Whisper model on startup
 - [ ] **Phase 9: Documentation** - README with setup instructions
 
@@ -132,13 +132,18 @@ Features:
 **Goal**: Location-aware features for discovering nearby saved places
 **Depends on**: Phase 6
 **Research**: Unlikely (using Mini App geolocation from Phase 6)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [x] 07-01: Distance calculations and display (Haversine, sort by distance, cards/popups)
+- [x] 07-02: Nearby alerts and bot command (Mini App alert, API endpoint, /nearby)
 
 Features:
 - "X saved places nearby" alert when opening Mini App
-- Group nearby places ("3 more within 500m")
-- `/nearby` command for quick check
-- Distance display on place cards
+- Distance display on place cards and popups
+- Sort by distance option in list view
+- `/nearby` command with location sharing
+- GET /api/places/nearby endpoint
 
 ### Phase 8: Performance
 **Goal**: Reduce cold start time by pre-loading Whisper model
@@ -175,6 +180,6 @@ Contents:
 | 4. Enhanced Metadata | 3/3 | Complete | 2026-04-01 |
 | 5. Language Support | 2/2 | Complete | 2026-04-02 |
 | 6. Interactive Viewer | 4/4 | Complete | 2026-04-02 |
-| 7. Proximity Features | 0/TBD | Not started | - |
+| 7. Proximity Features | 2/2 | Complete | 2026-04-03 |
 | 8. Performance | 0/TBD | Not started | - |
 | 9. Documentation | 0/TBD | Not started | - |
