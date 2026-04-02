@@ -109,7 +109,13 @@ Features:
 **Depends on**: Phase 5
 **Research**: Likely (Telegram Mini Apps, Leaflet.js)
 **Research topics**: Mini App setup, Leaflet integration, GitHub Pages hosting, Telegram WebApp API
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 06-01: Mini App infrastructure (FastAPI, HTML skeleton, bot integration)
+- [ ] 06-02: Map view with Leaflet (markers, popups, controls)
+- [ ] 06-03: List view and search (cards, filtering, sorting)
+- [ ] 06-04: Visited and notes features (database, API, UI)
 
 Features:
 - Interactive map view (Leaflet.js, free)
