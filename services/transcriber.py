@@ -25,6 +25,19 @@ def _get_model():
     return _model
 
 
+def preload_model():
+    """Pre-load Whisper model into memory. Call at startup."""
+    global _model
+    if _model is None:
+        _model = whisper.load_model(config.WHISPER_MODEL)
+    return _model
+
+
+def is_model_ready() -> bool:
+    """Check if Whisper model is loaded and ready."""
+    return _model is not None
+
+
 async def transcribe_audio(audio_path: Path) -> TranscriptionResult:
     """
     Transcribe audio file with language detection and optional English translation.
