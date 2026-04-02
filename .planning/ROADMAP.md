@@ -112,7 +112,7 @@ Features:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 06-01: Mini App infrastructure (FastAPI, HTML skeleton, bot integration)
+- [x] 06-01: Mini App infrastructure (FastAPI, HTML skeleton, bot integration)
 - [ ] 06-02: Map view with Leaflet (markers, popups, controls)
 - [ ] 06-03: List view and search (cards, filtering, sorting)
 - [ ] 06-04: Visited and notes features (database, API, UI)
