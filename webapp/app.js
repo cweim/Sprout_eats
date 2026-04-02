@@ -8,6 +8,12 @@ let map = null;
 let markersLayer = null;
 let userLocationMarker = null;
 
+// Filter state
+let searchQuery = '';
+let activeCategories = new Set();
+let sortBy = 'newest';
+let searchDebounceTimer = null;
+
 // Initialize Telegram WebApp
 function initTelegram() {
     if (window.Telegram && window.Telegram.WebApp) {
@@ -52,7 +58,8 @@ async function fetchPlaces() {
                 place_rating: 4.5,
                 place_rating_count: 120,
                 source_url: 'https://instagram.com/p/example',
-                source_platform: 'instagram'
+                source_platform: 'instagram',
+                created_at: '2026-04-01'
             },
             {
                 id: 2,
@@ -65,7 +72,22 @@ async function fetchPlaces() {
                 place_rating: 4.8,
                 place_rating_count: 250,
                 source_url: 'https://tiktok.com/@user/video/123',
-                source_platform: 'tiktok'
+                source_platform: 'tiktok',
+                created_at: '2026-04-02'
+            },
+            {
+                id: 3,
+                name: 'Sunset Bar',
+                address: '789 Beach Road, Osaka',
+                latitude: 34.6937,
+                longitude: 135.5023,
+                google_place_id: 'ChIJA2xB3rDmAGARo1IV2P6BSD4',
+                place_types: 'bar,night_club',
+                place_rating: 4.2,
+                place_rating_count: 85,
+                source_url: 'https://instagram.com/p/sunset',
+                source_platform: 'instagram',
+                created_at: '2026-03-30'
             }
         ];
     }
@@ -426,6 +448,157 @@ function updateResultsCount(showing, total) {
     }
 }
 
+// Extract unique categories from all places
+function getUniqueCategories() {
+    const categories = new Set();
+    places.forEach(place => {
+        const primary = getPrimaryCategory(place.place_types);
+        if (primary) {
+            categories.add(primary);
+        }
+    });
+    return Array.from(categories).sort();
+}
+
+// Render category filter chips
+function renderFilterChips() {
+    const container = document.getElementById('filter-chips');
+    container.innerHTML = '';
+
+    // "All" chip
+    const allChip = document.createElement('button');
+    allChip.className = 'filter-chip' + (activeCategories.size === 0 ? ' active' : '');
+    allChip.textContent = 'All';
+    allChip.addEventListener('click', () => {
+        activeCategories.clear();
+        applyFilters();
+    });
+    container.appendChild(allChip);
+
+    // Category chips
+    const categories = getUniqueCategories();
+    categories.forEach(category => {
+        const chip = document.createElement('button');
+        chip.className = 'filter-chip' + (activeCategories.has(category) ? ' active' : '');
+        chip.textContent = category.charAt(0).toUpperCase() + category.slice(1);
+        chip.addEventListener('click', () => {
+            if (activeCategories.has(category)) {
+                activeCategories.delete(category);
+            } else {
+                activeCategories.add(category);
+            }
+            applyFilters();
+        });
+        container.appendChild(chip);
+    });
+}
+
+// Filter places by search query
+function filterBySearch(placesToFilter) {
+    if (!searchQuery.trim()) return placesToFilter;
+
+    const query = searchQuery.toLowerCase().trim();
+    return placesToFilter.filter(place => {
+        const name = (place.name || '').toLowerCase();
+        const address = (place.address || '').toLowerCase();
+        return name.includes(query) || address.includes(query);
+    });
+}
+
+// Filter places by categories
+function filterByCategory(placesToFilter) {
+    if (activeCategories.size === 0) return placesToFilter;
+
+    return placesToFilter.filter(place => {
+        const primary = getPrimaryCategory(place.place_types);
+        return primary && activeCategories.has(primary);
+    });
+}
+
+// Sort places
+function sortPlaces(placesToSort) {
+    const sorted = [...placesToSort];
+
+    switch (sortBy) {
+        case 'name':
+            sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            break;
+        case 'rating':
+            sorted.sort((a, b) => (b.place_rating || 0) - (a.place_rating || 0));
+            break;
+        case 'newest':
+        default:
+            // Assume higher ID = newer (or use created_at if available)
+            sorted.sort((a, b) => (b.id || 0) - (a.id || 0));
+            break;
+    }
+
+    return sorted;
+}
+
+// Apply all filters and re-render list
+function applyFilters() {
+    let filtered = [...places];
+
+    // Apply search filter
+    filtered = filterBySearch(filtered);
+
+    // Apply category filter
+    filtered = filterByCategory(filtered);
+
+    // Apply sort
+    filtered = sortPlaces(filtered);
+
+    // Re-render list
+    renderPlacesList(filtered);
+
+    // Update filter chips to show active state
+    renderFilterChips();
+
+    // Update search clear button visibility
+    const clearBtn = document.getElementById('search-clear');
+    clearBtn.style.display = searchQuery.trim() ? 'block' : 'none';
+}
+
+// Setup search functionality
+function setupSearch() {
+    const searchInput = document.getElementById('search-input');
+    const clearBtn = document.getElementById('search-clear');
+
+    // Search input with debounce
+    searchInput.addEventListener('input', (e) => {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(() => {
+            searchQuery = e.target.value;
+            applyFilters();
+        }, 300);
+    });
+
+    // Clear button
+    clearBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        searchQuery = '';
+        applyFilters();
+        searchInput.focus();
+    });
+}
+
+// Setup sort functionality
+function setupSort() {
+    const sortSelect = document.getElementById('sort-select');
+    sortSelect.addEventListener('change', (e) => {
+        sortBy = e.target.value;
+        applyFilters();
+    });
+}
+
+// Setup list controls (search, filters, sort)
+function setupListControls() {
+    setupSearch();
+    setupSort();
+    renderFilterChips();
+}
+
 // Switch view
 function switchView(view) {
     currentView = view;
@@ -481,6 +654,9 @@ async function initApp() {
 
     // Display places on map
     displayPlacesOnMap();
+
+    // Setup list controls (search, filters, sort)
+    setupListControls();
 
     // Render list view
     renderPlacesList(places);
