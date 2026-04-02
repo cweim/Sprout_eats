@@ -310,6 +310,122 @@ function setupMapControls() {
     document.getElementById('btn-fit-all').addEventListener('click', fitAllPlaces);
 }
 
+// Get platform icon/emoji
+function getPlatformIcon(platform) {
+    switch (platform?.toLowerCase()) {
+        case 'instagram': return '📸';
+        case 'tiktok': return '🎵';
+        case 'youtube': return '▶️';
+        default: return '🔗';
+    }
+}
+
+// Get primary category from place types
+function getPrimaryCategory(typesString) {
+    if (!typesString) return null;
+    const firstType = typesString.split(',')[0].trim();
+    return firstType.replace(/_/g, ' ');
+}
+
+// Create a place card element
+function createPlaceCard(place) {
+    const card = document.createElement('div');
+    card.className = 'place-card';
+    card.dataset.placeId = place.id;
+
+    // Name row with platform icon
+    let nameHtml = `<div class="place-card-header">`;
+    nameHtml += `<span class="place-card-name">${place.name}</span>`;
+    nameHtml += `<span class="place-card-platform">${getPlatformIcon(place.source_platform)}</span>`;
+    nameHtml += `</div>`;
+
+    // Address
+    let addressHtml = '';
+    if (place.address) {
+        addressHtml = `<div class="place-card-address">${place.address}</div>`;
+    }
+
+    // Meta row: rating and types
+    let metaHtml = '<div class="place-card-meta">';
+    if (place.place_rating) {
+        const count = place.place_rating_count ? ` (${place.place_rating_count})` : '';
+        metaHtml += `<span class="place-card-rating">⭐ ${place.place_rating}${count}</span>`;
+    }
+    const types = formatPlaceTypes(place.place_types);
+    if (types) {
+        metaHtml += `<span class="place-card-types">${types}</span>`;
+    }
+    metaHtml += '</div>';
+
+    card.innerHTML = nameHtml + addressHtml + metaHtml;
+
+    // Click handler - show on map
+    card.addEventListener('click', () => showPlaceOnMap(place));
+
+    return card;
+}
+
+// Show a specific place on the map
+function showPlaceOnMap(place) {
+    if (!place.latitude || !place.longitude) {
+        showToast("No location data for this place");
+        return;
+    }
+
+    // Switch to map view
+    switchView('map');
+
+    // Find and open the marker for this place
+    setTimeout(() => {
+        markersLayer.eachLayer(marker => {
+            if (marker.placeData && marker.placeData.id === place.id) {
+                // Pan to marker and open popup
+                map.setView([place.latitude, place.longitude], 15);
+                marker.openPopup();
+            }
+        });
+    }, 150);
+}
+
+// Render all place cards in the list
+function renderPlacesList(placesToRender) {
+    const listContainer = document.getElementById('places-list');
+    const noResults = document.getElementById('no-results');
+
+    // Clear existing cards
+    listContainer.innerHTML = '';
+
+    // Check for empty results
+    if (placesToRender.length === 0) {
+        listContainer.style.display = 'none';
+        noResults.style.display = 'flex';
+        updateResultsCount(0, places.length);
+        return;
+    }
+
+    // Show list, hide no-results
+    listContainer.style.display = 'block';
+    noResults.style.display = 'none';
+
+    // Create and append cards
+    placesToRender.forEach(place => {
+        const card = createPlaceCard(place);
+        listContainer.appendChild(card);
+    });
+
+    updateResultsCount(placesToRender.length, places.length);
+}
+
+// Update the results count display
+function updateResultsCount(showing, total) {
+    const countEl = document.getElementById('results-count');
+    if (showing === total) {
+        countEl.textContent = `${total} places`;
+    } else {
+        countEl.textContent = `${showing} of ${total} places`;
+    }
+}
+
 // Switch view
 function switchView(view) {
     currentView = view;
@@ -365,6 +481,9 @@ async function initApp() {
 
     // Display places on map
     displayPlacesOnMap();
+
+    // Render list view
+    renderPlacesList(places);
 
     // Show map view by default
     switchView('map');

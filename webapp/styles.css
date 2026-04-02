@@ -244,16 +244,29 @@ body {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
     cursor: pointer;
     transition: transform 0.15s ease, box-shadow 0.15s ease;
+    min-height: 48px;
 }
 
 .place-card:active {
     transform: scale(0.98);
 }
 
+.place-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 4px;
+}
+
 .place-card-name {
     font-size: 16px;
     font-weight: 600;
-    margin-bottom: 4px;
+    flex: 1;
+}
+
+.place-card-platform {
+    font-size: 14px;
+    margin-left: 8px;
 }
 
 .place-card-address {
@@ -264,7 +277,8 @@ body {
 
 .place-card-meta {
     display: flex;
-    gap: 12px;
+    flex-wrap: wrap;
+    gap: 8px 12px;
     font-size: 13px;
 }
 
