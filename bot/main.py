@@ -16,11 +16,13 @@ from bot.handlers import (
     map_command,
     clear_command,
     delete_command,
+    nearby_command,
     clear_callback,
     action_callback,
     select_place_callback,
     delete_place_callback,
     handle_text,
+    handle_location,
 )
 
 # Configure logging
@@ -36,6 +38,7 @@ async def post_init(application):
     await application.bot.set_my_commands([
         BotCommand("start", "Show welcome message"),
         BotCommand("places", "List all saved places"),
+        BotCommand("nearby", "Find saved places near you"),
         BotCommand("map", "View all places on a map"),
         BotCommand("delete", "Delete a saved place"),
         BotCommand("clear", "Clear all saved places"),
@@ -60,6 +63,7 @@ def main():
     app.add_handler(CommandHandler("map", map_command))
     app.add_handler(CommandHandler("clear", clear_command))
     app.add_handler(CommandHandler("delete", delete_command))
+    app.add_handler(CommandHandler("nearby", nearby_command))
     app.add_handler(CallbackQueryHandler(clear_callback, pattern="^clear_"))
     app.add_handler(CallbackQueryHandler(action_callback, pattern="^action_"))
     app.add_handler(CallbackQueryHandler(select_place_callback, pattern="^select_place_"))
@@ -67,6 +71,9 @@ def main():
 
     # Handle text messages (URLs and place name responses)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    # Handle location messages (for /nearby command)
+    app.add_handler(MessageHandler(filters.LOCATION, handle_location))
 
     logger.info("Starting Discovery Bot...")
     app.run_polling(allowed_updates=["message", "callback_query"])

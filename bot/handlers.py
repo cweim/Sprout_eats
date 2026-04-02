@@ -1,6 +1,7 @@
 import logging
+import math
 from io import BytesIO
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import ContextTypes
 
 import config
@@ -33,6 +34,18 @@ LANGUAGE_NAMES = {
 def get_language_name(code: str) -> str:
     """Get friendly language name from ISO code."""
     return LANGUAGE_NAMES.get(code, code.upper())
+
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate distance between two points in kilometers."""
+    R = 6371  # Earth radius in km
+    d_lat = math.radians(lat2 - lat1)
+    d_lon = math.radians(lon2 - lon1)
+    a = (math.sin(d_lat/2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+         math.sin(d_lon/2) ** 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
 
 
 def format_place_line(place, index: int) -> str:
@@ -659,3 +672,67 @@ async def delete_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("Removed! Your places are tidied up. ✨")
     else:
         await query.edit_message_text("That place was already gone! 👻")
+
+
+async def nearby_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Request location to find nearby saved places."""
+    # Create location request button
+    keyboard = [[KeyboardButton("📍 Share My Location", request_location=True)]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+
+    await update.message.reply_text(
+        "Let's find saved places near you! 🗺️\n\n"
+        "Tap the button below to share your location:",
+        reply_markup=reply_markup
+    )
+
+
+async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle shared location and show nearby places."""
+    location = update.message.location
+    lat, lng = location.latitude, location.longitude
+
+    places = repository.get_all_places()
+    if not places:
+        await update.message.reply_text(
+            "You don't have any saved places yet! 📭\n"
+            "Send me an Instagram or TikTok link to get started.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+
+    # Calculate distances
+    NEARBY_RADIUS = 5  # km
+    nearby = []
+    for place in places:
+        if place.latitude and place.longitude:
+            dist = haversine_distance(lat, lng, place.latitude, place.longitude)
+            if dist <= NEARBY_RADIUS:
+                nearby.append((place, dist))
+
+    # Sort by distance
+    nearby.sort(key=lambda x: x[1])
+
+    if not nearby:
+        await update.message.reply_text(
+            f"No saved places within {NEARBY_RADIUS}km of your location. 🔍\n\n"
+            "Try the /places command to see all your saved spots!",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+
+    # Format response
+    text = f"📍 Found {len(nearby)} place{'s' if len(nearby) != 1 else ''} nearby!\n\n"
+    for place, dist in nearby[:5]:  # Limit to 5
+        dist_str = f"{int(dist * 1000)}m" if dist < 1 else f"{dist:.1f}km"
+        text += f"• {place.name} ({dist_str})\n"
+        if place.address:
+            text += f"  {place.address}\n"
+        text += "\n"
+
+    if len(nearby) > 5:
+        text += f"...and {len(nearby) - 5} more!\n"
+
+    text += "\nOpen the viewer to see them on a map! ✨"
+
+    await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
