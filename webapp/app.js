@@ -4,6 +4,8 @@ const API_URL = ''; // Set to your API URL, e.g., 'http://localhost:8000'
 // State
 let places = [];
 let currentView = 'map';
+let map = null;
+let markersLayer = null;
 
 // Initialize Telegram WebApp
 function initTelegram() {
@@ -90,6 +92,55 @@ function hideEmptyState() {
     document.getElementById('empty-state').style.display = 'none';
 }
 
+// Initialize Leaflet map
+function initMap() {
+    // Create map centered at [0, 0] with low zoom (will fit bounds later)
+    map = L.map('map', {
+        zoomControl: true,
+        attributionControl: true
+    }).setView([0, 0], 2);
+
+    // Add OpenStreetMap tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19
+    }).addTo(map);
+
+    // Create layer group for markers
+    markersLayer = L.layerGroup().addTo(map);
+
+    return map;
+}
+
+// Add markers for all places
+function displayPlacesOnMap() {
+    if (!map || !markersLayer) return;
+
+    // Clear existing markers
+    markersLayer.clearLayers();
+
+    if (places.length === 0) {
+        // No places - show world view
+        map.setView([20, 0], 2);
+        return;
+    }
+
+    // Add marker for each place
+    places.forEach(place => {
+        if (place.latitude && place.longitude) {
+            const marker = L.marker([place.latitude, place.longitude]);
+            marker.placeData = place; // Store place data on marker
+            markersLayer.addLayer(marker);
+        }
+    });
+
+    // Fit map to show all markers
+    if (markersLayer.getLayers().length > 0) {
+        const bounds = markersLayer.getBounds();
+        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
+    }
+}
+
 // Switch view
 function switchView(view) {
     currentView = view;
@@ -103,8 +154,8 @@ function switchView(view) {
     document.getElementById('list-view').classList.toggle('active', view === 'list');
 
     // Invalidate map size when switching to map view
-    if (view === 'map' && window.map) {
-        setTimeout(() => window.map.invalidateSize(), 100);
+    if (view === 'map' && map) {
+        setTimeout(() => map.invalidateSize(), 100);
     }
 }
 
@@ -122,6 +173,9 @@ async function initApp() {
     // Setup view toggle
     setupViewToggle();
 
+    // Initialize map
+    initMap();
+
     // Show loading
     showLoading();
 
@@ -136,6 +190,9 @@ async function initApp() {
         showEmptyState();
         return;
     }
+
+    // Display places on map
+    displayPlacesOnMap();
 
     // Show map view by default
     switchView('map');
