@@ -98,15 +98,22 @@ body {
     display: flex;
 }
 
+/* List controls container */
+.list-controls {
+    padding: 12px 16px 8px;
+    background-color: var(--bg-color);
+    border-bottom: 1px solid var(--secondary-bg);
+}
+
 /* Search bar */
 .search-bar {
-    padding: 12px 16px;
-    background-color: var(--bg-color);
+    position: relative;
+    margin-bottom: 10px;
 }
 
 #search-input {
     width: 100%;
-    padding: 10px 16px;
+    padding: 10px 40px 10px 16px;
     border: none;
     background-color: var(--secondary-bg);
     border-radius: 20px;
@@ -116,6 +123,107 @@ body {
 }
 
 #search-input::placeholder {
+    color: var(--hint-color);
+}
+
+.search-clear-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    border: none;
+    background-color: var(--hint-color);
+    color: var(--bg-color);
+    border-radius: 50%;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+}
+
+.search-clear-btn:hover {
+    opacity: 1;
+}
+
+/* Filter chips */
+.filter-chips {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.filter-chips::-webkit-scrollbar {
+    display: none;
+}
+
+.filter-chip {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    border: none;
+    background-color: var(--secondary-bg);
+    color: var(--text-color);
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.filter-chip.active {
+    background-color: var(--button-color);
+    color: var(--button-text-color);
+}
+
+.filter-chip:active {
+    transform: scale(0.95);
+}
+
+/* Sort controls */
+.sort-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 8px;
+}
+
+.results-count {
+    font-size: 13px;
+    color: var(--hint-color);
+}
+
+.sort-select {
+    padding: 6px 12px;
+    border: 1px solid var(--secondary-bg);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    border-radius: 8px;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+}
+
+/* No results state */
+.no-results {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 32px;
+    text-align: center;
+}
+
+.no-results p {
+    font-size: 15px;
+    margin-bottom: 8px;
+}
+
+.no-results .hint {
+    font-size: 13px;
     color: var(--hint-color);
 }
 

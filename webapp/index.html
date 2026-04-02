@@ -36,11 +36,29 @@
 
         <!-- List View -->
         <div id="list-view" class="view">
-            <div class="search-bar">
-                <input type="text" id="search-input" placeholder="Search places...">
+            <div class="list-controls">
+                <div class="search-bar">
+                    <input type="text" id="search-input" placeholder="Search places...">
+                    <button id="search-clear" class="search-clear-btn" style="display: none;">×</button>
+                </div>
+                <div id="filter-chips" class="filter-chips">
+                    <!-- Category chips will be inserted here -->
+                </div>
+                <div class="sort-controls">
+                    <span class="results-count" id="results-count"></span>
+                    <select id="sort-select" class="sort-select">
+                        <option value="newest">Newest</option>
+                        <option value="name">Name A-Z</option>
+                        <option value="rating">Top Rated</option>
+                    </select>
+                </div>
             </div>
             <div id="places-list">
                 <!-- Place cards will be inserted here -->
+            </div>
+            <div id="no-results" class="no-results" style="display: none;">
+                <p>No places match your search</p>
+                <p class="hint">Try a different search term or clear filters</p>
             </div>
         </div>
 
