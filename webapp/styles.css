@@ -290,6 +290,13 @@ body {
     color: var(--hint-color);
 }
 
+.place-card-distance {
+    font-size: 12px;
+    color: var(--link-color);
+    font-weight: 500;
+    margin-top: 6px;
+}
+
 /* Loading state */
 .loading-state {
     position: absolute;

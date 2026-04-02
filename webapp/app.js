@@ -232,7 +232,7 @@ function createPopupContent(place) {
         html += `<div class="place-popup-address">${place.address}</div>`;
     }
 
-    // Meta info (rating and types)
+    // Meta info (rating, types, distance)
     let metaHtml = '';
     if (place.place_rating) {
         const ratingCount = place.place_rating_count ? ` (${place.place_rating_count})` : '';
@@ -242,6 +242,11 @@ function createPopupContent(place) {
     if (types) {
         if (metaHtml) metaHtml += ' · ';
         metaHtml += `<span>${types}</span>`;
+    }
+    const popupDistance = getPlaceDistance(place);
+    if (popupDistance !== null) {
+        if (metaHtml) metaHtml += ' · ';
+        metaHtml += `<span>📍 ${formatDistance(popupDistance)}</span>`;
     }
     if (metaHtml) {
         html += `<div class="place-popup-meta">${metaHtml}</div>`;
@@ -477,6 +482,13 @@ function createPlaceCard(place) {
     }
     metaHtml += '</div>';
 
+    // Distance display (if user location available)
+    let distanceHtml = '';
+    const distance = getPlaceDistance(place);
+    if (distance !== null) {
+        distanceHtml = `<div class="place-card-distance">📍 ${formatDistance(distance)} away</div>`;
+    }
+
     // Footer with visited badge and notes indicator
     let footerHtml = '';
     if (place.is_visited || place.notes) {
@@ -490,7 +502,7 @@ function createPlaceCard(place) {
         footerHtml += '</div>';
     }
 
-    card.innerHTML = nameHtml + addressHtml + metaHtml + footerHtml;
+    card.innerHTML = nameHtml + addressHtml + metaHtml + distanceHtml + footerHtml;
 
     // Click handler - show on map
     card.addEventListener('click', () => showPlaceOnMap(place));
