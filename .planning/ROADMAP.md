@@ -114,7 +114,7 @@ Features:
 Plans:
 - [x] 06-01: Mini App infrastructure (FastAPI, HTML skeleton, bot integration)
 - [x] 06-02: Map view with Leaflet (markers, popups, controls)
-- [ ] 06-03: List view and search (cards, filtering, sorting)
+- [x] 06-03: List view and search (cards, filtering, sorting)
 - [ ] 06-04: Visited and notes features (database, API, UI)
 
 Features:
@@ -174,7 +174,7 @@ Contents:
 | 3. Multi-Place Support | 2/2 | Complete | 2026-04-01 |
 | 4. Enhanced Metadata | 3/3 | Complete | 2026-04-01 |
 | 5. Language Support | 2/2 | Complete | 2026-04-02 |
-| 6. Interactive Viewer | 2/4 | In progress | - |
+| 6. Interactive Viewer | 3/4 | In progress | - |
 | 7. Proximity Features | 0/TBD | Not started | - |
 | 8. Performance | 0/TBD | Not started | - |
 | 9. Documentation | 0/TBD | Not started | - |
