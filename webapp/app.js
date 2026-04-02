@@ -17,6 +17,58 @@ let searchDebounceTimer = null;
 // Notes modal state
 let currentEditingPlaceId = null;
 
+// Location state
+let userLocation = null;
+
+// ========== DISTANCE UTILITIES ==========
+
+// Calculate distance between two points using Haversine formula
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c; // Distance in km
+}
+
+// Format distance for display
+function formatDistance(km) {
+    if (km < 1) return `${Math.round(km * 1000)}m`;
+    return `${km.toFixed(1)}km`;
+}
+
+// Get distance from user to a place (returns null if no user location)
+function getPlaceDistance(place) {
+    if (!userLocation || !place.latitude || !place.longitude) return null;
+    return calculateDistance(userLocation.lat, userLocation.lng, place.latitude, place.longitude);
+}
+
+// Request user location silently on app init
+function requestUserLocation() {
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            userLocation = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+            };
+            console.log('User location acquired:', userLocation);
+            // Re-render with distances
+            applyFilters();
+            displayPlacesOnMap();
+        },
+        (error) => {
+            // Silently fail - user can manually request location later
+            console.log('Location not available:', error.message);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+}
+
 // Initialize Telegram WebApp
 function initTelegram() {
     if (window.Telegram && window.Telegram.WebApp) {
@@ -317,6 +369,9 @@ function goToMyLocation() {
         (position) => {
             const { latitude, longitude } = position.coords;
 
+            // Store user location for distance calculations
+            userLocation = { lat: latitude, lng: longitude };
+
             // Remove existing user marker
             if (userLocationMarker) {
                 map.removeLayer(userLocationMarker);
@@ -338,6 +393,10 @@ function goToMyLocation() {
             map.setView([latitude, longitude], 14);
 
             showToast("Here you are!");
+
+            // Re-render views with distances
+            applyFilters();
+            displayPlacesOnMap();
         },
         (error) => {
             let message = "Couldn't get your location";
@@ -577,6 +636,17 @@ function sortPlaces(placesToSort) {
             break;
         case 'rating':
             sorted.sort((a, b) => (b.place_rating || 0) - (a.place_rating || 0));
+            break;
+        case 'distance':
+            if (!userLocation) {
+                showToast("Enable location to sort by distance");
+                return sorted; // Return unsorted if no location
+            }
+            sorted.sort((a, b) => {
+                const distA = getPlaceDistance(a) ?? Infinity;
+                const distB = getPlaceDistance(b) ?? Infinity;
+                return distA - distB;
+            });
             break;
         case 'newest':
         default:
@@ -840,6 +910,9 @@ async function initApp() {
 
     // Display places on map
     displayPlacesOnMap();
+
+    // Request user location (non-blocking)
+    requestUserLocation();
 
     // Setup list controls (search, filters, sort)
     setupListControls();
