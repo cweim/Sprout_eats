@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Discovery Bot</title>
+
+    <!-- Telegram WebApp SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <!-- Leaflet.js for maps (used in next plan) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- App styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="app-header">
+        <h1>My Places</h1>
+        <div class="view-toggle">
+            <button id="btn-map" class="toggle-btn active">Map</button>
+            <button id="btn-list" class="toggle-btn">List</button>
+        </div>
+    </header>
+
+    <main class="app-main">
+        <!-- Map View -->
+        <div id="map-view" class="view active">
+            <div id="map"></div>
+        </div>
+
+        <!-- List View -->
+        <div id="list-view" class="view">
+            <div class="search-bar">
+                <input type="text" id="search-input" placeholder="Search places...">
+            </div>
+            <div id="places-list">
+                <!-- Place cards will be inserted here -->
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="loading-state">
+            <div class="loading-spinner"></div>
+            <p>Loading your places...</p>
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="empty-state" style="display: none;">
+            <p>No places saved yet!</p>
+            <p class="hint">Send a video link to the bot to get started.</p>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
