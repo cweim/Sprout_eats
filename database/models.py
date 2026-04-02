@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, create_engine
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 import config
@@ -37,6 +37,10 @@ class Place(Base):
     source_language = Column(String)  # ISO code like "en", "ja", "ko"
     source_transcript = Column(String)  # Original transcription text
     source_transcript_en = Column(String)  # English translation (if different)
+
+    # User interaction fields
+    is_visited = Column(Boolean, default=False)  # Has user visited this place?
+    notes = Column(String, nullable=True)  # User's personal notes
 
     def __repr__(self):
         return f"<Place(name='{self.name}', address='{self.address}')>"

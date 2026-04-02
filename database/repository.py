@@ -94,3 +94,30 @@ def delete_place(place_id: int) -> bool:
             session.commit()
             return True
         return False
+
+
+def update_place(place_id: int, **kwargs) -> Optional[Place]:
+    """
+    Update a place with the given fields.
+
+    Args:
+        place_id: The database ID of the place to update.
+        **kwargs: Fields to update (is_visited, notes, etc.)
+
+    Returns:
+        Updated Place object, or None if place not found.
+    """
+    with SessionLocal() as session:
+        place = session.query(Place).filter_by(id=place_id).first()
+        if not place:
+            return None
+
+        # Update allowed fields
+        allowed_fields = {'is_visited', 'notes'}
+        for key, value in kwargs.items():
+            if key in allowed_fields and hasattr(place, key):
+                setattr(place, key, value)
+
+        session.commit()
+        session.refresh(place)
+        return place
