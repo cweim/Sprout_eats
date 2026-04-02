@@ -19,6 +19,7 @@ let currentEditingPlaceId = null;
 
 // Location state
 let userLocation = null;
+let nearbyAlertShown = false;
 
 // ========== DISTANCE UTILITIES ==========
 
@@ -46,6 +47,24 @@ function getPlaceDistance(place) {
     return calculateDistance(userLocation.lat, userLocation.lng, place.latitude, place.longitude);
 }
 
+// Check for nearby places and show alert (once per session)
+function checkNearbyPlaces() {
+    if (!userLocation || places.length === 0 || nearbyAlertShown) return;
+
+    const NEARBY_RADIUS_KM = 1; // 1km radius
+    const nearbyPlaces = places.filter(p => {
+        const dist = getPlaceDistance(p);
+        return dist !== null && dist <= NEARBY_RADIUS_KM;
+    });
+
+    if (nearbyPlaces.length > 0) {
+        nearbyAlertShown = true;
+        hapticFeedback('medium');
+        const plural = nearbyPlaces.length === 1 ? 'place' : 'places';
+        showToast(`📍 ${nearbyPlaces.length} saved ${plural} within 1km!`);
+    }
+}
+
 // Request user location silently on app init
 function requestUserLocation() {
     if (!navigator.geolocation) return;
@@ -60,6 +79,8 @@ function requestUserLocation() {
             // Re-render with distances
             applyFilters();
             displayPlacesOnMap();
+            // Check for nearby places
+            checkNearbyPlaces();
         },
         (error) => {
             // Silently fail - user can manually request location later
