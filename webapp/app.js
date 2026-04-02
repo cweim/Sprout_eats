@@ -6,6 +6,7 @@ let places = [];
 let currentView = 'map';
 let map = null;
 let markersLayer = null;
+let userLocationMarker = null;
 
 // Initialize Telegram WebApp
 function initTelegram() {
@@ -221,6 +222,94 @@ function displayPlacesOnMap() {
     }
 }
 
+// Show toast message
+function showToast(message) {
+    // Remove existing toast
+    const existing = document.querySelector('.toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // Animate in
+    setTimeout(() => toast.classList.add('show'), 10);
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Go to user's location
+function goToMyLocation() {
+    if (!navigator.geolocation) {
+        showToast("Location not supported in this browser");
+        return;
+    }
+
+    showToast("Finding your location...");
+
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const { latitude, longitude } = position.coords;
+
+            // Remove existing user marker
+            if (userLocationMarker) {
+                map.removeLayer(userLocationMarker);
+            }
+
+            // Create custom icon for user location
+            const userIcon = L.divIcon({
+                className: 'user-location-marker',
+                html: '<div class="user-marker-dot"></div>',
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
+            });
+
+            // Add marker at user location
+            userLocationMarker = L.marker([latitude, longitude], { icon: userIcon });
+            userLocationMarker.addTo(map);
+
+            // Pan to user location
+            map.setView([latitude, longitude], 14);
+
+            showToast("Here you are!");
+        },
+        (error) => {
+            let message = "Couldn't get your location";
+            if (error.code === error.PERMISSION_DENIED) {
+                message = "Location access denied. Check your settings!";
+            }
+            showToast(message);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+}
+
+// Fit map to show all places
+function fitAllPlaces() {
+    if (!map || !markersLayer) return;
+
+    const layers = markersLayer.getLayers();
+    if (layers.length === 0) {
+        showToast("No places to show");
+        return;
+    }
+
+    const bounds = markersLayer.getBounds();
+    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
+    showToast(`Showing all ${layers.length} places`);
+}
+
+// Setup map control buttons
+function setupMapControls() {
+    document.getElementById('btn-my-location').addEventListener('click', goToMyLocation);
+    document.getElementById('btn-fit-all').addEventListener('click', fitAllPlaces);
+}
+
 // Switch view
 function switchView(view) {
     currentView = view;
@@ -255,6 +344,9 @@ async function initApp() {
 
     // Initialize map
     initMap();
+
+    // Setup map controls
+    setupMapControls();
 
     // Show loading
     showLoading();
