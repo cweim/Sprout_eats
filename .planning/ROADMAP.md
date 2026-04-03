@@ -23,7 +23,7 @@ None
 - [x] **Phase 6: Interactive Viewer** - Telegram Mini App with map, list, search, and links
 - [x] **Phase 7: Proximity Features** - Nearby alerts and distance-based grouping
 - [x] **Phase 8: Performance** - Pre-load Whisper model on startup
-- [ ] **Phase 9: Documentation** - README with setup instructions
+- [x] **Phase 9: Documentation** - README with setup instructions
 
 ## Phase Details
 
@@ -163,7 +163,10 @@ Features:
 **Goal**: README with complete setup instructions
 **Depends on**: Phase 8
 **Research**: Unlikely (documenting what exists)
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [x] 09-01: README documentation (overview, requirements, installation, usage, deployment)
 
 Contents:
 - Project overview
@@ -185,4 +188,4 @@ Contents:
 | 6. Interactive Viewer | 4/4 | Complete | 2026-04-02 |
 | 7. Proximity Features | 2/2 | Complete | 2026-04-03 |
 | 8. Performance | 1/1 | Complete | 2026-04-03 |
-| 9. Documentation | 0/TBD | Not started | - |
+| 9. Documentation | 1/1 | Complete | 2026-04-03 |
