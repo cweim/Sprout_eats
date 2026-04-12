@@ -12,12 +12,12 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- App styles -->
-    <link rel="stylesheet" href="styles.css">
+    <!-- App styles - Playful & Warm theme -->
+    <link rel="stylesheet" href="styles.css?v=16">
 </head>
 <body>
     <header class="app-header">
-        <h1>My Places</h1>
+        <h1>🌱 My Places</h1>
         <div class="view-toggle">
             <button id="btn-map" class="toggle-btn active">Map</button>
             <button id="btn-list" class="toggle-btn">List</button>
@@ -28,6 +28,17 @@
         <!-- Map View -->
         <div id="map-view" class="view active">
             <div id="map"></div>
+            <!-- Map filter panel -->
+            <div class="map-filter-panel">
+                <div class="map-filter-row">
+                    <button class="map-filter-chip active" data-filter="all">All</button>
+                    <button class="map-filter-chip" data-filter="unvisited">To Visit</button>
+                    <button class="map-filter-chip" data-filter="visited">Visited ✓</button>
+                </div>
+                <select id="map-cuisine-filter" class="map-cuisine-select">
+                    <option value="">All cuisines</option>
+                </select>
+            </div>
             <div class="map-controls">
                 <button id="btn-my-location" class="map-control-btn" title="My Location">📍</button>
                 <button id="btn-fit-all" class="map-control-btn" title="Show All Places">🗺️</button>
@@ -37,44 +48,89 @@
         <!-- List View -->
         <div id="list-view" class="view">
             <div class="list-controls">
-                <div class="search-bar">
-                    <input type="text" id="search-input" placeholder="Search places...">
-                    <button id="search-clear" class="search-clear-btn" style="display: none;">×</button>
+                <div class="search-row">
+                    <div class="search-bar">
+                        <input type="text" id="search-input" placeholder="Search places...">
+                        <button id="search-clear" class="search-clear-btn" style="display: none;">×</button>
+                    </div>
+                    <button id="filter-btn" class="filter-btn">
+                        <span class="filter-icon">⚙️</span>
+                        <span class="filter-count" style="display: none;">0</span>
+                    </button>
                 </div>
-                <div id="filter-chips" class="filter-chips">
-                    <!-- Category chips will be inserted here -->
+                <div id="visited-filter" class="visited-filter">
+                    <button class="visited-chip active" data-filter="all">All <span class="chip-count"></span></button>
+                    <button class="visited-chip" data-filter="unvisited">To Visit <span class="chip-count"></span></button>
+                    <button class="visited-chip" data-filter="visited">Visited <span class="chip-count"></span></button>
+                </div>
+                <div id="active-filters" class="active-filters">
+                    <!-- Active filter pills will be inserted here -->
                 </div>
                 <div class="sort-controls">
                     <span class="results-count" id="results-count"></span>
-                    <select id="sort-select" class="sort-select">
-                        <option value="newest">Newest</option>
-                        <option value="name">Name A-Z</option>
-                        <option value="rating">Top Rated</option>
-                        <option value="distance">Nearest</option>
-                    </select>
                 </div>
             </div>
             <div id="places-list">
                 <!-- Place cards will be inserted here -->
             </div>
             <div id="no-results" class="no-results" style="display: none;">
-                <p>No places match your search</p>
-                <p class="hint">Try a different search term or clear filters</p>
+                <p>Nothing here yet!</p>
+                <p class="hint">Try adjusting your filters or discover new places</p>
+                <button id="btn-search-google" class="search-google-btn">🔍 Discover Places</button>
             </div>
         </div>
 
         <!-- Loading State -->
         <div id="loading" class="loading-state">
             <div class="loading-spinner"></div>
-            <p>Loading your places...</p>
+            <p>Growing your collection...</p>
         </div>
 
         <!-- Empty State -->
         <div id="empty-state" class="empty-state" style="display: none;">
-            <p>No places saved yet!</p>
-            <p class="hint">Send a video link to the bot to get started.</p>
+            <p>No places yet!</p>
+            <p class="hint">Send a video link to the bot to start discovering places 🗺️</p>
+            <button id="btn-search-empty" class="search-google-btn">🔍 Discover Places</button>
         </div>
+
+        <!-- Error State -->
+        <div id="error-state" class="error-state" style="display: none;">
+            <p>Oops, hit a snag!</p>
+            <p class="hint" id="error-message">Let's give it another go.</p>
+            <button id="btn-retry" class="retry-btn">Try Again</button>
+        </div>
+
+        <button id="fab-discover" class="fab-discover" title="Discover new places">🔍</button>
+
     </main>
+
+    <!-- Search Google Modal -->
+    <div id="search-modal" class="modal" style="display: none;">
+        <div class="modal-content search-modal-content">
+            <div class="modal-header">
+                <h2>🔍 Discover Places</h2>
+                <button id="search-modal-close" class="modal-close-btn">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="search-modal-input">
+                    <input type="text" id="google-search-input" placeholder="Search restaurants, cafes...">
+                    <button id="google-search-btn" class="search-btn">Search</button>
+                </div>
+                <div id="search-type-chips" class="search-type-chips"></div>
+                <div id="search-results" class="search-results">
+                    <!-- Search results will be inserted here -->
+                </div>
+                <div id="search-loading" class="search-loading" style="display: none;">
+                    <div class="loading-spinner small"></div>
+                    <p>Finding places nearby...</p>
+                </div>
+                <div id="search-empty" class="search-empty" style="display: none;">
+                    <p>No results found</p>
+                    <p class="hint">Try a different search or category 🔍</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Notes Editor Modal -->
     <div id="notes-modal" class="modal" style="display: none;">
@@ -94,6 +150,97 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <!-- Filter Drawer -->
+    <div id="filter-drawer" class="drawer" style="display: none;">
+        <div class="drawer-content">
+            <div class="drawer-header">
+                <h2>Filters</h2>
+                <button id="filter-drawer-close" class="drawer-close-btn">×</button>
+            </div>
+            <div class="drawer-body">
+                <div class="filter-section">
+                    <label class="filter-label">Sort by</label>
+                    <div class="filter-options" id="sort-options">
+                        <button class="filter-option active" data-sort="newest">Newest</button>
+                        <button class="filter-option" data-sort="name">Name A-Z</button>
+                        <button class="filter-option" data-sort="rating">Top Rated</button>
+                        <button class="filter-option" data-sort="distance">Nearest</button>
+                    </div>
+                </div>
+                <div class="filter-section" id="country-section">
+                    <label class="filter-label">Country</label>
+                    <div class="filter-options" id="country-options">
+                        <!-- Country options will be inserted here -->
+                    </div>
+                </div>
+                <div class="filter-section" id="type-section">
+                    <label class="filter-label">Type</label>
+                    <div class="filter-options" id="type-options">
+                        <!-- Type options will be inserted here -->
+                    </div>
+                </div>
+            </div>
+            <div class="drawer-footer">
+                <button id="filter-clear-all" class="drawer-btn secondary">Clear All</button>
+                <button id="filter-apply" class="drawer-btn primary">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Place Overflow Menu -->
+    <div id="place-menu" class="place-menu" style="display: none;">
+        <div class="place-menu-content">
+            <button class="place-menu-item" id="menu-edit">✏️ Edit name & type</button>
+            <button class="place-menu-item danger" id="menu-delete">🗑️ Delete place</button>
+            <button class="place-menu-item cancel" id="menu-cancel">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Review Sheet (Bottom Sheet) -->
+    <div id="review-sheet" class="sheet" style="display: none;">
+        <div class="sheet-content">
+            <div class="sheet-header">
+                <div class="sheet-handle"></div>
+                <h2 id="review-sheet-title">Review</h2>
+                <button id="review-sheet-close" class="sheet-close-btn">×</button>
+            </div>
+            <div class="sheet-body" id="review-sheet-body">
+                <!-- Dishes Section -->
+                <div class="review-section">
+                    <div class="section-header">Dishes</div>
+                    <div id="review-dishes">
+                        <!-- Dish cards inserted here -->
+                    </div>
+                    <button id="add-dish-btn" class="add-dish-btn">+ Add another dish</button>
+                </div>
+
+                <!-- Overall Section -->
+                <div class="review-section">
+                    <div class="section-header">Overall</div>
+                    <div class="overall-rating-row">
+                        <label>Rating</label>
+                        <div id="overall-stars" class="star-rating" data-rating="0"></div>
+                    </div>
+                    <div class="overall-rating-row">
+                        <label>Price</label>
+                        <div id="price-rating" class="price-rating" data-rating="0"></div>
+                        <span id="price-label" class="price-label"></span>
+                    </div>
+                    <div class="overall-remarks-row">
+                        <textarea id="overall-remarks" placeholder="Overall thoughts... (optional)" maxlength="500"></textarea>
+                        <div class="remarks-meta">
+                            <span id="overall-edited" class="edited-timestamp"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="sheet-footer">
+                <button id="delete-review-btn" class="sheet-btn danger" style="display: none;">Delete Review</button>
+                <button id="save-review-btn" class="sheet-btn primary">Save Review</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=29"></script>
 </body>
 </html>
