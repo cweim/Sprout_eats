@@ -31,6 +31,9 @@ from bot.handlers import (
     handle_text,
     handle_location,
     review_conversation_handler,
+    handle_remind_later,
+    handle_remind_stop,
+    handle_dismiss,
 )
 
 # Configure logging
@@ -155,6 +158,11 @@ def main():
     app.add_handler(CallbackQueryHandler(save_selected_callback, pattern="^save_selected$"))
     app.add_handler(CallbackQueryHandler(cancel_selection_callback, pattern="^cancel_selection$"))
     app.add_handler(CallbackQueryHandler(delete_place_callback, pattern="^delete_place_"))
+
+    # Reminder callback handlers
+    app.add_handler(CallbackQueryHandler(handle_remind_later, pattern=r'^remind_later:'))
+    app.add_handler(CallbackQueryHandler(handle_remind_stop, pattern=r'^remind_stop:'))
+    app.add_handler(CallbackQueryHandler(handle_dismiss, pattern=r'^dismiss$'))
 
     # Review conversation handler (must be before generic text handler)
     app.add_handler(review_conversation_handler)

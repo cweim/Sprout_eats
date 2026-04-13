@@ -1230,6 +1230,60 @@ async def handle_review_callback(update: Update, context: ContextTypes.DEFAULT_T
     return REVIEW_DISH_NAME
 
 
+async def handle_remind_later(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle 'Ask Later' button - reschedule reminder."""
+    query = update.callback_query
+    await query.answer()
+
+    # Callback data format: "remind_later:reminder_id"
+    parts = query.data.split(':')
+    if len(parts) != 2:
+        return
+
+    reminder_id = int(parts[1])
+
+    # Reset the reminder to trigger again in 1 hour
+    reminder = repository.reschedule_reminder(reminder_id)
+
+    if reminder:
+        await query.edit_message_text(
+            "No problem! I'll ask again later 😊"
+        )
+    else:
+        await query.edit_message_text(
+            "Got it!"
+        )
+
+
+async def handle_remind_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle 'Don't Ask' button - stop reminders for this place."""
+    query = update.callback_query
+    await query.answer()
+
+    # Callback data format: "remind_stop:place_id"
+    parts = query.data.split(':')
+    if len(parts) != 2:
+        return
+
+    place_id = int(parts[1])
+    user_id = update.effective_user.id
+
+    repository.set_dont_ask_again(place_id, user_id)
+
+    await query.edit_message_text(
+        "Got it, I won't ask about this place again.\n"
+        "You can always review it in the Mini App! 📱"
+    )
+
+
+async def handle_dismiss(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle 'Maybe Later' or dismiss button."""
+    query = update.callback_query
+    await query.answer()
+    # Just acknowledge, don't delete message
+    # The reminder will still fire in 1 hour
+
+
 # Review conversation handler
 review_conversation_handler = ConversationHandler(
     entry_points=[
