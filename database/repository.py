@@ -104,7 +104,7 @@ def update_place(place_id: int, **kwargs) -> Optional[Place]:
 
     Args:
         place_id: The database ID of the place to update.
-        **kwargs: Fields to update (is_visited, notes, etc.)
+        **kwargs: Fields to update (is_visited, notes, name, place_types, etc.)
 
     Returns:
         Updated Place object, or None if place not found.
@@ -115,7 +115,7 @@ def update_place(place_id: int, **kwargs) -> Optional[Place]:
             return None
 
         # Update allowed fields
-        allowed_fields = {'is_visited', 'notes'}
+        allowed_fields = {'is_visited', 'notes', 'name', 'place_types'}
         for key, value in kwargs.items():
             if key in allowed_fields and hasattr(place, key):
                 setattr(place, key, value)
@@ -433,3 +433,45 @@ def set_dont_ask_again(place_id: int, user_id: int) -> None:
         if reminder:
             reminder.dont_ask_again = True
             session.commit()
+        else:
+            # Create a "don't ask" record
+            reminder = ReviewReminder(
+                place_id=place_id,
+                user_id=user_id,
+                visited_at=datetime.utcnow(),
+                reminder_sent=True,
+                dont_ask_again=True
+            )
+            session.add(reminder)
+            session.commit()
+
+
+def get_pending_reminder(place_id: int, user_id: int) -> Optional[ReviewReminder]:
+    """Get pending reminder for place/user if exists."""
+    with SessionLocal() as session:
+        reminder = (
+            session.query(ReviewReminder)
+            .filter(
+                ReviewReminder.place_id == place_id,
+                ReviewReminder.user_id == user_id,
+                ReviewReminder.reminder_sent == False,
+                ReviewReminder.dont_ask_again == False
+            )
+            .first()
+        )
+        if reminder:
+            session.expunge_all()
+        return reminder
+
+
+def reschedule_reminder(reminder_id: int) -> Optional[ReviewReminder]:
+    """Reschedule reminder to fire again in 1 hour."""
+    with SessionLocal() as session:
+        reminder = session.query(ReviewReminder).filter_by(id=reminder_id).first()
+        if reminder:
+            reminder.visited_at = datetime.utcnow()
+            reminder.reminder_sent = False
+            session.commit()
+            session.refresh(reminder)
+            session.expunge_all()
+        return reminder

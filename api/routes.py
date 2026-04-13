@@ -123,6 +123,13 @@ async def update_place(place_id: int, update: PlaceUpdate):
 
     Only non-None fields in the request body will be updated.
     """
+    from datetime import datetime
+
+    # Get the place before update to check visited status change
+    old_place = repository.get_place_by_id(place_id)
+    if not old_place:
+        raise HTTPException(status_code=404, detail="Place not found")
+
     # Build kwargs from non-None fields
     update_data = {}
     if update.name is not None:
@@ -140,6 +147,20 @@ async def update_place(place_id: int, update: PlaceUpdate):
     place = repository.update_place(place_id, **update_data)
     if not place:
         raise HTTPException(status_code=404, detail="Place not found")
+
+    # If place was just marked as visited, create a reminder
+    if update.is_visited is not None and update.is_visited and not old_place.is_visited:
+        # Check if review already exists
+        existing_review = repository.get_review(place_id)
+
+        if not existing_review:
+            # Create reminder for 1 hour from now
+            # For API, we'll use user_id=1 (single-user bot)
+            repository.create_reminder(
+                place_id=place_id,
+                user_id=1,
+                visited_at=datetime.utcnow()
+            )
 
     return {"place": place_to_dict(place)}
 
