@@ -24,6 +24,7 @@ None
 - [x] **Phase 7: Proximity Features** - Nearby alerts and distance-based grouping
 - [x] **Phase 8: Performance** - Pre-load Whisper model on startup
 - [x] **Phase 9: Documentation** - README with setup instructions
+- [x] **Phase 10: Place Reviews** - User reviews with ratings, dishes, photos, and reminders
 
 ## Phase Details
 
@@ -176,6 +177,30 @@ Contents:
 - Usage guide with examples
 - Mini App deployment instructions
 
+### Phase 10: Place Reviews
+**Goal**: Allow users to write and manage reviews for visited places
+**Depends on**: Phase 9
+**Research**: Unlikely (extending existing patterns)
+**Plans**: 5 plans
+
+Plans:
+- [x] 10-01: Database & API foundation (schema, repository, endpoints)
+- [x] 10-02: Review bottom sheet and rating UI components
+- [x] 10-03: Photo upload and display in reviews
+- [x] 10-04: Conversational review flow in Telegram bot
+- [x] 10-05: Automated review reminder system
+
+Features:
+- Review model with overall rating, price rating, remarks
+- ReviewDish model for individual dish ratings
+- ReviewPhoto model for uploading photos (2 per dish, 3 overall)
+- Bottom sheet UI with star ratings and dish sections
+- Telegram bot conversation flow for writing reviews
+- Photo upload from Telegram
+- Automated reminders 1 hour after marking place visited
+- "Ask Later" to postpone, "Don't Ask" to opt out
+- Background job checks every 5 minutes
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -189,3 +214,4 @@ Contents:
 | 7. Proximity Features | 2/2 | Complete | 2026-04-03 |
 | 8. Performance | 1/1 | Complete | 2026-04-03 |
 | 9. Documentation | 1/1 | Complete | 2026-04-03 |
+| 10. Place Reviews | 5/5 | Complete | 2026-04-14 |
