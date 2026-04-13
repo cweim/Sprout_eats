@@ -11,6 +11,7 @@ TEMP_DIR.mkdir(exist_ok=True)
 
 # Telegram
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # For single-user bot, your Telegram user ID
 
 # Google APIs
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
