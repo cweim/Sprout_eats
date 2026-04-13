@@ -1,15 +1,18 @@
 import logging
-from telegram import BotCommand, MenuButtonCommands
+from datetime import timedelta
+from telegram import BotCommand, MenuButtonCommands, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
+    ContextTypes,
     filters,
 )
 
 import config
 from database.models import init_db
+from database import repository
 from services.transcriber import preload_model
 from bot.handlers import (
     start_command,
@@ -36,6 +39,75 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+
+async def check_review_reminders(context: ContextTypes.DEFAULT_TYPE):
+    """Background job to send review reminders."""
+    logger.info("Checking for pending review reminders...")
+
+    # Get reminders that are at least 1 hour old and not sent
+    pending = repository.get_pending_reminders(since_hours=1)
+
+    for reminder in pending:
+        try:
+            # Get place name
+            place = repository.get_place_by_id(reminder.place_id)
+            if not place:
+                continue
+
+            # Check if user already wrote a review
+            existing_review = repository.get_review(reminder.place_id)
+            if existing_review:
+                repository.mark_reminder_sent(reminder.id)
+                continue
+
+            # Send reminder message
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "📝 Write Review",
+                    callback_data=f"review:{reminder.place_id}:{place.name[:50]}"
+                )],
+                [
+                    InlineKeyboardButton(
+                        "Ask Later",
+                        callback_data=f"remind_later:{reminder.id}"
+                    ),
+                    InlineKeyboardButton(
+                        "Don't Ask",
+                        callback_data=f"remind_stop:{reminder.place_id}"
+                    )
+                ]
+            ])
+
+            await context.bot.send_message(
+                chat_id=reminder.user_id,
+                text=f"Hey! How was *{place.name}*? 🍜\n\n"
+                     f"Share your thoughts while it's fresh!",
+                parse_mode='Markdown',
+                reply_markup=keyboard
+            )
+
+            repository.mark_reminder_sent(reminder.id)
+            logger.info(f"Sent review reminder for place {reminder.place_id} to user {reminder.user_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to send reminder {reminder.id}: {e}")
+
+    logger.info(f"Processed {len(pending)} reminders")
+
+
+def setup_reminder_job(application):
+    """Set up the reminder check job to run every 5 minutes."""
+    job_queue = application.job_queue
+
+    # Run every 5 minutes
+    job_queue.run_repeating(
+        check_review_reminders,
+        interval=timedelta(minutes=5),
+        first=timedelta(seconds=30),  # Start 30 seconds after bot starts
+        name='review_reminders'
+    )
+    logger.info("Review reminder job scheduled")
 
 
 async def post_init(application):
@@ -65,6 +137,9 @@ def main():
 
     # Create application
     app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).post_init(post_init).build()
+
+    # Set up reminder job
+    setup_reminder_job(app)
 
     # Add handlers
     app.add_handler(CommandHandler("start", start_command))
