@@ -1,5 +1,5 @@
 import logging
-from telegram import BotCommand
+from telegram import BotCommand, MenuButtonCommands
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -15,15 +15,19 @@ from bot.handlers import (
     start_command,
     places_command,
     map_command,
+    viewer_command,
     clear_command,
     delete_command,
     nearby_command,
     clear_callback,
     action_callback,
-    select_place_callback,
+    toggle_place_callback,
+    save_selected_callback,
+    cancel_selection_callback,
     delete_place_callback,
     handle_text,
     handle_location,
+    review_conversation_handler,
 )
 
 # Configure logging
@@ -37,13 +41,12 @@ logger = logging.getLogger(__name__)
 async def post_init(application):
     """Set up bot commands menu after initialization."""
     await application.bot.set_my_commands([
-        BotCommand("start", "Show welcome message"),
-        BotCommand("places", "List all saved places"),
-        BotCommand("nearby", "Find saved places near you"),
-        BotCommand("map", "View all places on a map"),
-        BotCommand("delete", "Delete a saved place"),
-        BotCommand("clear", "Clear all saved places"),
+        BotCommand("start", "👋 Start here"),
+        BotCommand("viewer", "🗺️ Open my map"),
+        BotCommand("nearby", "📍 Find places near me"),
     ])
+    # Set the menu button to show commands instead of a web app
+    await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
     logger.info("Bot commands menu configured")
 
 
@@ -67,13 +70,19 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("places", places_command))
     app.add_handler(CommandHandler("map", map_command))
+    app.add_handler(CommandHandler("viewer", viewer_command))
     app.add_handler(CommandHandler("clear", clear_command))
     app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(CommandHandler("nearby", nearby_command))
     app.add_handler(CallbackQueryHandler(clear_callback, pattern="^clear_"))
     app.add_handler(CallbackQueryHandler(action_callback, pattern="^action_"))
-    app.add_handler(CallbackQueryHandler(select_place_callback, pattern="^select_place_"))
+    app.add_handler(CallbackQueryHandler(toggle_place_callback, pattern="^toggle_place_"))
+    app.add_handler(CallbackQueryHandler(save_selected_callback, pattern="^save_selected$"))
+    app.add_handler(CallbackQueryHandler(cancel_selection_callback, pattern="^cancel_selection$"))
     app.add_handler(CallbackQueryHandler(delete_place_callback, pattern="^delete_place_"))
+
+    # Review conversation handler (must be before generic text handler)
+    app.add_handler(review_conversation_handler)
 
     # Handle text messages (URLs and place name responses)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
@@ -81,7 +90,7 @@ def main():
     # Handle location messages (for /nearby command)
     app.add_handler(MessageHandler(filters.LOCATION, handle_location))
 
-    logger.info("Starting Discovery Bot...")
+    logger.info("🗺️ Discovery Bot is ready!")
     app.run_polling(allowed_updates=["message", "callback_query"])
 
 
