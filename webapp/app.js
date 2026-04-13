@@ -2491,6 +2491,7 @@ function createDishCard(dish = {}) {
     const name = dish.name || '';
     const rating = dish.rating || 0;
     const remarks = dish.remarks || '';
+    const photos = dish.photos || [];
 
     const card = document.createElement('div');
     card.className = 'dish-card';
@@ -2505,6 +2506,9 @@ function createDishCard(dish = {}) {
             <label>Rating</label>
             <div class="dish-card-stars star-rating" data-rating="${rating}"></div>
         </div>
+        <div class="dish-photos photo-grid small" data-dish-id="${id}">
+            <!-- Photos will be populated by updatePhotoGrid -->
+        </div>
         <div class="dish-remarks">
             <textarea placeholder="Notes about this dish... (optional)" maxlength="300">${remarks}</textarea>
         </div>
@@ -2513,6 +2517,10 @@ function createDishCard(dish = {}) {
     // Initialize star rating for this dish
     const starsContainer = card.querySelector('.dish-card-stars');
     initStarRating(starsContainer);
+
+    // Initialize photo grid (max 2 photos per dish)
+    const photoGrid = card.querySelector('.dish-photos');
+    updatePhotoGrid(photoGrid, photos, 2, id);
 
     return card;
 }
@@ -2584,14 +2592,15 @@ async function openReviewSheet(placeId) {
             const data = await response.json();
             currentReview = data.review;
 
-            // Populate dishes
+            // Populate dishes with photos
             if (currentReview.dishes && currentReview.dishes.length > 0) {
                 currentReview.dishes.forEach(dish => {
                     addDishCard({
                         id: dish.id,
                         name: dish.name,
                         rating: dish.rating,
-                        remarks: dish.remarks
+                        remarks: dish.remarks,
+                        photos: dish.photos || []
                     });
                 });
             } else {
@@ -2603,6 +2612,11 @@ async function openReviewSheet(placeId) {
             document.getElementById('overall-stars').dataset.rating = currentReview.overall_rating;
             document.getElementById('price-rating').dataset.rating = currentReview.price_rating;
             document.getElementById('overall-remarks').value = currentReview.overall_remarks || '';
+
+            // Initialize overall photos grid (max 3 photos)
+            const overallPhotosGrid = document.getElementById('overall-photos');
+            const overallPhotos = (currentReview.photos || []).filter(p => !p.dish_id);
+            updatePhotoGrid(overallPhotosGrid, overallPhotos, 3, null);
 
             // Show edit timestamp
             if (currentReview.updated_at) {
@@ -2622,12 +2636,16 @@ async function openReviewSheet(placeId) {
             document.getElementById('overall-remarks').value = '';
             document.getElementById('overall-edited').textContent = '';
             document.getElementById('delete-review-btn').style.display = 'none';
+            // Initialize empty overall photos grid
+            updatePhotoGrid(document.getElementById('overall-photos'), [], 3, null);
         }
     } catch (error) {
         console.error('Failed to load review:', error);
         currentReview = null;
         addDishCard();
         document.getElementById('delete-review-btn').style.display = 'none';
+        // Initialize empty overall photos grid
+        updatePhotoGrid(document.getElementById('overall-photos'), [], 3, null);
     }
 
     // Initialize rating components
@@ -2725,6 +2743,277 @@ async function deleteReview() {
         console.error('Failed to delete review:', error);
         showToast('Failed to delete review 😅');
     }
+}
+
+// ========== PHOTO UPLOAD & DISPLAY ==========
+
+/**
+ * Compress image to max 1MB while maintaining quality
+ * @param {File} file - Original image file
+ * @param {number} maxSizeKB - Max size in KB (default 1000 = 1MB)
+ * @returns {Promise<Blob>} - Compressed image blob
+ */
+async function compressImage(file, maxSizeKB = 1000) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                // Scale down if too large (max 1920px on longest side)
+                const maxDimension = 1920;
+                if (width > maxDimension || height > maxDimension) {
+                    if (width > height) {
+                        height = Math.round(height * maxDimension / width);
+                        width = maxDimension;
+                    } else {
+                        width = Math.round(width * maxDimension / height);
+                        height = maxDimension;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Start with high quality, reduce if needed
+                let quality = 0.9;
+                const tryCompress = () => {
+                    canvas.toBlob((blob) => {
+                        if (blob.size / 1024 <= maxSizeKB || quality <= 0.1) {
+                            resolve(blob);
+                        } else {
+                            quality -= 0.1;
+                            tryCompress();
+                        }
+                    }, 'image/jpeg', quality);
+                };
+                tryCompress();
+            };
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+/**
+ * Validate image file before processing
+ */
+function validateImageFile(file) {
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+        return { valid: false, error: 'Please select a JPEG, PNG, or WebP image' };
+    }
+    if (file.size > 10 * 1024 * 1024) { // 10MB max raw
+        return { valid: false, error: 'Image too large (max 10MB)' };
+    }
+    return { valid: true };
+}
+
+/**
+ * Upload photo to server
+ */
+async function uploadPhoto(reviewId, file, dishId = null) {
+    // Validate file
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+        showToast(validation.error);
+        return null;
+    }
+
+    // Show uploading state
+    showToast('Uploading photo...');
+
+    try {
+        // Compress image
+        const compressed = await compressImage(file);
+
+        // Create form data
+        const formData = new FormData();
+        formData.append('file', compressed, 'photo.jpg');
+        if (dishId && !String(dishId).startsWith('new-')) {
+            formData.append('dish_id', dishId);
+        }
+
+        // Upload to API
+        const response = await fetch(`${API_URL}/api/reviews/${reviewId}/photos`, {
+            method: 'POST',
+            headers: { 'ngrok-skip-browser-warning': 'true' },
+            body: formData
+        });
+
+        if (response.ok) {
+            const photo = await response.json();
+            showToast('Photo added!');
+            return photo;
+        } else {
+            const error = await response.json();
+            showToast(error.detail || 'Failed to upload photo');
+            return null;
+        }
+    } catch (e) {
+        console.error('Photo upload error:', e);
+        showToast('Error uploading photo');
+        return null;
+    }
+}
+
+/**
+ * Delete photo from server
+ */
+async function deletePhoto(reviewId, photoId) {
+    try {
+        const response = await fetch(
+            `${API_URL}/api/reviews/${reviewId}/photos/${photoId}`,
+            {
+                method: 'DELETE',
+                headers: { 'ngrok-skip-browser-warning': 'true' }
+            }
+        );
+
+        if (response.ok) {
+            showToast('Photo removed');
+            return true;
+        } else {
+            showToast('Failed to remove photo');
+            return false;
+        }
+    } catch (e) {
+        showToast('Error removing photo');
+        return false;
+    }
+}
+
+/**
+ * Update photo grid with photos and add button
+ */
+function updatePhotoGrid(container, photos, maxPhotos, dishId = null) {
+    container.innerHTML = '';
+
+    // Add existing photos
+    photos.forEach(photo => {
+        const thumb = document.createElement('div');
+        thumb.className = 'photo-thumb';
+        thumb.dataset.photoId = photo.id;
+        thumb.innerHTML = `
+            <img src="${photo.url}" alt="">
+            <button type="button" class="photo-delete-btn">×</button>
+        `;
+
+        // Delete handler
+        thumb.querySelector('.photo-delete-btn').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (!currentReview?.id) return;
+            if (await deletePhoto(currentReview.id, photo.id)) {
+                thumb.remove();
+                // Show add button if under limit
+                if (container.querySelectorAll('.photo-thumb').length < maxPhotos) {
+                    addPhotoButton(container, maxPhotos, dishId);
+                }
+            }
+        });
+
+        // Tap to view full size
+        thumb.querySelector('img').addEventListener('click', () => {
+            viewPhotoFullscreen(photo.url);
+        });
+
+        container.appendChild(thumb);
+    });
+
+    // Add "+" button if under limit
+    if (photos.length < maxPhotos) {
+        addPhotoButton(container, maxPhotos, dishId);
+    }
+}
+
+/**
+ * Add photo upload button to grid
+ */
+function addPhotoButton(container, maxPhotos, dishId) {
+    // Don't add if already at limit or button exists
+    if (container.querySelector('.photo-add-btn')) return;
+    if (container.querySelectorAll('.photo-thumb').length >= maxPhotos) return;
+
+    const label = document.createElement('label');
+    label.className = 'photo-add-btn';
+    label.innerHTML = `
+        <input type="file" accept="image/*" hidden>
+        <span>+</span>
+    `;
+
+    label.querySelector('input').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Need review to be saved first
+        if (!currentReview?.id) {
+            showToast('Please save your review first to add photos');
+            e.target.value = '';
+            return;
+        }
+
+        const photo = await uploadPhoto(currentReview.id, file, dishId);
+        if (photo) {
+            // Add photo to grid
+            const thumb = document.createElement('div');
+            thumb.className = 'photo-thumb';
+            thumb.dataset.photoId = photo.id;
+            thumb.innerHTML = `
+                <img src="${photo.url}" alt="">
+                <button type="button" class="photo-delete-btn">×</button>
+            `;
+
+            // Add delete handler
+            thumb.querySelector('.photo-delete-btn').addEventListener('click', async (evt) => {
+                evt.stopPropagation();
+                if (await deletePhoto(currentReview.id, photo.id)) {
+                    thumb.remove();
+                    if (container.querySelectorAll('.photo-thumb').length < maxPhotos) {
+                        addPhotoButton(container, maxPhotos, dishId);
+                    }
+                }
+            });
+
+            // Add fullscreen handler
+            thumb.querySelector('img').addEventListener('click', () => {
+                viewPhotoFullscreen(photo.url);
+            });
+
+            container.insertBefore(thumb, label);
+
+            // Hide add button if at limit
+            if (container.querySelectorAll('.photo-thumb').length >= maxPhotos) {
+                label.remove();
+            }
+        }
+
+        // Reset input
+        e.target.value = '';
+    });
+
+    container.appendChild(label);
+}
+
+/**
+ * View photo in fullscreen overlay
+ */
+function viewPhotoFullscreen(url) {
+    const overlay = document.createElement('div');
+    overlay.className = 'photo-fullscreen';
+    overlay.innerHTML = `
+        <img src="${url}" alt="">
+        <button class="photo-fullscreen-close">×</button>
+    `;
+    overlay.addEventListener('click', () => overlay.remove());
+    document.body.appendChild(overlay);
 }
 
 // Setup review sheet

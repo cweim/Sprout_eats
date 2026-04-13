@@ -13,7 +13,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <!-- App styles - Playful & Warm theme -->
-    <link rel="stylesheet" href="styles.css?v=16">
+    <link rel="stylesheet" href="styles.css?v=17">
 </head>
 <body>
     <header class="app-header">
@@ -226,6 +226,12 @@
                         <div id="price-rating" class="price-rating" data-rating="0"></div>
                         <span id="price-label" class="price-label"></span>
                     </div>
+                    <div class="overall-photos-section">
+                        <label class="section-sublabel">Place Photos (ambiance, etc.)</label>
+                        <div id="overall-photos" class="photo-grid">
+                            <!-- Photos inserted here -->
+                        </div>
+                    </div>
                     <div class="overall-remarks-row">
                         <textarea id="overall-remarks" placeholder="Overall thoughts... (optional)" maxlength="500"></textarea>
                         <div class="remarks-meta">
@@ -241,6 +247,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=29"></script>
+    <script src="app.js?v=30"></script>
 </body>
 </html>
