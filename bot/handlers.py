@@ -1215,6 +1215,23 @@ async def handle_review_callback(update: Update, context: ContextTypes.DEFAULT_T
     place_id = int(parts[1])
     place_name = parts[2]
 
+    # Check if place is marked as visited
+    repo = repository.PlaceRepository()
+    place = repo.get_place_by_id(place_id)
+
+    if not place:
+        await query.message.reply_text("❌ Place not found!")
+        return ConversationHandler.END
+
+    if not place.is_visited:
+        await query.message.reply_text(
+            f"📍 Please mark *{place_name}* as visited first before writing a review!\n\n"
+            f"You can mark it as visited in the Mini App viewer.",
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    # Place is visited, proceed with review
     await query.message.reply_text(
         f"Great! Let's review *{place_name}* 📝\n\n"
         f"What did you order? (type dish name, or 'done' when finished)",
