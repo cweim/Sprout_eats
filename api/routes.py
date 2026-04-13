@@ -1,3 +1,4 @@
+import logging
 import math
 import asyncio
 import httpx
@@ -9,6 +10,8 @@ from pydantic import BaseModel, Field
 import config
 from database import repository
 from services.places import search_place
+
+logger = logging.getLogger(__name__)
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -451,64 +454,63 @@ async def upload_photo(
     # Read file content
     content = await file.read()
 
-    # Send to Telegram Bot API
+    # Validate Telegram configuration
     if not config.TELEGRAM_BOT_TOKEN:
         raise HTTPException(status_code=500, detail="Telegram bot token not configured")
 
-    async with httpx.AsyncClient() as client:
-        # Use sendPhoto to a dummy chat to get file_id
-        # We'll send to the bot itself (which creates a saved message)
-        # Actually, we need to use Telegram's getMe first to get bot's chat_id,
-        # or use a dedicated storage chat. For simplicity, we'll just store the photo.
+    if not config.TELEGRAM_CHAT_ID:
+        raise HTTPException(
+            status_code=500,
+            detail="TELEGRAM_CHAT_ID not configured in .env (get your chat ID from @userinfobot)"
+        )
 
-        # Alternative: Use sendDocument which returns file_id
-        # We need a chat_id to send to. For single-user bot, we can use user_id from review
-        # But actually, we should use a different approach.
+    # Upload photo to Telegram to get file_id
+    telegram_file_id = None
+    file_url = None
 
-        # For MVP, let's send the photo back to the same user who created the review
-        # This requires knowing their chat_id. Since it's single-user, we'll use
-        # a workaround: store the image directly and use Telegram's getFile later.
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            # Send photo to Telegram Bot API
+            url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendPhoto"
 
-        # Actually, the cleanest approach is to use InputMedia and sendPhoto
-        # to the user, then extract file_id from the response.
+            files = {"photo": (file.filename or "photo.jpg", content, file.content_type or "image/jpeg")}
+            data = {"chat_id": config.TELEGRAM_CHAT_ID}
 
-        # For now, let's just store locally and return a URL
-        # This is a simplified implementation for the MVP
+            response = await client.post(url, data=data, files=files)
+            result = response.json()
 
-        # Use bot's sendPhoto to get a file_id
-        # We'll need to get the user's chat_id somehow - for single-user bot,
-        # we can assume it's stored somewhere or use a config value
+            if not result.get("ok"):
+                logger.error(f"Telegram API error: {result}")
+                raise HTTPException(status_code=500, detail=f"Failed to upload to Telegram: {result.get('description', 'Unknown error')}")
 
-        # Simplified: Upload to Telegram using bot.send_photo
-        url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendPhoto"
+            # Extract file_id from the largest photo size
+            photos = result["result"]["photo"]
+            telegram_file_id = photos[-1]["file_id"]  # Largest size
 
-        # We need a chat_id - use a placeholder for now
-        # In production, this would be the user's chat_id
-        # For single-user bot, could be stored in config
+            # Get file path from Telegram
+            get_file_url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getFile"
+            file_response = await client.get(get_file_url, params={"file_id": telegram_file_id})
+            file_result = file_response.json()
 
-        # Actually, let's just store a placeholder and generate URL later
-        # This is a simplification for the MVP
+            if not file_result.get("ok"):
+                logger.error(f"Failed to get file path: {file_result}")
+                raise HTTPException(status_code=500, detail="Failed to get photo file path")
 
-        # For now, we'll generate a unique file_id placeholder
-        # and the actual Telegram integration will be done in a later plan
-        import hashlib
-        import time
-        file_hash = hashlib.md5(content).hexdigest()
-        telegram_file_id = f"placeholder_{file_hash}_{int(time.time())}"
+            file_path = file_result["result"]["file_path"]
 
-        # In a real implementation, we'd do:
-        # files = {"photo": (file.filename, content, file.content_type)}
-        # data = {"chat_id": user_chat_id}
-        # response = await client.post(url, data=data, files=files)
-        # result = response.json()
-        # telegram_file_id = result["result"]["photo"][-1]["file_id"]
+            # Construct download URL
+            file_url = f"https://api.telegram.org/file/bot{config.TELEGRAM_BOT_TOKEN}/{file_path}"
 
-    # Store photo in database
+        except httpx.RequestError as e:
+            logger.error(f"Failed to upload photo to Telegram: {e}")
+            raise HTTPException(status_code=500, detail="Failed to upload photo to Telegram")
+
+    # Store photo in database with file_id
     photo = repository.add_photo(
         review_id=review_id,
         telegram_file_id=telegram_file_id,
         dish_id=dish_id,
-        file_url=None  # Will be populated when we have proper Telegram integration
+        file_url=file_url
     )
 
     if not photo:
@@ -518,6 +520,7 @@ async def upload_photo(
         "photo": {
             "id": photo.id,
             "url": photo.file_url,
+            "telegram_file_id": photo.telegram_file_id,
             "dish_id": photo.dish_id
         },
         "message": "Photo uploaded!"
