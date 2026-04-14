@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Save places from travel videos so you never lose track of discoveries
-**Current focus:** Milestone v1.1 COMPLETE
+**Current focus:** Milestone v1.1 - Phase 11 (Review History)
 
 ## Current Position
 
-Phase: 10 of 10 (Place Reviews) — COMPLETE
-Plan: 5 of 5 in current phase — COMPLETE
-Status: Complete
-Last activity: 2026-04-14 — Completed 10-05 (Review Reminder System)
+Phase: 11 of 11 (Review History)
+Plan: Not started (ready to execute 11-01)
+Status: Ready to execute
+Last activity: 2026-04-14 — Phase 11 planned
 
-Progress: ██████████ 100% — Milestone v1.1 COMPLETE + Phase 10 COMPLETE
+Progress: ██████████░ 25/26 plans complete (Phase 11 added)
 
 ## Performance Metrics
 
@@ -37,10 +37,11 @@ Progress: ██████████ 100% — Milestone v1.1 COMPLETE + Phas
 | 8. Performance | 1 | ~3 min | ~3 min |
 | 9. Documentation | 1 | ~4 min | ~4 min |
 | 10. Place Reviews | 5/5 | ~41 min | ~8.2 min |
+| 11. Review History | 0/1 | - | - |
 
 **Milestone Summary:**
-- All 10 phases complete
-- 25 plans executed
+- 10 phases complete, Phase 11 in progress
+- 25 plans executed, 1 plan remaining
 - ~101 min total execution time
 
 ## Accumulated Context
@@ -75,12 +76,12 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-14
-Stopped at: Phase 10 Complete (Review Reminder System)
+Stopped at: Phase 11 planned (Review History)
 Resume file: None
 
-## Milestone v1.1 Complete
+## Milestone v1.1 Status
 
-All phases delivered:
+Phases 1-10 delivered:
 - Testing Foundation (pytest infrastructure)
 - Reliability (retry logic, timeouts)
 - Multi-Place Support (save multiple, delete individual)
@@ -91,3 +92,6 @@ All phases delivered:
 - Performance (Whisper preload)
 - Documentation (README)
 - Place Reviews (conversational flow, photos, reminders) ✅
+
+Phase 11 in progress:
+- Review History (reviews tab, indicators) — Ready to execute

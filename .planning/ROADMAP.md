@@ -25,6 +25,8 @@ None
 - [x] **Phase 8: Performance** - Pre-load Whisper model on startup
 - [x] **Phase 9: Documentation** - README with setup instructions
 - [x] **Phase 10: Place Reviews** - User reviews with ratings, dishes, photos, and reminders
+- [ ] **Phase 11: Review History** - Reviews tab with sortable feed and indicators
+- [x] **Phase 10: Place Reviews** - User reviews with ratings, dishes, photos, and reminders
 
 ## Phase Details
 
@@ -201,6 +203,25 @@ Features:
 - "Ask Later" to postpone, "Don't Ask" to opt out
 - Background job checks every 5 minutes
 
+### Phase 11: Review History
+**Goal**: Add Reviews history page with browsable review feed and review indicators
+**Depends on**: Phase 10
+**Research**: Unlikely (UI extension of existing review features)
+**Plans**: 1 plan
+
+Plans:
+- [ ] 11-01: Reviews tab with sortable/filterable feed and navigation
+
+Features:
+- Reviews tab (3rd navigation option: Map/List/Reviews)
+- Review cards showing compact summaries
+- Sort by: newest, oldest, highest rated, lowest rated
+- Filter by: all, with photos, star ratings
+- Tap card opens review sheet in edit mode
+- "View Place" button to navigate from review to place on map
+- Review indicators (✍️ + stars badge) on place cards
+- Real-time updates when reviews saved/deleted
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -215,3 +236,4 @@ Features:
 | 8. Performance | 1/1 | Complete | 2026-04-03 |
 | 9. Documentation | 1/1 | Complete | 2026-04-03 |
 | 10. Place Reviews | 5/5 | Complete | 2026-04-14 |
+| 11. Review History | 0/1 | Not started | - |
