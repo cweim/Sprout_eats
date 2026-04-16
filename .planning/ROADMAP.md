@@ -4,6 +4,11 @@
 
 Transform the existing place-extraction bot into a polished, reliable, and delightful experience. Starting with test coverage and reliability, then expanding capabilities (multi-place, metadata, languages), building an interactive Mini App viewer, adding proximity features, and finishing with performance tuning and documentation.
 
+## Milestones
+
+- [x] **v1.1** - Core Features (Phases 1-11)
+- [ ] **v1.2** - UX Polish (Phases 12-15)
+
 ## Domain Expertise
 
 None
@@ -26,6 +31,13 @@ None
 - [x] **Phase 9: Documentation** - README with setup instructions
 - [x] **Phase 10: Place Reviews** - User reviews with ratings, dishes, photos, and reminders
 - [x] **Phase 11: Review History** - Reviews tab with sortable feed and indicators
+
+### Milestone v1.2: UX Polish
+
+- [ ] **Phase 12: Critical UX Fixes** - Bot progress feedback, photo upload progress, accessibility, list card behavior
+- [ ] **Phase 13: Quick Wins** - Button states, copy improvements, small polish items
+- [ ] **Phase 14: Medium Priority UX** - Map improvements, dark mode, search, loading states
+- [ ] **Phase 15: Polish** - Marker clustering, animations, sharing features
 
 ## Phase Details
 
@@ -221,7 +233,91 @@ Features:
 - Review indicators (✍️ + stars badge) on place cards
 - Real-time updates when reviews saved/deleted
 
+---
+
+## Milestone v1.2: UX Polish
+
+Based on comprehensive UX audit (.planning/UX_AUDIT.md).
+
+### Phase 12: Critical UX Fixes
+**Goal**: Address high-priority UX issues from audit
+**Depends on**: Phase 11
+**Research**: Unlikely (implementing known patterns)
+**Plans**: 3 plans
+
+Plans:
+- [ ] 12-01: Bot progress feedback (status messages during video processing)
+- [ ] 12-02: Photo upload progress + ARIA accessibility labels
+- [ ] 12-03: List card behavior + review edit from Reviews tab
+
+Features:
+- "Downloading video... 📥" → "Transcribing... 🎤" → "Finding places... 🔍" status messages
+- Upload progress bar in photo grid
+- aria-label on all icon buttons
+- List card tap behavior improvement
+- Edit button in review sheet from Reviews tab
+
+### Phase 13: Quick Wins
+**Goal**: Small polish items under 2h each
+**Depends on**: Phase 12
+**Research**: Unlikely (small changes)
+**Plans**: 2 plans
+
+Plans:
+- [ ] 13-01: Copy and feedback improvements (success messages, placeholders, button text)
+- [ ] 13-02: Button states and error handling (active states, retry, tooltips)
+
+Features:
+- Personalized success messages ("✨ Saved **Café Latte**!")
+- :active states on buttons (scale 0.95)
+- Improved placeholder text
+- Consistent time format
+- "Update Review" instead of "Save Review" when editing
+- Retry button on errors
+- Disable review button when not visited
+- Tooltips on icon buttons
+
+### Phase 14: Medium Priority UX
+**Goal**: Significant UX improvements
+**Depends on**: Phase 13
+**Research**: Likely (dark mode theming, skeleton patterns)
+**Plans**: 4 plans
+
+Plans:
+- [ ] 14-01: Map improvements (auto-center on user, filter counts)
+- [ ] 14-02: Dark mode support (Telegram theme detection)
+- [ ] 14-03: Search and filter improvements (address/notes search, inline filters)
+- [ ] 14-04: Loading states (skeleton screens, bottom sheet gestures)
+
+Features:
+- Auto-center map on user location
+- Filter chip counts ("All (15)" / "To Visit (12)")
+- Dark mode via Telegram.WebApp.colorScheme
+- Extended search (address, notes, types)
+- Skeleton loading cards
+- Bottom sheet swipe-to-close
+
+### Phase 15: Polish
+**Goal**: Nice-to-have improvements
+**Depends on**: Phase 14
+**Research**: Likely (marker clustering, drag-drop libraries)
+**Plans**: 3 plans
+
+Plans:
+- [ ] 15-01: Map polish (marker clustering)
+- [ ] 15-02: Review enhancements (drag-to-reorder dishes, share feature)
+- [ ] 15-03: Animations and gestures (success animations, swipe-to-delete)
+
+Features:
+- Leaflet marker clustering for 50+ places
+- Drag handles to reorder dishes
+- Share review via Telegram API
+- Success confetti/checkmark animations
+- Swipe-to-delete gestures on cards
+
 ## Progress
+
+### Milestone v1.1 (Complete)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -236,3 +332,12 @@ Features:
 | 9. Documentation | 1/1 | Complete | 2026-04-03 |
 | 10. Place Reviews | 5/5 | Complete | 2026-04-14 |
 | 11. Review History | 1/1 | Complete | 2026-04-16 |
+
+### Milestone v1.2 (In Progress)
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 12. Critical UX Fixes | 0/3 | Not Started | - |
+| 13. Quick Wins | 0/2 | Not Started | - |
+| 14. Medium Priority UX | 0/4 | Not Started | - |
+| 15. Polish | 0/3 | Not Started | - |

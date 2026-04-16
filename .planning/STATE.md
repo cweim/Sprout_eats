@@ -5,25 +5,25 @@
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Save places from travel videos so you never lose track of discoveries
-**Current focus:** Milestone v1.1 - Phase 11 (Review History)
+**Current focus:** Milestone v1.2 - Phase 12 (Critical UX Fixes)
 
 ## Current Position
 
-Phase: 11 of 11 (Review History)
-Plan: 11-01 complete
-Status: Phase complete
-Last activity: 2026-04-16 — Phase 11 complete
+Phase: 12 of 15 (Critical UX Fixes)
+Plan: 12-01 ready for execution
+Status: Planning complete
+Last activity: 2026-04-16 — Phase 12 plans created
 
-Progress: ███████████ 26/26 plans complete (Milestone v1.1 complete)
+Progress: ████████████░░░ 26/38 plans complete (Milestone v1.2 in progress)
 
 ## Performance Metrics
 
-**Velocity:**
+**Velocity (v1.1):**
 - Total plans completed: 26
 - Average duration: ~3 min
 - Total execution time: ~105 min
 
-**By Phase:**
+**By Phase (v1.1):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
@@ -36,10 +36,10 @@ Progress: ███████████ 26/26 plans complete (Milestone v1.1
 | 7. Proximity Features | 2 | ~9 min | ~4.5 min |
 | 8. Performance | 1 | ~3 min | ~3 min |
 | 9. Documentation | 1 | ~4 min | ~4 min |
-| 10. Place Reviews | 5/5 | ~41 min | ~8.2 min |
-| 11. Review History | 1/1 | ~4 min | ~4 min |
+| 10. Place Reviews | 5 | ~41 min | ~8.2 min |
+| 11. Review History | 1 | ~4 min | ~4 min |
 
-**Milestone Summary:**
+**Milestone v1.1 Summary:**
 - 11 phases complete
 - 26 plans executed
 - ~105 min total execution time
@@ -77,8 +77,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-16
-Stopped at: Phase 11 complete (Milestone v1.1 complete)
-Resume file: None
+Stopped at: Phase 12 planning complete
+Resume file: .planning/phases/12-critical-ux-fixes/12-01-PLAN.md
 
 ## Milestone v1.1 Status
 
@@ -96,3 +96,18 @@ All phases delivered ✅:
 - Review History (reviews tab, indicators) ✅
 
 Milestone v1.1 complete!
+
+## Milestone v1.2 Status
+
+Based on UX Audit (.planning/UX_AUDIT.md)
+
+**Phases:**
+- [ ] Phase 12: Critical UX Fixes (3 plans) ← Current
+- [ ] Phase 13: Quick Wins (2 plans)
+- [ ] Phase 14: Medium Priority UX (4 plans)
+- [ ] Phase 15: Polish (3 plans)
+
+**Phase 12 Plans:**
+- [ ] 12-01: Bot progress feedback (status messages during video processing)
+- [ ] 12-02: Photo upload progress + ARIA accessibility labels
+- [ ] 12-03: List card behavior + review edit UX
