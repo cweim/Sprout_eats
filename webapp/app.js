@@ -320,6 +320,12 @@ function createPopupContent(place) {
         html += `<div class="place-popup-address">${place.address}</div>`;
     }
 
+    // Review indicator
+    const review = getPlaceReview(place.id);
+    if (review) {
+        html += `<div class="popup-review">✍️ ${'⭐'.repeat(review.overall_rating)} ${review.overall_rating}/5</div>`;
+    }
+
     // Meta info (rating, types, distance)
     let metaHtml = '';
     if (place.place_rating) {
@@ -856,7 +862,12 @@ function createPlaceCard(place) {
     headerHtml += `<button class="sprout-toggle" onclick="event.stopPropagation(); toggleVisitedFromCard(${place.id})" title="${sproutTitle}">
         <img src="${sproutImg}" alt="${place.is_visited ? 'Visited' : 'To visit'}">
     </button>`;
-    headerHtml += `<span class="place-card-name">${place.name}</span>`;
+    // Add review badge if exists
+    const review = getPlaceReview(place.id);
+    const reviewBadge = review
+        ? `<span class="place-review-badge">✍️ ${'⭐'.repeat(review.overall_rating)}</span>`
+        : '';
+    headerHtml += `<span class="place-card-name">${place.name} ${reviewBadge}</span>`;
     headerHtml += `<button class="more-btn" onclick="event.stopPropagation(); openPlaceMenu(${place.id}, '${place.name.replace(/'/g, "\\'")}')">···</button>`;
     headerHtml += `</div>`;
 
@@ -2757,7 +2768,8 @@ async function saveReview() {
         showToast('Review saved! ⭐');
         closeReviewSheet();
 
-        // Refresh the place data to show review badge
+        // Reload reviews and refresh displays
+        await loadReviews();
         applyFilters();
         displayPlacesOnMap(false);
 
@@ -2786,7 +2798,8 @@ async function deleteReview() {
         showToast('Review deleted');
         closeReviewSheet();
 
-        // Refresh
+        // Reload reviews and refresh displays
+        await loadReviews();
         applyFilters();
         displayPlacesOnMap(false);
 
@@ -3083,6 +3096,11 @@ function setupReviewSheet() {
 }
 
 // ========== REVIEWS VIEW ==========
+
+// Get review for a place
+function getPlaceReview(placeId) {
+    return allReviews.find(r => r.place_id === placeId);
+}
 
 // Load reviews from API
 async function loadReviews() {

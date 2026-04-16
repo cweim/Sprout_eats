@@ -2930,3 +2930,18 @@ body {
     font-size: 12px;
     color: var(--hint-color);
 }
+
+/* Review indicators on place cards */
+.place-review-badge {
+    display: inline-block;
+    font-size: 0.85em;
+    margin-left: 8px;
+    color: var(--sprout-purple);
+}
+
+.popup-review {
+    font-size: 0.9em;
+    color: var(--sprout-purple);
+    margin-top: 4px;
+    margin-bottom: 8px;
+}
