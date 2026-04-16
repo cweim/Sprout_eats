@@ -855,18 +855,21 @@ body {
 
 .popup-action-btn {
     flex: 1;
-    min-width: 60px;
-    padding: 10px 12px;
+    min-width: 44px;
+    max-width: 60px;
+    padding: 12px 8px;
     border: none;
     border-radius: 12px;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 18px;
     cursor: pointer;
     text-decoration: none;
     text-align: center;
     background-color: var(--secondary-bg);
     color: var(--text-color);
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .popup-action-btn:hover {

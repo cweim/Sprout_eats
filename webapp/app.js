@@ -366,28 +366,28 @@ function createPopupContent(place) {
     // Action buttons
     html += '<div class="place-popup-actions">';
 
-    // Review button (primary if visited)
+    // Review button (primary if visited) - icon only to save space
     const reviewBtnClass = place.is_visited ? 'popup-action-btn primary review-btn' : 'popup-action-btn review-btn';
-    html += `<button class="${reviewBtnClass}" onclick="openReviewSheet(${place.id})"><span class="btn-icon">⭐</span> Review</button>`;
+    html += `<button class="${reviewBtnClass}" onclick="openReviewSheet(${place.id})" title="Write Review">✍️</button>`;
 
-    // Google Maps link
+    // Google Maps link - shortened
     if (place.google_place_id) {
         const encodedName = encodeURIComponent(place.name);
         html += `<a href="https://www.google.com/maps/search/?api=1&query=${encodedName}&query_place_id=${place.google_place_id}"
-                    target="_blank" class="popup-action-btn">📍 Maps</a>`;
+                    target="_blank" class="popup-action-btn" title="Open in Google Maps">📍</a>`;
     } else if (place.latitude && place.longitude) {
         html += `<a href="https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}"
-                    target="_blank" class="popup-action-btn">📍 Maps</a>`;
+                    target="_blank" class="popup-action-btn" title="Open in Google Maps">📍</a>`;
     }
 
-    // Original reel link
+    // Original reel link - shortened
     if (place.source_url) {
-        html += `<a href="${place.source_url}" target="_blank" class="popup-action-btn">▶ Reel</a>`;
+        html += `<a href="${place.source_url}" target="_blank" class="popup-action-btn" title="View Original Reel">▶️</a>`;
     }
 
     // Delete button
     const escapedName = place.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
-    html += `<button class="popup-action-btn" onclick="confirmDeletePlace(${place.id}, '${escapedName}')" style="background: var(--danger-bg); color: var(--danger-color);">🗑️</button>`;
+    html += `<button class="popup-action-btn" onclick="confirmDeletePlace(${place.id}, '${escapedName}')" style="background: var(--danger-bg); color: var(--danger-color);" title="Delete Place">🗑️</button>`;
 
     html += '</div></div>';
 
