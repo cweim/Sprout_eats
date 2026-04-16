@@ -368,26 +368,29 @@ function createPopupContent(place) {
 
     // Review button (primary if visited) - icon only to save space
     const reviewBtnClass = place.is_visited ? 'popup-action-btn primary review-btn' : 'popup-action-btn review-btn';
-    html += `<button class="${reviewBtnClass}" onclick="openReviewSheet(${place.id})" title="Write Review">✍️</button>`;
+    const reviewAriaLabel = `Write review for ${place.name}`;
+    html += `<button class="${reviewBtnClass}" onclick="openReviewSheet(${place.id})" title="Write Review" aria-label="${reviewAriaLabel}">✍️</button>`;
 
     // Google Maps link - shortened
+    const mapsAriaLabel = `Open ${place.name} in Google Maps`;
     if (place.google_place_id) {
         const encodedName = encodeURIComponent(place.name);
         html += `<a href="https://www.google.com/maps/search/?api=1&query=${encodedName}&query_place_id=${place.google_place_id}"
-                    target="_blank" class="popup-action-btn" title="Open in Google Maps">📍</a>`;
+                    target="_blank" class="popup-action-btn" title="Open in Google Maps" aria-label="${mapsAriaLabel}">📍</a>`;
     } else if (place.latitude && place.longitude) {
         html += `<a href="https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}"
-                    target="_blank" class="popup-action-btn" title="Open in Google Maps">📍</a>`;
+                    target="_blank" class="popup-action-btn" title="Open in Google Maps" aria-label="${mapsAriaLabel}">📍</a>`;
     }
 
     // Original reel link - shortened
     if (place.source_url) {
-        html += `<a href="${place.source_url}" target="_blank" class="popup-action-btn" title="View Original Reel">▶️</a>`;
+        html += `<a href="${place.source_url}" target="_blank" class="popup-action-btn" title="View Original Reel" aria-label="View original reel">▶️</a>`;
     }
 
     // Delete button
     const escapedName = place.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
-    html += `<button class="popup-action-btn" onclick="confirmDeletePlace(${place.id}, '${escapedName}')" style="background: var(--danger-bg); color: var(--danger-color);" title="Delete Place">🗑️</button>`;
+    const deleteAriaLabel = `Delete ${place.name}`;
+    html += `<button class="popup-action-btn" onclick="confirmDeletePlace(${place.id}, '${escapedName}')" style="background: var(--danger-bg); color: var(--danger-color);" title="Delete Place" aria-label="${deleteAriaLabel}">🗑️</button>`;
 
     html += '</div></div>';
 
@@ -856,10 +859,11 @@ function createPlaceCard(place) {
     // Sprout icon based on visited status
     const sproutImg = place.is_visited ? 'images/sprout_mascot_green.png' : 'images/sprout_mascot_purple.png';
     const sproutTitle = place.is_visited ? 'Visited! Click to unmark' : 'Click to mark as visited';
+    const sproutAriaLabel = place.is_visited ? 'Mark as unvisited' : 'Mark as visited';
 
     // Header with sprout toggle, name, and more button
     let headerHtml = `<div class="place-card-header">`;
-    headerHtml += `<button class="sprout-toggle" onclick="event.stopPropagation(); toggleVisitedFromCard(${place.id})" title="${sproutTitle}">
+    headerHtml += `<button class="sprout-toggle" onclick="event.stopPropagation(); toggleVisitedFromCard(${place.id})" title="${sproutTitle}" aria-label="${sproutAriaLabel}">
         <img src="${sproutImg}" alt="${place.is_visited ? 'Visited' : 'To visit'}">
     </button>`;
     // Add review badge if exists
@@ -868,7 +872,7 @@ function createPlaceCard(place) {
         ? `<span class="place-review-badge">✍️ ${'⭐'.repeat(review.overall_rating)}</span>`
         : '';
     headerHtml += `<span class="place-card-name">${place.name} ${reviewBadge}</span>`;
-    headerHtml += `<button class="more-btn" onclick="event.stopPropagation(); openPlaceMenu(${place.id}, '${place.name.replace(/'/g, "\\'")}')">···</button>`;
+    headerHtml += `<button class="more-btn" onclick="event.stopPropagation(); openPlaceMenu(${place.id}, '${place.name.replace(/'/g, "\\'")}')" aria-label="More options">···</button>`;
     headerHtml += `</div>`;
 
     // Address
@@ -913,21 +917,21 @@ function createPlaceCard(place) {
     let actionsHtml = '<div class="place-card-actions">';
 
     // Review button
-    actionsHtml += `<button class="card-action-btn review-btn" onclick="event.stopPropagation(); openReviewSheet(${place.id})">⭐ Review</button>`;
+    actionsHtml += `<button class="card-action-btn review-btn" onclick="event.stopPropagation(); openReviewSheet(${place.id})" aria-label="Write review">⭐ Review</button>`;
 
     // Google Maps link
     if (place.google_place_id) {
         const encodedName = encodeURIComponent(place.name);
         actionsHtml += `<a href="https://www.google.com/maps/search/?api=1&query=${encodedName}&query_place_id=${place.google_place_id}"
-                          target="_blank" class="card-action-btn" onclick="event.stopPropagation()">📍 Maps</a>`;
+                          target="_blank" class="card-action-btn" onclick="event.stopPropagation()" aria-label="Open in Google Maps">📍 Maps</a>`;
     } else if (place.latitude && place.longitude) {
         actionsHtml += `<a href="https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}"
-                          target="_blank" class="card-action-btn" onclick="event.stopPropagation()">📍 Maps</a>`;
+                          target="_blank" class="card-action-btn" onclick="event.stopPropagation()" aria-label="Open in Google Maps">📍 Maps</a>`;
     }
 
     // Original reel link
     if (place.source_url) {
-        actionsHtml += `<a href="${place.source_url}" target="_blank" class="card-action-btn" onclick="event.stopPropagation()">▶️ Reel</a>`;
+        actionsHtml += `<a href="${place.source_url}" target="_blank" class="card-action-btn" onclick="event.stopPropagation()" aria-label="View original reel">▶️ Reel</a>`;
     }
 
     actionsHtml += '</div>';
@@ -2417,6 +2421,7 @@ function initStarRating(container, onChange) {
         star.className = 'star';
         star.textContent = '★';
         star.dataset.value = i;
+        star.setAttribute('aria-label', i === 1 ? '1 star' : `${i} stars`);
         container.appendChild(star);
     }
 
@@ -2461,6 +2466,7 @@ function initPriceRating(container, onChange) {
         icon.className = 'price-icon';
         icon.textContent = '💰';
         icon.dataset.value = i;
+        icon.setAttribute('aria-label', `Price level ${i}`);
         container.appendChild(icon);
     }
 
@@ -2930,6 +2936,69 @@ async function uploadPhoto(reviewId, file, dishId = null) {
 }
 
 /**
+ * Upload photo with progress callback using XMLHttpRequest
+ */
+async function uploadPhotoWithProgress(reviewId, file, dishId = null, onProgress) {
+    try {
+        // Compress image first
+        const compressed = await compressImage(file);
+
+        // Create form data
+        const formData = new FormData();
+        formData.append('file', compressed, 'photo.jpg');
+        if (dishId && !String(dishId).startsWith('new-')) {
+            formData.append('dish_id', dishId);
+        }
+
+        // Use XMLHttpRequest for progress tracking
+        return new Promise((resolve) => {
+            const xhr = new XMLHttpRequest();
+
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable && onProgress) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    onProgress(percent);
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        const photo = JSON.parse(xhr.responseText);
+                        showToast('Photo added!');
+                        resolve(photo);
+                    } catch {
+                        showToast('Error processing response');
+                        resolve(null);
+                    }
+                } else {
+                    try {
+                        const error = JSON.parse(xhr.responseText);
+                        showToast(error.detail || 'Failed to upload photo');
+                    } catch {
+                        showToast('Failed to upload photo');
+                    }
+                    resolve(null);
+                }
+            });
+
+            xhr.addEventListener('error', () => {
+                showToast('Error uploading photo');
+                resolve(null);
+            });
+
+            xhr.open('POST', `${API_URL}/api/reviews/${reviewId}/photos`);
+            xhr.setRequestHeader('ngrok-skip-browser-warning', 'true');
+            xhr.send(formData);
+        });
+    } catch (e) {
+        console.error('Photo upload error:', e);
+        showToast('Error uploading photo');
+        return null;
+    }
+}
+
+/**
  * Delete photo from server
  */
 async function deletePhoto(reviewId, photoId) {
@@ -2967,8 +3036,8 @@ function updatePhotoGrid(container, photos, maxPhotos, dishId = null) {
         thumb.className = 'photo-thumb';
         thumb.dataset.photoId = photo.id;
         thumb.innerHTML = `
-            <img src="${photo.url}" alt="">
-            <button type="button" class="photo-delete-btn">×</button>
+            <img src="${photo.url}" alt="Photo">
+            <button type="button" class="photo-delete-btn" aria-label="Remove photo">×</button>
         `;
 
         // Delete handler
@@ -3008,8 +3077,9 @@ function addPhotoButton(container, maxPhotos, dishId) {
 
     const label = document.createElement('label');
     label.className = 'photo-add-btn';
+    label.setAttribute('aria-label', 'Add photo');
     label.innerHTML = `
-        <input type="file" accept="image/*" hidden>
+        <input type="file" accept="image/*" hidden aria-label="Upload photo">
         <span>+</span>
     `;
 
@@ -3024,15 +3094,37 @@ function addPhotoButton(container, maxPhotos, dishId) {
             return;
         }
 
-        const photo = await uploadPhoto(currentReview.id, file, dishId);
+        // Validate file before showing placeholder
+        const validation = validateImageFile(file);
+        if (!validation.valid) {
+            showToast(validation.error);
+            e.target.value = '';
+            return;
+        }
+
+        // Create placeholder with progress indicator
+        const placeholder = document.createElement('div');
+        placeholder.className = 'photo-uploading';
+        placeholder.innerHTML = `
+            <div class="upload-spinner"></div>
+            <div class="upload-progress-bar"><div class="progress-fill"></div></div>
+        `;
+        container.insertBefore(placeholder, label);
+
+        // Upload with progress tracking
+        const photo = await uploadPhotoWithProgress(currentReview.id, file, dishId, (progress) => {
+            const fill = placeholder.querySelector('.progress-fill');
+            if (fill) fill.style.width = `${progress}%`;
+        });
+
         if (photo) {
-            // Add photo to grid
+            // Replace placeholder with actual photo
             const thumb = document.createElement('div');
             thumb.className = 'photo-thumb';
             thumb.dataset.photoId = photo.id;
             thumb.innerHTML = `
-                <img src="${photo.url}" alt="">
-                <button type="button" class="photo-delete-btn">×</button>
+                <img src="${photo.url}" alt="Photo">
+                <button type="button" class="photo-delete-btn" aria-label="Remove photo">×</button>
             `;
 
             // Add delete handler
@@ -3051,12 +3143,15 @@ function addPhotoButton(container, maxPhotos, dishId) {
                 viewPhotoFullscreen(photo.url);
             });
 
-            container.insertBefore(thumb, label);
+            placeholder.replaceWith(thumb);
 
             // Hide add button if at limit
             if (container.querySelectorAll('.photo-thumb').length >= maxPhotos) {
                 label.remove();
             }
+        } else {
+            // Remove placeholder on error
+            placeholder.remove();
         }
 
         // Reset input
@@ -3073,8 +3168,8 @@ function viewPhotoFullscreen(url) {
     const overlay = document.createElement('div');
     overlay.className = 'photo-fullscreen';
     overlay.innerHTML = `
-        <img src="${url}" alt="">
-        <button class="photo-fullscreen-close">×</button>
+        <img src="${url}" alt="Photo">
+        <button class="photo-fullscreen-close" aria-label="Close">×</button>
     `;
     overlay.addEventListener('click', () => overlay.remove());
     document.body.appendChild(overlay);
