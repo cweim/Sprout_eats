@@ -3,6 +3,7 @@ const API_URL = ''; // Set to your API URL, e.g., 'http://localhost:8000'
 
 // State
 let places = [];
+let allReviews = [];
 let currentView = 'map';
 let map = null;
 let markersLayer = null;
@@ -2295,10 +2296,12 @@ function switchView(view) {
     // Update toggle buttons
     document.getElementById('btn-map').classList.toggle('active', view === 'map');
     document.getElementById('btn-list').classList.toggle('active', view === 'list');
+    document.getElementById('btn-reviews').classList.toggle('active', view === 'reviews');
 
     // Update view visibility
     document.getElementById('map-view').classList.toggle('active', view === 'map');
     document.getElementById('list-view').classList.toggle('active', view === 'list');
+    document.getElementById('reviews-view').classList.toggle('active', view === 'reviews');
 
     // Invalidate map size when switching to map view
     if (view === 'map' && map) {
@@ -2310,6 +2313,7 @@ function switchView(view) {
 function setupViewToggle() {
     document.getElementById('btn-map').addEventListener('click', () => switchView('map'));
     document.getElementById('btn-list').addEventListener('click', () => switchView('list'));
+    document.getElementById('btn-reviews').addEventListener('click', () => switchView('reviews'));
 }
 
 // Initialize app
@@ -2367,6 +2371,12 @@ async function initApp() {
 
     // Setup review sheet
     setupReviewSheet();
+
+    // Setup reviews view
+    setupReviewsView();
+
+    // Load reviews
+    await loadReviews();
 
     // Render list view
     renderPlacesList(places);
@@ -3028,6 +3038,191 @@ function setupReviewSheet() {
         if (e.target.id === 'review-sheet') {
             closeReviewSheet();
         }
+    });
+}
+
+// ========== REVIEWS VIEW ==========
+
+// Load reviews from API
+async function loadReviews() {
+    try {
+        const response = await fetch(`${API_URL}/api/reviews`, {
+            headers: { 'ngrok-skip-browser-warning': 'true' }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            allReviews = data.reviews;
+            renderReviews();
+        }
+    } catch (error) {
+        console.error('Failed to load reviews:', error);
+    }
+}
+
+// Render reviews list with current sort/filter
+function renderReviews() {
+    const container = document.getElementById('reviews-list');
+    const emptyState = document.getElementById('reviews-empty');
+    const countEl = document.querySelector('.reviews-count');
+
+    // Apply current sort and filter
+    const sorted = sortReviews(allReviews);
+    const filtered = filterReviews(sorted);
+
+    // Update count
+    countEl.textContent = `${filtered.length} ${filtered.length === 1 ? 'review' : 'reviews'}`;
+
+    // Show empty state if no reviews
+    if (filtered.length === 0) {
+        container.innerHTML = '';
+        emptyState.style.display = 'block';
+        return;
+    }
+
+    emptyState.style.display = 'none';
+
+    // Render cards
+    container.innerHTML = filtered.map(review => createReviewCard(review)).join('');
+
+    // Add click handlers
+    container.querySelectorAll('.review-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const placeId = parseInt(card.dataset.placeId);
+            openReviewSheetFromHistory(placeId);
+            hapticFeedback('light');
+        });
+    });
+}
+
+// Create HTML for review card
+function createReviewCard(review) {
+    // Calculate photo count
+    const dishPhotos = review.dishes.reduce((sum, d) => sum + (d.photos?.length || 0), 0);
+    const overallPhotos = review.overall_photos?.length || 0;
+    const totalPhotos = dishPhotos + overallPhotos;
+
+    // Render stars
+    const stars = '⭐'.repeat(review.overall_rating) + '☆'.repeat(5 - review.overall_rating);
+
+    // Price rating
+    const priceLabels = ['', '💰 Budget', '💰💰 Affordable', '💰💰💰 Moderate', '💰💰💰💰 Pricey', '💰💰💰💰💰 Splurge'];
+    const priceText = priceLabels[review.price_rating] || '';
+
+    // Truncate remarks
+    const preview = review.overall_remarks
+        ? (review.overall_remarks.length > 80
+            ? review.overall_remarks.slice(0, 80) + '...'
+            : review.overall_remarks)
+        : '';
+
+    // Format timestamp
+    const date = new Date(review.updated_at || review.created_at);
+    const timeAgo = formatTimeAgo(date);
+
+    return `
+        <div class="review-card" data-place-id="${review.place_id}">
+            <div class="review-card-header">
+                <div class="review-card-place">${review.place_name || 'Unknown Place'}</div>
+                <div class="review-card-rating">
+                    <span class="review-stars">${stars}</span>
+                    <span class="review-rating-num">${review.overall_rating}/5</span>
+                </div>
+            </div>
+            ${priceText ? `<div class="review-card-price">${priceText}</div>` : ''}
+            <div class="review-card-meta">
+                ${totalPhotos > 0 ? `📸 ${totalPhotos} photo${totalPhotos > 1 ? 's' : ''}` : ''}
+                ${totalPhotos > 0 && review.dishes.length > 0 ? ' • ' : ''}
+                ${review.dishes.length} dish${review.dishes.length !== 1 ? 'es' : ''}
+            </div>
+            ${preview ? `<div class="review-card-preview">"${preview}"</div>` : ''}
+            <div class="review-card-footer">📅 ${timeAgo}</div>
+        </div>
+    `;
+}
+
+// Format time ago helper
+function formatTimeAgo(date) {
+    const now = new Date();
+    const diff = now - date;
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return `${days} days ago`;
+    if (days < 30) return `${Math.floor(days / 7)} week${Math.floor(days / 7) > 1 ? 's' : ''} ago`;
+    if (days < 365) return `${Math.floor(days / 30)} month${Math.floor(days / 30) > 1 ? 's' : ''} ago`;
+    return date.toLocaleDateString();
+}
+
+// Sort reviews
+function sortReviews(reviews) {
+    const sortBy = document.getElementById('reviews-sort')?.value || 'newest';
+    const sorted = [...reviews];
+
+    switch (sortBy) {
+        case 'newest':
+            sorted.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+            break;
+        case 'oldest':
+            sorted.sort((a, b) => new Date(a.updated_at || a.created_at) - new Date(b.updated_at || b.created_at));
+            break;
+        case 'highest':
+            sorted.sort((a, b) => b.overall_rating - a.overall_rating);
+            break;
+        case 'lowest':
+            sorted.sort((a, b) => a.overall_rating - b.overall_rating);
+            break;
+    }
+
+    return sorted;
+}
+
+// Filter reviews
+function filterReviews(reviews) {
+    const activeFilter = document.querySelector('.review-filter-chip.active')?.dataset.filter || 'all';
+
+    return reviews.filter(review => {
+        switch (activeFilter) {
+            case 'all':
+                return true;
+            case 'photos':
+                const dishPhotos = review.dishes.reduce((sum, d) => sum + (d.photos?.length || 0), 0);
+                const overallPhotos = review.overall_photos?.length || 0;
+                return (dishPhotos + overallPhotos) > 0;
+            case '5star':
+                return review.overall_rating === 5;
+            case '4star':
+                return review.overall_rating === 4;
+            default:
+                return true;
+        }
+    });
+}
+
+// Open review sheet from history
+async function openReviewSheetFromHistory(placeId) {
+    const place = places.find(p => p.id === placeId);
+    if (!place) {
+        showToast('Place not found');
+        return;
+    }
+
+    await openReviewSheet(placeId);
+}
+
+// Setup reviews view
+function setupReviewsView() {
+    // Sort dropdown change handler
+    document.getElementById('reviews-sort')?.addEventListener('change', renderReviews);
+
+    // Filter chips click handlers
+    document.querySelectorAll('.review-filter-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('.review-filter-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            renderReviews();
+            hapticFeedback('light');
+        });
     });
 }
 
