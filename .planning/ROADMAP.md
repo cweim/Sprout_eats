@@ -246,7 +246,7 @@ Based on comprehensive UX audit (.planning/UX_AUDIT.md).
 **Plans**: 3 plans
 
 Plans:
-- [ ] 12-01: Bot progress feedback (status messages during video processing)
+- [x] 12-01: Bot progress feedback (status messages during video processing)
 - [ ] 12-02: Photo upload progress + ARIA accessibility labels
 - [ ] 12-03: List card behavior + review edit from Reviews tab
 
@@ -337,7 +337,7 @@ Features:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 12. Critical UX Fixes | 0/3 | Not Started | - |
+| 12. Critical UX Fixes | 1/3 | In Progress | - |
 | 13. Quick Wins | 0/2 | Not Started | - |
 | 14. Medium Priority UX | 0/4 | Not Started | - |
 | 15. Polish | 0/3 | Not Started | - |

@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 ## Current Position
 
 Phase: 12 of 15 (Critical UX Fixes)
-Plan: 12-01 ready for execution
-Status: Planning complete
-Last activity: 2026-04-16 — Phase 12 plans created
+Plan: 12-02 ready for execution
+Status: Executing
+Last activity: 2026-04-16 — Plan 12-01 complete
 
-Progress: ████████████░░░ 26/38 plans complete (Milestone v1.2 in progress)
+Progress: █████████████░░ 27/38 plans complete (Milestone v1.2 in progress)
 
 ## Performance Metrics
 
@@ -77,8 +77,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-16
-Stopped at: Phase 12 planning complete
-Resume file: .planning/phases/12-critical-ux-fixes/12-01-PLAN.md
+Stopped at: Plan 12-01 complete
+Resume file: .planning/phases/12-critical-ux-fixes/12-02-PLAN.md
 
 ## Milestone v1.1 Status
 
@@ -108,6 +108,6 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 - [ ] Phase 15: Polish (3 plans)
 
 **Phase 12 Plans:**
-- [ ] 12-01: Bot progress feedback (status messages during video processing)
+- [x] 12-01: Bot progress feedback (status messages during video processing)
 - [ ] 12-02: Photo upload progress + ARIA accessibility labels
 - [ ] 12-03: List card behavior + review edit UX
