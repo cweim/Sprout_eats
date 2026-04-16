@@ -21,6 +21,7 @@
         <div class="view-toggle">
             <button id="btn-map" class="toggle-btn active">Map</button>
             <button id="btn-list" class="toggle-btn">List</button>
+            <button id="btn-reviews" class="toggle-btn">Reviews</button>
         </div>
     </header>
 
@@ -77,6 +78,34 @@
                 <p>Nothing here yet!</p>
                 <p class="hint">Try adjusting your filters or discover new places</p>
                 <button id="btn-search-google" class="search-google-btn">🔍 Discover Places</button>
+            </div>
+        </div>
+
+        <!-- Reviews View -->
+        <div id="reviews-view" class="view">
+            <div class="reviews-controls">
+                <div class="reviews-header-row">
+                    <h3 class="reviews-count">0 reviews</h3>
+                    <select id="reviews-sort" class="reviews-sort-select">
+                        <option value="newest">Newest first</option>
+                        <option value="oldest">Oldest first</option>
+                        <option value="highest">Highest rated</option>
+                        <option value="lowest">Lowest rated</option>
+                    </select>
+                </div>
+                <div class="reviews-filters">
+                    <button class="review-filter-chip active" data-filter="all">All</button>
+                    <button class="review-filter-chip" data-filter="photos">With Photos</button>
+                    <button class="review-filter-chip" data-filter="5star">5 ⭐</button>
+                    <button class="review-filter-chip" data-filter="4star">4 ⭐</button>
+                </div>
+            </div>
+            <div id="reviews-list">
+                <!-- Review cards will be inserted here -->
+            </div>
+            <div id="reviews-empty" class="reviews-empty-state" style="display: none;">
+                <p>No reviews yet!</p>
+                <p class="hint">Mark a place as visited and write your first review</p>
             </div>
         </div>
 
