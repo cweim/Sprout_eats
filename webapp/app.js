@@ -1011,6 +1011,9 @@ function showPlaceOnMap(place) {
         return;
     }
 
+    // Show feedback before switching views
+    showToast(`📍 Showing on map...`);
+
     // Switch to map view
     switchView('map');
 
@@ -2695,6 +2698,9 @@ async function openReviewSheet(placeId) {
             // Show delete button for existing review
             document.getElementById('delete-review-btn').style.display = 'block';
 
+            // Update save button text for edit mode
+            document.getElementById('save-review-btn').textContent = 'Update Review';
+
         } else if (response.status === 404) {
             // No existing review - start fresh
             currentReview = null;
@@ -2704,6 +2710,9 @@ async function openReviewSheet(placeId) {
             document.getElementById('overall-remarks').value = '';
             document.getElementById('overall-edited').textContent = '';
             document.getElementById('delete-review-btn').style.display = 'none';
+
+            // Update save button text for new review
+            document.getElementById('save-review-btn').textContent = 'Save Review';
             // Initialize empty overall photos grid
             updatePhotoGrid(document.getElementById('overall-photos'), [], 3, null);
         }
@@ -2712,6 +2721,7 @@ async function openReviewSheet(placeId) {
         currentReview = null;
         addDishCard();
         document.getElementById('delete-review-btn').style.display = 'none';
+        document.getElementById('save-review-btn').textContent = 'Save Review';
         // Initialize empty overall photos grid
         updatePhotoGrid(document.getElementById('overall-photos'), [], 3, null);
     }
