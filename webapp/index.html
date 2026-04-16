@@ -41,8 +41,8 @@
                 </select>
             </div>
             <div class="map-controls">
-                <button id="btn-my-location" class="map-control-btn" title="My Location">📍</button>
-                <button id="btn-fit-all" class="map-control-btn" title="Show All Places">🗺️</button>
+                <button id="btn-my-location" class="map-control-btn" title="My Location" aria-label="Center on my location">📍</button>
+                <button id="btn-fit-all" class="map-control-btn" title="Show All Places" aria-label="Show all places">🗺️</button>
             </div>
         </div>
 
@@ -52,9 +52,9 @@
                 <div class="search-row">
                     <div class="search-bar">
                         <input type="text" id="search-input" placeholder="Search places...">
-                        <button id="search-clear" class="search-clear-btn" style="display: none;">×</button>
+                        <button id="search-clear" class="search-clear-btn" style="display: none;" aria-label="Clear search">×</button>
                     </div>
-                    <button id="filter-btn" class="filter-btn">
+                    <button id="filter-btn" class="filter-btn" aria-label="Open filters">
                         <span class="filter-icon">⚙️</span>
                         <span class="filter-count" style="display: none;">0</span>
                     </button>
@@ -129,16 +129,16 @@
             <button id="btn-retry" class="retry-btn">Try Again</button>
         </div>
 
-        <button id="fab-discover" class="fab-discover" title="Discover new places">🔍</button>
+        <button id="fab-discover" class="fab-discover" title="Discover new places" aria-label="Discover new places">🔍</button>
 
     </main>
 
     <!-- Search Google Modal -->
-    <div id="search-modal" class="modal" style="display: none;">
+    <div id="search-modal" class="modal" style="display: none;" role="dialog" aria-labelledby="search-modal-title">
         <div class="modal-content search-modal-content">
             <div class="modal-header">
-                <h2>🔍 Discover Places</h2>
-                <button id="search-modal-close" class="modal-close-btn">×</button>
+                <h2 id="search-modal-title">🔍 Discover Places</h2>
+                <button id="search-modal-close" class="modal-close-btn" aria-label="Close">×</button>
             </div>
             <div class="modal-body">
                 <div class="search-modal-input">
@@ -162,11 +162,11 @@
     </div>
 
     <!-- Notes Editor Modal -->
-    <div id="notes-modal" class="modal" style="display: none;">
+    <div id="notes-modal" class="modal" style="display: none;" role="dialog" aria-labelledby="notes-modal-title">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Notes</h2>
-                <button id="modal-close" class="modal-close-btn">×</button>
+                <h2 id="notes-modal-title">Notes</h2>
+                <button id="modal-close" class="modal-close-btn" aria-label="Close">×</button>
             </div>
             <div class="modal-body">
                 <textarea id="notes-textarea" placeholder="Add your notes here..." maxlength="500"></textarea>
@@ -180,11 +180,11 @@
     </div>
 
     <!-- Filter Drawer -->
-    <div id="filter-drawer" class="drawer" style="display: none;">
+    <div id="filter-drawer" class="drawer" style="display: none;" role="dialog" aria-labelledby="filter-drawer-title">
         <div class="drawer-content">
             <div class="drawer-header">
-                <h2>Filters</h2>
-                <button id="filter-drawer-close" class="drawer-close-btn">×</button>
+                <h2 id="filter-drawer-title">Filters</h2>
+                <button id="filter-drawer-close" class="drawer-close-btn" aria-label="Close">×</button>
             </div>
             <div class="drawer-body">
                 <div class="filter-section">
@@ -220,18 +220,18 @@
     <div id="place-menu" class="place-menu" style="display: none;">
         <div class="place-menu-content">
             <button class="place-menu-item" id="menu-edit">✏️ Edit name & type</button>
-            <button class="place-menu-item danger" id="menu-delete">🗑️ Delete place</button>
+            <button class="place-menu-item danger" id="menu-delete" aria-label="Delete this place">🗑️ Delete place</button>
             <button class="place-menu-item cancel" id="menu-cancel">Cancel</button>
         </div>
     </div>
 
     <!-- Review Sheet (Bottom Sheet) -->
-    <div id="review-sheet" class="sheet" style="display: none;">
+    <div id="review-sheet" class="sheet" style="display: none;" role="dialog" aria-labelledby="review-sheet-title">
         <div class="sheet-content">
             <div class="sheet-header">
                 <div class="sheet-handle"></div>
                 <h2 id="review-sheet-title">Review</h2>
-                <button id="review-sheet-close" class="sheet-close-btn">×</button>
+                <button id="review-sheet-close" class="sheet-close-btn" aria-label="Close">×</button>
             </div>
             <div class="sheet-body" id="review-sheet-body">
                 <!-- Dishes Section -->
