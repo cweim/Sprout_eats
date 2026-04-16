@@ -2588,6 +2588,47 @@ async function openReviewSheet(placeId) {
     // Set title
     document.getElementById('review-sheet-title').textContent = `Review: ${place.name}`;
 
+    // Add or update "View Place" button
+    const sheetHeader = document.querySelector('.sheet-header');
+    let viewPlaceBtn = document.getElementById('view-place-btn');
+
+    if (!viewPlaceBtn) {
+        viewPlaceBtn = document.createElement('button');
+        viewPlaceBtn.id = 'view-place-btn';
+        viewPlaceBtn.className = 'view-place-btn';
+        viewPlaceBtn.textContent = '📍 View Place';
+        viewPlaceBtn.addEventListener('click', () => {
+            // Close review sheet
+            document.getElementById('review-sheet').style.display = 'none';
+
+            // Switch to map view
+            switchView('map');
+
+            // Center on place marker
+            if (map && place.latitude && place.longitude) {
+                map.setView([place.latitude, place.longitude], 15);
+
+                // Open marker popup
+                markersLayer.eachLayer(marker => {
+                    if (marker.placeData && marker.placeData.id === placeId) {
+                        marker.openPopup();
+                    }
+                });
+            }
+
+            hapticFeedback('medium');
+        });
+
+        sheetHeader.appendChild(viewPlaceBtn);
+    }
+
+    // Show/hide View Place button based on current view
+    if (currentView === 'reviews') {
+        viewPlaceBtn.style.display = 'inline-block';
+    } else {
+        viewPlaceBtn.style.display = 'none';
+    }
+
     // Clear dishes
     document.getElementById('review-dishes').innerHTML = '';
     dishIdCounter = 0;
