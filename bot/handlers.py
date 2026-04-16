@@ -598,7 +598,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         # Step 1: Download
-        await status_msg.edit_text("Checking the post... 📥")
+        await status_msg.edit_text("Downloading video... 📥")
         result = await download_content(text)
 
         # Step 2: Try to find places using caption/title first
@@ -616,28 +616,28 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Step 3: For photo posts, OCR images before audio fallback.
         ocr_text = ""
         if not places and result.image_paths:
-            await status_msg.edit_text("Reading text in the photos... 🖼️")
+            await status_msg.edit_text("Scanning images for text... 🖼️")
             try:
                 ocr_text = extract_text_from_images(result.image_paths)
             except Exception as e:
                 logger.warning(f"OCR failed: {e}")
 
             if ocr_text:
-                await status_msg.edit_text("Hunting for places... 🔍")
+                await status_msg.edit_text("Finding places... 🔎")
                 places = await search_places_from_text(f"{metadata_text}\n{ocr_text}".strip())
                 if places:
                     match_source = "ocr"
 
         # Step 4: If still not found and audio exists, fallback to transcription.
         if not places and result.audio_path and result.audio_path.exists():
-            await status_msg.edit_text("Listening carefully... 🎧")
+            await status_msg.edit_text("Transcribing audio... 🎤")
             try:
                 transcription_result = await transcribe_audio(result.audio_path)
             except Exception as e:
                 logger.warning(f"Transcription failed: {e}")
 
             if transcription_result:
-                await status_msg.edit_text("Hunting for places... 🔍")
+                await status_msg.edit_text("Finding places... 🔎")
                 # Use English text for better Google Places API results
                 search_text = transcription_result.english_text or transcription_result.text
                 places = await search_places_from_text(search_text)
