@@ -520,6 +520,7 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     await query.answer("Saving...")
+    await query.edit_message_text("Saving your places... 💾")
 
     # Get metadata
     source_url = context.user_data.get("pending_url", "")
@@ -565,10 +566,16 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     count = len(saved_names)
     if count == 1:
-        await query.message.reply_text(f"✅ Saved: {saved_names[0]}!")
+        await query.message.reply_text(
+            f"✨ Saved **{saved_names[0]}** to your map!",
+            parse_mode="Markdown"
+        )
     else:
         names_text = "\n".join(f"• {name}" for name in saved_names)
-        await query.message.reply_text(f"✅ Saved {count} places to your map!\n\n{names_text}")
+        await query.message.reply_text(
+            f"✨ Saved {count} places to your map!\n\n{names_text}",
+            parse_mode="Markdown"
+        )
 
 
 async def cancel_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
