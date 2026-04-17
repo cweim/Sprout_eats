@@ -2992,3 +2992,37 @@ body {
     margin-top: 4px;
     margin-bottom: 8px;
 }
+
+/* ===== Global Button Active States ===== */
+/* Tactile feedback for all interactive buttons */
+.toggle-btn:active,
+.search-clear-btn:active,
+.card-action-btn:active,
+.popup-action-btn:active,
+.visited-chip:active,
+.map-filter-chip:active,
+.review-filter-chip:active,
+.sheet-btn:active,
+.drawer-btn:active,
+.add-dish-btn:active,
+.dish-remove-btn:active,
+.view-place-btn:active,
+.search-btn:active,
+.search-google-btn:active,
+.filter-btn:active,
+.name-edit-btn:active,
+.edit-cancel-btn:active,
+.edit-save-btn:active,
+.review-btn:active,
+.photo-add-btn:active,
+.photo-delete-btn:active,
+.more-btn:active,
+.visited-toggle-btn:active,
+.add-notes-btn:active,
+.refresh-btn:active,
+.modal-close-btn:active,
+.drawer-close-btn:active,
+.sheet-close-btn:active {
+    transform: scale(0.95);
+    opacity: 0.9;
+}
