@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Save places from travel videos so you never lose track of discoveries
-**Current focus:** Milestone v1.2 - Phase 14 (Medium Priority UX)
+**Current focus:** Milestone v1.2 - Phase 15 (Polish)
 
 ## Current Position
 
-Phase: 14 of 15 (Medium Priority UX)
-Plan: 3 of 4 in current phase
-Status: In progress
-Last activity: 2026-04-17 — Completed 14-03-PLAN.md
+Phase: 15 of 15 (Polish)
+Plan: 0 of 3 in current phase
+Status: Ready to start
+Last activity: 2026-04-17 — Completed 14-04-PLAN.md (Phase 14 complete)
 
-Progress: █████████████████░░ 34/38 plans complete (Milestone v1.2 in progress)
+Progress: ██████████████████░ 35/38 plans complete (Milestone v1.2 in progress)
 
 ## Performance Metrics
 
@@ -77,8 +77,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-17
-Stopped at: Completed 14-03-PLAN.md
-Resume file: .planning/phases/14-medium-priority-ux/14-04-PLAN.md
+Stopped at: Completed Phase 14
+Resume file: .planning/phases/15-polish/15-01-PLAN.md
 
 ## Milestone v1.1 Status
 
@@ -104,8 +104,8 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 **Phases:**
 - [x] Phase 12: Critical UX Fixes (3 plans) ✅
 - [x] Phase 13: Quick Wins (2 plans) ✅
-- [ ] Phase 14: Medium Priority UX (4 plans) ← Next
-- [ ] Phase 15: Polish (3 plans)
+- [x] Phase 14: Medium Priority UX (4 plans) ✅
+- [ ] Phase 15: Polish (3 plans) ← Next
 
 **Phase 12 Plans:**
 - [x] 12-01: Bot progress feedback (status messages during video processing)
@@ -120,4 +120,9 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 - [x] 14-01: Map improvements (auto-center on user, filter counts)
 - [x] 14-02: Dark mode support (Telegram theme detection)
 - [x] 14-03: Search and filter improvements (address/notes search, sort persistence)
-- [ ] 14-04: Loading states (skeleton screens, swipe gestures)
+- [x] 14-04: Loading states (skeleton screens, swipe gestures)
+
+**Phase 15 Plans:**
+- [ ] 15-01: Map polish (marker clustering)
+- [ ] 15-02: Review enhancements (drag-to-reorder dishes, share)
+- [ ] 15-03: Animations and gestures (success animations, swipe-to-delete)
