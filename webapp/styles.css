@@ -848,6 +848,34 @@ body {
     box-shadow: none;
 }
 
+/* Marker cluster styling */
+.marker-cluster {
+    background-color: rgba(165, 153, 217, 0.6);
+}
+.marker-cluster div {
+    background-color: var(--sprout-purple);
+    color: #fff;
+    font-weight: 600;
+}
+.marker-cluster-small {
+    background-color: rgba(165, 153, 217, 0.5);
+}
+.marker-cluster-small div {
+    background-color: rgba(165, 153, 217, 0.9);
+}
+.marker-cluster-medium {
+    background-color: rgba(143, 212, 162, 0.5);
+}
+.marker-cluster-medium div {
+    background-color: rgba(143, 212, 162, 0.9);
+}
+.marker-cluster-large {
+    background-color: rgba(255, 107, 107, 0.5);
+}
+.marker-cluster-large div {
+    background-color: rgba(255, 107, 107, 0.9);
+}
+
 .place-popup {
     min-width: 220px;
 }
@@ -3149,6 +3177,11 @@ button:disabled,
 
 [data-theme="dark"] .leaflet-popup-tip {
     background: var(--secondary-bg);
+}
+
+/* Marker cluster dark mode */
+[data-theme="dark"] .marker-cluster div {
+    color: var(--bg-color);
 }
 
 /* Toast dark mode */

@@ -314,8 +314,13 @@ function initMap() {
         maxZoom: 20
     }).addTo(map);
 
-    // Create feature group for markers (supports getBounds)
-    markersLayer = L.featureGroup().addTo(map);
+    // Create marker cluster group for markers (groups nearby markers at low zoom)
+    markersLayer = L.markerClusterGroup({
+        showCoverageOnHover: false,
+        maxClusterRadius: 50,
+        spiderfyOnMaxZoom: true,
+        disableClusteringAtZoom: 16
+    }).addTo(map);
 
     map.on('zoomend', updatePlacePreviewVisibility);
     updatePlacePreviewVisibility();
