@@ -2336,6 +2336,28 @@ body {
     color: var(--danger-color);
 }
 
+.sheet-icon-btn {
+    position: absolute;
+    right: 56px;
+    top: -8px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: var(--secondary-bg);
+    color: var(--hint-color);
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.sheet-icon-btn:hover {
+    background: var(--sprout-purple-light);
+    color: var(--sprout-purple);
+}
+
 .sheet-body {
     flex: 1;
     overflow-y: auto;

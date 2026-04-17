@@ -2917,6 +2917,9 @@ async function openReviewSheet(placeId) {
             // Show delete button for existing review
             document.getElementById('delete-review-btn').style.display = 'block';
 
+            // Show share button for existing review
+            document.getElementById('share-review-btn').style.display = 'flex';
+
             // Update save button text for edit mode
             document.getElementById('save-review-btn').textContent = 'Update Review';
 
@@ -2929,6 +2932,7 @@ async function openReviewSheet(placeId) {
             document.getElementById('overall-remarks').value = '';
             document.getElementById('overall-edited').textContent = '';
             document.getElementById('delete-review-btn').style.display = 'none';
+            document.getElementById('share-review-btn').style.display = 'none';
 
             // Update save button text for new review
             document.getElementById('save-review-btn').textContent = 'Save Review';
@@ -2940,6 +2944,7 @@ async function openReviewSheet(placeId) {
         currentReview = null;
         addDishCard();
         document.getElementById('delete-review-btn').style.display = 'none';
+        document.getElementById('share-review-btn').style.display = 'none';
         document.getElementById('save-review-btn').textContent = 'Save Review';
         // Initialize empty overall photos grid
         updatePhotoGrid(document.getElementById('overall-photos'), [], 3, null);
@@ -2959,6 +2964,35 @@ function closeReviewSheet() {
     document.getElementById('review-sheet').style.display = 'none';
     currentReviewPlaceId = null;
     currentReview = null;
+}
+
+// Share review via Telegram or clipboard
+function shareReview() {
+    if (!currentReviewPlaceId) return;
+
+    const place = places.find(p => p.id === currentReviewPlaceId);
+    const review = getPlaceReview(currentReviewPlaceId);
+    if (!place || !review) return;
+
+    // Format review text
+    const stars = '⭐'.repeat(review.overall_rating);
+    const priceSymbol = '$'.repeat(review.price_rating);
+    let text = `${place.name}\n${stars} ${priceSymbol}`;
+    if (review.overall_remarks) {
+        text += `\n\n"${review.overall_remarks}"`;
+    }
+
+    // Use Telegram share (if available)
+    if (window.Telegram?.WebApp?.switchInlineQuery) {
+        // Opens chat picker with pre-filled message
+        window.Telegram.WebApp.switchInlineQuery(text, ['users', 'groups', 'channels']);
+    } else {
+        // Fallback: copy to clipboard
+        navigator.clipboard.writeText(text);
+        showToast('Review copied to clipboard');
+    }
+
+    hapticFeedback('medium');
 }
 
 // Setup swipe-to-close gesture for bottom sheets
@@ -3493,6 +3527,7 @@ function setupReviewSheet() {
     document.getElementById('add-dish-btn').addEventListener('click', () => addDishCard());
     document.getElementById('save-review-btn').addEventListener('click', saveReview);
     document.getElementById('delete-review-btn').addEventListener('click', deleteReview);
+    document.getElementById('share-review-btn').addEventListener('click', shareReview);
 
     // Close on backdrop click
     document.getElementById('review-sheet').addEventListener('click', (e) => {
