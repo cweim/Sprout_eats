@@ -1213,8 +1213,9 @@ function applyFilters() {
     // Re-render list
     renderPlacesList(filtered);
 
-    // Update visited chip counts
+    // Update all filter chip counts
     updateVisitedChipCounts();
+    updateMapFilterCounts();
 
     // Update search clear button visibility
     const clearBtn = document.getElementById('search-clear');
@@ -2309,8 +2310,9 @@ function removeFilter(type) {
     renderActiveFilterPills();
 }
 
-// ========== VISITED CHIP COUNTS ==========
+// ========== FILTER CHIP COUNTS ==========
 
+// Update list view visited chip counts
 function updateVisitedChipCounts() {
     const allCount = places.length;
     const visitedCount = places.filter(p => p.is_visited).length;
@@ -2332,6 +2334,79 @@ function updateVisitedChipCounts() {
                 break;
         }
     });
+}
+
+// Update map view filter chip counts
+function updateMapFilterCounts() {
+    const allCount = places.length;
+    const visitedCount = places.filter(p => p.is_visited).length;
+    const unvisitedCount = allCount - visitedCount;
+
+    document.querySelectorAll('.map-filter-chip').forEach(chip => {
+        const filter = chip.dataset.filter;
+        let count = 0;
+        switch (filter) {
+            case 'all':
+                count = allCount;
+                break;
+            case 'visited':
+                count = visitedCount;
+                break;
+            case 'unvisited':
+                count = unvisitedCount;
+                break;
+        }
+
+        // Update chip text with count
+        const baseText = filter === 'all' ? 'All' : filter === 'visited' ? 'Visited ✓' : 'To Visit';
+        chip.textContent = count > 0 ? `${baseText} (${count})` : baseText;
+    });
+}
+
+// Update review filter chip counts
+function updateReviewFilterCounts() {
+    const totalCount = allReviews.length;
+    const withPhotosCount = allReviews.filter(r => {
+        const dishPhotos = r.dishes?.reduce((sum, d) => sum + (d.photos?.length || 0), 0) || 0;
+        const overallPhotos = r.overall_photos?.length || 0;
+        return (dishPhotos + overallPhotos) > 0;
+    }).length;
+    const fiveStarCount = allReviews.filter(r => r.overall_rating === 5).length;
+    const fourStarCount = allReviews.filter(r => r.overall_rating === 4).length;
+
+    document.querySelectorAll('.review-filter-chip').forEach(chip => {
+        const filter = chip.dataset.filter;
+        let count = 0;
+        let baseText = '';
+
+        switch (filter) {
+            case 'all':
+                count = totalCount;
+                baseText = 'All';
+                break;
+            case 'photos':
+                count = withPhotosCount;
+                baseText = 'With Photos';
+                break;
+            case '5star':
+                count = fiveStarCount;
+                baseText = '5 ⭐';
+                break;
+            case '4star':
+                count = fourStarCount;
+                baseText = '4 ⭐';
+                break;
+        }
+
+        chip.textContent = count > 0 ? `${baseText} (${count})` : baseText;
+    });
+}
+
+// Update all filter counts
+function updateAllFilterCounts() {
+    updateVisitedChipCounts();
+    updateMapFilterCounts();
+    updateReviewFilterCounts();
 }
 
 // Switch view
@@ -2406,8 +2481,39 @@ async function initApp() {
         return;
     }
 
-    // Display places on map - always fit bounds to show all places on entry
-    displayPlacesOnMap(true);
+    // Determine map initial view: center on user if within 200km of any place
+    let shouldCenterOnUser = false;
+    if (userLocation && places.length > 0) {
+        // Check if any place is within 200km of user
+        const nearbyPlace = places.find(p => {
+            if (!p.latitude || !p.longitude) return false;
+            const dist = calculateDistance(userLocation.lat, userLocation.lng, p.latitude, p.longitude);
+            return dist <= 200;
+        });
+        shouldCenterOnUser = !!nearbyPlace;
+    }
+
+    // Display places on map
+    if (shouldCenterOnUser) {
+        // Center on user location with zoom 13, show user marker
+        displayPlacesOnMap(false);  // Add markers but don't fit bounds
+        map.setView([userLocation.lat, userLocation.lng], 13);
+
+        // Add user location marker (blue dot)
+        if (!userLocationMarker) {
+            userLocationMarker = L.circleMarker([userLocation.lat, userLocation.lng], {
+                radius: 8,
+                fillColor: '#4285f4',
+                color: '#fff',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 1
+            }).addTo(map).bindPopup('You are here');
+        }
+    } else {
+        // Fall back to fitting all places in view
+        displayPlacesOnMap(true);
+    }
 
     // Setup list controls (search, filters, sort)
     setupListControls();
@@ -2426,6 +2532,10 @@ async function initApp() {
 
     // Render list view
     renderPlacesList(places);
+
+    // Update all filter counts
+    updateMapFilterCounts();
+    updateVisitedChipCounts();
 
     // Show map view by default
     switchView('map');
@@ -3245,6 +3355,7 @@ async function loadReviews() {
             const data = await response.json();
             allReviews = data.reviews;
             renderReviews();
+            updateReviewFilterCounts();
         }
     } catch (error) {
         console.error('Failed to load reviews:', error);
