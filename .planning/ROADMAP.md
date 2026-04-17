@@ -339,5 +339,5 @@ Features:
 |-------|----------------|--------|-----------|
 | 12. Critical UX Fixes | 3/3 | Complete | 2026-04-16 |
 | 13. Quick Wins | 2/2 | Complete | 2026-04-17 |
-| 14. Medium Priority UX | 0/4 | Not Started | - |
+| 14. Medium Priority UX | 1/4 | In progress | - |
 | 15. Polish | 0/3 | Not Started | - |
