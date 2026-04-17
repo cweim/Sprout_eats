@@ -2743,9 +2743,11 @@ function createDishCard(dish = {}) {
     const card = document.createElement('div');
     card.className = 'dish-card';
     card.dataset.dishId = id;
+    card.draggable = true;
 
     card.innerHTML = `
         <div class="dish-card-header">
+            <span class="dish-drag-handle" aria-label="Drag to reorder">⠿</span>
             <input type="text" class="dish-card-name" placeholder="What did you order?" value="${name.replace(/"/g, '&quot;')}" maxlength="100">
             <button type="button" class="dish-remove-btn" onclick="removeDishCard('${id}')">×</button>
         </div>
@@ -3441,6 +3443,51 @@ function viewPhotoFullscreen(url) {
 }
 
 // Setup review sheet
+// Setup drag-and-drop for dish cards
+function setupDishDragAndDrop() {
+    const container = document.getElementById('review-dishes');
+    if (!container) return;
+
+    let draggedCard = null;
+
+    container.addEventListener('dragstart', (e) => {
+        if (!e.target.classList.contains('dish-card')) return;
+        draggedCard = e.target;
+        e.target.classList.add('dragging');
+        hapticFeedback('light');
+    });
+
+    container.addEventListener('dragend', (e) => {
+        if (!e.target.classList.contains('dish-card')) return;
+        e.target.classList.remove('dragging');
+        draggedCard = null;
+    });
+
+    container.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (!draggedCard) return;
+        const afterElement = getDragAfterElement(container, e.clientY);
+        if (afterElement == null) {
+            container.appendChild(draggedCard);
+        } else {
+            container.insertBefore(draggedCard, afterElement);
+        }
+    });
+}
+
+// Get element to insert dragged card after
+function getDragAfterElement(container, y) {
+    const draggableElements = [...container.querySelectorAll('.dish-card:not(.dragging)')];
+    return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+            return { offset, element: child };
+        }
+        return closest;
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
 function setupReviewSheet() {
     document.getElementById('review-sheet-close').addEventListener('click', closeReviewSheet);
     document.getElementById('add-dish-btn').addEventListener('click', () => addDishCard());
@@ -3456,6 +3503,9 @@ function setupReviewSheet() {
 
     // Setup swipe-to-close gesture
     setupSheetGestures(document.getElementById('review-sheet'), closeReviewSheet);
+
+    // Setup dish drag-and-drop
+    setupDishDragAndDrop();
 }
 
 // ========== REVIEWS VIEW ==========

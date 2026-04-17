@@ -2533,6 +2533,24 @@ body {
     border-color: var(--sprout-purple-light);
 }
 
+.dish-card.dragging {
+    opacity: 0.5;
+    transform: scale(0.98);
+}
+
+.dish-drag-handle {
+    cursor: grab;
+    padding: 0 4px;
+    color: var(--hint-color);
+    user-select: none;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.dish-drag-handle:active {
+    cursor: grabbing;
+}
+
 .dish-card-header {
     display: flex;
     align-items: center;
