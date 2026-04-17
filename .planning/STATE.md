@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 ## Current Position
 
 Phase: 15 of 15 (Polish)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-04-17 — Completed 15-01-PLAN.md
+Last activity: 2026-04-18 — Completed 15-02-PLAN.md
 
-Progress: ██████████████████░ 36/38 plans complete (Milestone v1.2 in progress)
+Progress: ██████████████████░ 37/38 plans complete (Milestone v1.2 in progress)
 
 ## Performance Metrics
 
@@ -76,9 +76,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-17
-Stopped at: Completed 15-01-PLAN.md
-Resume file: .planning/phases/15-polish/15-02-PLAN.md
+Last session: 2026-04-18
+Stopped at: Completed 15-02-PLAN.md
+Resume file: .planning/phases/15-polish/15-03-PLAN.md
 
 ## Milestone v1.1 Status
 
@@ -124,5 +124,5 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 
 **Phase 15 Plans:**
 - [x] 15-01: Map polish (marker clustering)
-- [ ] 15-02: Review enhancements (drag-to-reorder dishes, share)
+- [x] 15-02: Review enhancements (drag-to-reorder dishes, share)
 - [ ] 15-03: Animations and gestures (success animations, swipe-to-delete)
