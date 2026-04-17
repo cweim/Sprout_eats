@@ -194,11 +194,45 @@ function showLoading() {
     document.getElementById('loading').style.display = 'flex';
     document.getElementById('map-view').classList.remove('active');
     document.getElementById('list-view').classList.remove('active');
+    showSkeletonCards(5);
 }
 
 // Hide loading state
 function hideLoading() {
     document.getElementById('loading').style.display = 'none';
+    clearSkeletonCards();
+}
+
+// Show skeleton loading cards in list view
+function showSkeletonCards(count = 5) {
+    const container = document.getElementById('places-list');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    for (let i = 0; i < count; i++) {
+        const skeleton = document.createElement('div');
+        skeleton.className = 'skeleton-card';
+        skeleton.innerHTML = `
+            <div class="skeleton-header">
+                <div class="skeleton-avatar"></div>
+                <div class="skeleton-title-group">
+                    <div class="skeleton-line skeleton-title"></div>
+                    <div class="skeleton-line skeleton-subtitle"></div>
+                </div>
+            </div>
+            <div class="skeleton-line skeleton-body"></div>
+            <div class="skeleton-line skeleton-body short"></div>
+        `;
+        container.appendChild(skeleton);
+    }
+}
+
+// Clear skeleton cards
+function clearSkeletonCards() {
+    const container = document.getElementById('places-list');
+    if (!container) return;
+    container.querySelectorAll('.skeleton-card').forEach(el => el.remove());
 }
 
 // Show empty state
@@ -2920,6 +2954,44 @@ function closeReviewSheet() {
     currentReview = null;
 }
 
+// Setup swipe-to-close gesture for bottom sheets
+function setupSheetGestures(sheetEl, closeFn) {
+    const content = sheetEl.querySelector('.sheet-content');
+    if (!content) return;
+
+    let startY = 0;
+    let currentY = 0;
+    let isDragging = false;
+
+    content.addEventListener('touchstart', (e) => {
+        // Only drag from header area (near handle), not sheet-body
+        if (e.target.closest('.sheet-body')) return;
+        startY = e.touches[0].clientY;
+        isDragging = true;
+        content.style.transition = 'none';
+    });
+
+    content.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        currentY = e.touches[0].clientY - startY;
+        // Only allow dragging down
+        if (currentY > 0) {
+            content.style.transform = `translateY(${currentY}px)`;
+        }
+    });
+
+    content.addEventListener('touchend', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        content.style.transition = 'transform 0.3s ease';
+        if (currentY > 100) {
+            closeFn();
+        }
+        content.style.transform = '';
+        currentY = 0;
+    });
+}
+
 // Save review
 async function saveReview() {
     if (!currentReviewPlaceId) return;
@@ -3376,6 +3448,9 @@ function setupReviewSheet() {
             closeReviewSheet();
         }
     });
+
+    // Setup swipe-to-close gesture
+    setupSheetGestures(document.getElementById('review-sheet'), closeReviewSheet);
 }
 
 // ========== REVIEWS VIEW ==========

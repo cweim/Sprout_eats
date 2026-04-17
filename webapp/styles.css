@@ -3224,3 +3224,51 @@ button:disabled,
 [data-theme="dark"] .loading-state {
     background-color: var(--bg-color);
 }
+
+/* ========== SKELETON LOADING CARDS ========== */
+
+.skeleton-card {
+    background: var(--secondary-bg);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+    border: 1.5px solid var(--secondary-bg);
+}
+
+.skeleton-line {
+    background: linear-gradient(90deg, var(--border-color) 25%, var(--secondary-bg) 50%, var(--border-color) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s infinite;
+    border-radius: 4px;
+}
+
+.skeleton-title {
+    height: 20px;
+    width: 60%;
+    margin-bottom: 10px;
+}
+
+.skeleton-text {
+    height: 14px;
+    width: 80%;
+    margin-bottom: 8px;
+}
+
+.skeleton-text.short {
+    width: 40%;
+}
+
+.skeleton-text.medium {
+    width: 55%;
+}
+
+@keyframes skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Dark mode skeleton */
+[data-theme="dark"] .skeleton-line {
+    background: linear-gradient(90deg, var(--border-color) 25%, #3C3C3E 50%, var(--border-color) 75%);
+    background-size: 200% 100%;
+}
