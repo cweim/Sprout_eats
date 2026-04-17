@@ -1285,7 +1285,8 @@ async function updatePlaceVisited(placeId, isVisited, fromPopup = false) {
     hapticFeedback('light');
 
     // Show feedback
-    showToast(isVisited ? '✓ Marked as visited!' : 'Unmarked');
+    const placeName = place ? place.name : '';
+    showToast(isVisited ? `✓ Marked ${placeName} as visited!` : `Unmarked ${placeName}`);
 
     // Persist to server
     try {
@@ -1330,7 +1331,8 @@ async function updatePlaceNotes(placeId, notes) {
     hapticFeedback('light');
 
     // Show feedback
-    showToast('Notes saved!');
+    const placeName = place ? place.name : '';
+    showToast(`Notes saved for ${placeName}!`);
 
     // Persist to server
     try {
@@ -1435,11 +1437,15 @@ async function deletePlace(placeId) {
         return;
     }
 
+    // Get place name before removal
+    const deletedPlace = places.find(p => p.id === placeId);
+    const placeName = deletedPlace ? deletedPlace.name : '';
+
     // Remove from local state
     places = places.filter(p => p.id !== placeId);
 
     // Show feedback
-    showToast('Bye bye! Place deleted 👋');
+    showToast(`Bye bye ${placeName}! 👋`);
 
     // Re-render
     applyFilters();
