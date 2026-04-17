@@ -366,10 +366,13 @@ function createPopupContent(place) {
     // Action buttons
     html += '<div class="place-popup-actions">';
 
-    // Review button (primary if visited) - icon only to save space
-    const reviewBtnClass = place.is_visited ? 'popup-action-btn primary review-btn' : 'popup-action-btn review-btn';
-    const reviewAriaLabel = `Write review for ${place.name}`;
-    html += `<button class="${reviewBtnClass}" onclick="openReviewSheet(${place.id})" title="Write Review" aria-label="${reviewAriaLabel}">✍️</button>`;
+    // Review button (primary if visited, disabled if not)
+    if (place.is_visited) {
+        const reviewAriaLabel = `Write review for ${place.name}`;
+        html += `<button class="popup-action-btn primary review-btn" onclick="openReviewSheet(${place.id})" title="Write Review" aria-label="${reviewAriaLabel}">✍️</button>`;
+    } else {
+        html += `<button class="popup-action-btn review-btn disabled" title="Mark as visited first" aria-label="Mark as visited first to review" disabled>✍️</button>`;
+    }
 
     // Google Maps link - shortened
     const mapsAriaLabel = `Open ${place.name} in Google Maps`;
@@ -931,8 +934,12 @@ function createPlaceCard(place) {
     // Action buttons (Review, Maps, Reel - delete moved to menu)
     let actionsHtml = '<div class="place-card-actions">';
 
-    // Review button
-    actionsHtml += `<button class="card-action-btn review-btn" onclick="event.stopPropagation(); openReviewSheet(${place.id})" aria-label="Write review">⭐ Review</button>`;
+    // Review button (disabled if not visited)
+    if (place.is_visited) {
+        actionsHtml += `<button class="card-action-btn review-btn" onclick="event.stopPropagation(); openReviewSheet(${place.id})" aria-label="Write review">⭐ Review</button>`;
+    } else {
+        actionsHtml += `<button class="card-action-btn review-btn disabled" title="Mark as visited first" aria-label="Mark as visited first to review" disabled>⭐ Review</button>`;
+    }
 
     // Google Maps link
     if (place.google_place_id) {

@@ -2596,6 +2596,16 @@ body {
     background: #FAF8FF;
 }
 
+/* Disabled button states */
+button.disabled,
+button:disabled,
+.card-action-btn.disabled,
+.popup-action-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 /* ========== REVIEW BADGE IN PLACE CARDS ========== */
 
 .review-badge {
