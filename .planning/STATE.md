@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Save places from travel videos so you never lose track of discoveries
-**Current focus:** Milestone v1.2 - Phase 12 (Critical UX Fixes)
+**Current focus:** Milestone v1.2 - Phase 13 (Quick Wins)
 
 ## Current Position
 
 Phase: 13 of 15 (Quick Wins)
-Plan: 13-01 ready for planning
-Status: Phase 12 complete
-Last activity: 2026-04-16 — Plan 12-03 complete
+Plan: 13-02 ready for execution
+Status: In progress
+Last activity: 2026-04-17 — Plan 13-01 complete
 
-Progress: ██████████████░ 29/38 plans complete (Milestone v1.2 in progress)
+Progress: ██████████████░ 30/38 plans complete (Milestone v1.2 in progress)
 
 ## Performance Metrics
 
@@ -76,9 +76,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-16
-Stopped at: Phase 12 complete
-Resume file: None (ready for Phase 13 planning)
+Last session: 2026-04-17
+Stopped at: Plan 13-01 complete
+Resume file: .planning/phases/13-quick-wins/13-02-PLAN.md
 
 ## Milestone v1.1 Status
 
@@ -111,3 +111,7 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 - [x] 12-01: Bot progress feedback (status messages during video processing)
 - [x] 12-02: Photo upload progress + ARIA accessibility labels
 - [x] 12-03: List card behavior + review edit UX
+
+**Phase 13 Plans:**
+- [x] 13-01: Copy and feedback improvements (success messages, placeholders)
+- [ ] 13-02: Button states and error handling (active states, retry, tooltips)
