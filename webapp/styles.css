@@ -24,6 +24,30 @@
     --warning-color: #E8A87C;
     --danger-color: #E07B7B;
     --danger-bg: #FDF0F0;
+
+    /* Border color */
+    --border-color: #E8E4DC;
+}
+
+/* Dark theme overrides */
+[data-theme="dark"] {
+    --bg-color: #1C1C1E;
+    --text-color: #FFFFFF;
+    --hint-color: #8E8E93;
+    --secondary-bg: #2C2C2E;
+    --border-color: #38383A;
+    --link-color: #A599D9;
+    --button-color: #8B7EC8;
+
+    /* Adjusted accent colors for dark */
+    --sprout-purple: #A599D9;
+    --sprout-purple-light: #8B7EC8;
+    --sprout-green: #8FD4A2;
+    --sprout-green-light: #7CB98E;
+
+    /* Semantic colors for dark */
+    --success-bg: #1E3A28;
+    --danger-bg: #3D1F1F;
 }
 
 /* Reset and base styles */
@@ -3063,4 +3087,107 @@ button:disabled,
 .sheet-close-btn:active {
     transform: scale(0.95);
     opacity: 0.9;
+}
+
+/* ========== DARK MODE COMPONENT OVERRIDES ========== */
+
+/* Map filter panel dark mode */
+[data-theme="dark"] .map-filter-row {
+    background: rgba(44, 44, 46, 0.95);
+}
+
+[data-theme="dark"] .map-cuisine-select {
+    background: rgba(44, 44, 46, 0.95);
+}
+
+/* Header gradient dark mode */
+[data-theme="dark"] .app-header {
+    background: linear-gradient(135deg, var(--bg-color) 0%, #252527 100%);
+}
+
+/* Cards dark mode */
+[data-theme="dark"] .place-card,
+[data-theme="dark"] .review-card,
+[data-theme="dark"] .search-result-card {
+    background-color: var(--secondary-bg);
+    border-color: var(--border-color);
+}
+
+/* Modals and sheets dark mode */
+[data-theme="dark"] .modal-content,
+[data-theme="dark"] .drawer-content,
+[data-theme="dark"] .sheet-content {
+    background-color: var(--bg-color);
+}
+
+/* Filter drawer dark mode */
+[data-theme="dark"] .filter-option {
+    background-color: var(--secondary-bg);
+    border-color: var(--border-color);
+}
+
+/* List controls dark mode */
+[data-theme="dark"] .list-controls {
+    background: linear-gradient(180deg, var(--bg-color) 0%, #252527 100%);
+}
+
+/* Search bar dark mode */
+[data-theme="dark"] .search-bar input {
+    background-color: var(--secondary-bg);
+    color: var(--text-color);
+}
+
+/* Popup dark mode */
+[data-theme="dark"] .place-popup {
+    background-color: var(--secondary-bg);
+}
+
+[data-theme="dark"] .leaflet-popup-content-wrapper {
+    background: var(--secondary-bg);
+    color: var(--text-color);
+}
+
+[data-theme="dark"] .leaflet-popup-tip {
+    background: var(--secondary-bg);
+}
+
+/* Toast dark mode */
+[data-theme="dark"] .toast {
+    background-color: var(--secondary-bg);
+    color: var(--text-color);
+}
+
+/* Input fields dark mode */
+[data-theme="dark"] textarea,
+[data-theme="dark"] input[type="text"] {
+    background-color: var(--secondary-bg);
+    border-color: var(--border-color);
+    color: var(--text-color);
+}
+
+/* Photo thumbnails dark mode */
+[data-theme="dark"] .photo-thumb {
+    border: 1px solid var(--border-color);
+}
+
+/* Reviews controls dark mode */
+[data-theme="dark"] .reviews-controls {
+    background: linear-gradient(180deg, var(--bg-color) 0%, #252527 100%);
+}
+
+/* Empty states dark mode */
+[data-theme="dark"] .empty-state,
+[data-theme="dark"] .reviews-empty-state,
+[data-theme="dark"] .no-results {
+    background-color: var(--bg-color);
+}
+
+/* Review filter chips dark mode */
+[data-theme="dark"] .review-filter-chip {
+    background-color: var(--secondary-bg);
+}
+
+/* Visited chips dark mode */
+[data-theme="dark"] .visited-chip {
+    background-color: var(--secondary-bg);
 }
