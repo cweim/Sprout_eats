@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 ## Current Position
 
 Phase: 14 of 15 (Medium Priority UX)
-Plan: Phase 14 planning needed
-Status: Phase 13 complete
-Last activity: 2026-04-17 — Phase 13 complete
+Plan: 14-01 ready for execution
+Status: Planning complete
+Last activity: 2026-04-17 — Phase 14 plans created
 
 Progress: ██████████████░ 31/38 plans complete (Milestone v1.2 in progress)
 
@@ -77,8 +77,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-17
-Stopped at: Phase 13 complete
-Resume file: N/A (Phase 14 planning needed)
+Stopped at: Phase 14 planning complete
+Resume file: .planning/phases/14-medium-priority-ux/14-01-PLAN.md
 
 ## Milestone v1.1 Status
 
@@ -115,3 +115,9 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 **Phase 13 Plans:**
 - [x] 13-01: Copy and feedback improvements (success messages, placeholders)
 - [x] 13-02: Button states and error handling (active states, retry, tooltips)
+
+**Phase 14 Plans:**
+- [ ] 14-01: Map improvements (auto-center on user, filter counts)
+- [ ] 14-02: Dark mode support (Telegram theme detection)
+- [ ] 14-03: Search and filter improvements (address/notes search, sort persistence)
+- [ ] 14-04: Loading states (skeleton screens, swipe gestures)
