@@ -443,7 +443,7 @@ function startPopupNoteEdit(placeId, container) {
     // Replace container content with textarea
     const currentNotes = place.notes || '';
     container.innerHTML = `
-        <textarea class="inline-notes-input" placeholder="Add your notes...">${currentNotes}</textarea>
+        <textarea class="inline-notes-input" placeholder="What did you think? Any must-try dishes?">${currentNotes}</textarea>
         <div class="inline-notes-actions">
             <button class="inline-notes-cancel" onclick="event.stopPropagation(); cancelPopupNoteEdit(${placeId})">Cancel</button>
             <button class="inline-notes-save" onclick="event.stopPropagation(); savePopupNote(${placeId})">Save</button>
@@ -1367,7 +1367,7 @@ function startInlineNoteEdit(placeId, container) {
     // Replace container content with textarea
     const currentNotes = place.notes || '';
     container.innerHTML = `
-        <textarea class="inline-notes-input" placeholder="Add your notes...">${currentNotes}</textarea>
+        <textarea class="inline-notes-input" placeholder="What did you think? Any must-try dishes?">${currentNotes}</textarea>
         <div class="inline-notes-actions">
             <button class="inline-notes-cancel" onclick="event.stopPropagation(); cancelInlineNoteEdit(${placeId})">Cancel</button>
             <button class="inline-notes-save" onclick="event.stopPropagation(); saveInlineNote(${placeId})">Save</button>
@@ -2535,7 +2535,7 @@ function createDishCard(dish = {}) {
 
     card.innerHTML = `
         <div class="dish-card-header">
-            <input type="text" class="dish-card-name" placeholder="Dish name" value="${name.replace(/"/g, '&quot;')}" maxlength="100">
+            <input type="text" class="dish-card-name" placeholder="What did you order?" value="${name.replace(/"/g, '&quot;')}" maxlength="100">
             <button type="button" class="dish-remove-btn" onclick="removeDishCard('${id}')">×</button>
         </div>
         <div class="dish-card-body">
@@ -2546,7 +2546,7 @@ function createDishCard(dish = {}) {
             <!-- Photos will be populated by updatePhotoGrid -->
         </div>
         <div class="dish-remarks">
-            <textarea placeholder="Notes about this dish... (optional)" maxlength="300">${remarks}</textarea>
+            <textarea placeholder="Any thoughts on this dish?" maxlength="300">${remarks}</textarea>
         </div>
     `;
 
