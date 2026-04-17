@@ -9,11 +9,11 @@ let map = null;
 let markersLayer = null;
 let userLocationMarker = null;
 
-// Filter state
+// Filter state (sortBy and visitedFilter loaded from localStorage)
 let searchQuery = '';
 let activeCategory = '';  // Single category filter (empty = all)
-let sortBy = 'newest';
-let visitedFilter = 'all';  // 'all', 'visited', 'unvisited'
+let sortBy = localStorage.getItem('sortBy') || 'newest';
+let visitedFilter = localStorage.getItem('visitedFilter') || 'all';  // 'all', 'visited', 'unvisited'
 let countryFilter = '';  // Country filter (empty = all)
 let mapCuisineFilter = '';  // Cuisine filter for map view
 let searchDebounceTimer = null;
@@ -854,6 +854,7 @@ function setupMapControls() {
             mapFilterChips.forEach(c => c.classList.remove('active'));
             chip.classList.add('active');
             visitedFilter = chip.dataset.filter;
+            localStorage.setItem('visitedFilter', visitedFilter);
             // Sync with list view filter
             document.querySelectorAll('.visited-chip').forEach(c => {
                 c.classList.toggle('active', c.dataset.filter === visitedFilter);
@@ -1157,15 +1158,21 @@ function renderFilterChips() {
     });
 }
 
-// Filter places by search query
+// Filter places by search query (searches name, address, notes, types)
 function filterBySearch(placesToFilter) {
     if (!searchQuery.trim()) return placesToFilter;
 
     const query = searchQuery.toLowerCase().trim();
     return placesToFilter.filter(place => {
-        const name = (place.name || '').toLowerCase();
-        const address = (place.address || '').toLowerCase();
-        return name.includes(query) || address.includes(query);
+        // Search across name, address, notes, and types
+        const searchFields = [
+            place.name,
+            place.address,
+            place.notes,
+            place.place_types
+        ].filter(Boolean).map(s => s.toLowerCase());
+
+        return searchFields.some(field => field.includes(query));
     });
 }
 
@@ -1272,6 +1279,7 @@ function setupSort() {
     if (sortSelect) {
         sortSelect.addEventListener('change', (e) => {
             sortBy = e.target.value;
+            localStorage.setItem('sortBy', sortBy);
             applyFilters();
         });
     }
@@ -1291,14 +1299,22 @@ function setupListControls() {
 // Setup visited filter buttons
 function setupVisitedFilter() {
     const chips = document.querySelectorAll('.visited-chip');
+
+    // Apply saved visited filter to UI
+    chips.forEach(c => c.classList.toggle('active', c.dataset.filter === visitedFilter));
+    document.querySelectorAll('.map-filter-chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.filter === visitedFilter);
+    });
+
     chips.forEach(chip => {
         chip.addEventListener('click', () => {
             // Update active state
             chips.forEach(c => c.classList.remove('active'));
             chip.classList.add('active');
 
-            // Update filter
+            // Update filter and persist
             visitedFilter = chip.dataset.filter;
+            localStorage.setItem('visitedFilter', visitedFilter);
 
             // Re-apply filters
             applyFilters();
@@ -2238,6 +2254,7 @@ function setupFilterDrawerClicks() {
 
 function applyFilterDrawer() {
     sortBy = drawerSort;
+    localStorage.setItem('sortBy', sortBy);
     countryFilter = drawerCountry;
     activeCategory = drawerType;
 
