@@ -3191,3 +3191,36 @@ button:disabled,
 [data-theme="dark"] .visited-chip {
     background-color: var(--secondary-bg);
 }
+
+/* Sort select dark mode */
+[data-theme="dark"] .reviews-sort-select,
+[data-theme="dark"] select {
+    background-color: var(--secondary-bg);
+    color: var(--text-color);
+    border-color: var(--border-color);
+}
+
+/* Notes section dark mode */
+[data-theme="dark"] .popup-notes {
+    background-color: var(--secondary-bg);
+}
+
+/* Place menu dark mode */
+[data-theme="dark"] .place-menu-content {
+    background-color: var(--secondary-bg);
+}
+
+/* Search modal dark mode */
+[data-theme="dark"] .search-modal-content {
+    background-color: var(--bg-color);
+}
+
+[data-theme="dark"] #google-search-input {
+    background-color: var(--secondary-bg);
+    color: var(--text-color);
+}
+
+/* Loading state dark mode */
+[data-theme="dark"] .loading-state {
+    background-color: var(--bg-color);
+}
