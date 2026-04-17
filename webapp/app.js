@@ -715,25 +715,40 @@ function filterPlacesByVisited(placesToFilter) {
     }
 }
 
-// Show toast message
-function showToast(message) {
+// Show toast message (optionally with retry button)
+function showToast(message, retryFn = null) {
     // Remove existing toast
     const existing = document.querySelector('.toast');
     if (existing) existing.remove();
 
     const toast = document.createElement('div');
     toast.className = 'toast';
-    toast.textContent = message;
+
+    if (retryFn) {
+        // Toast with retry button
+        toast.innerHTML = `
+            <span class="toast-message">${message}</span>
+            <button class="toast-retry-btn">Retry</button>
+        `;
+        toast.querySelector('.toast-retry-btn').onclick = () => {
+            toast.remove();
+            retryFn();
+        };
+    } else {
+        toast.textContent = message;
+    }
+
     document.body.appendChild(toast);
 
     // Animate in
     setTimeout(() => toast.classList.add('show'), 10);
 
-    // Remove after 3 seconds
+    // Remove after 3 seconds (5 seconds if has retry)
+    const duration = retryFn ? 5000 : 3000;
     setTimeout(() => {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, duration);
 }
 
 // Go to user's location
@@ -2037,7 +2052,7 @@ async function addPlaceFromSearch(place) {
 
     } catch (error) {
         console.error('Failed to add place:', error);
-        showToast('Failed to add 😅');
+        showToast('Failed to add 😅', () => addPlaceFromSearch(place));
     }
 }
 
@@ -2797,7 +2812,7 @@ async function saveReview() {
 
     } catch (error) {
         console.error('Failed to save review:', error);
-        showToast('Failed to save review 😅');
+        showToast('Failed to save review 😅', saveReview);
     }
 }
 
@@ -2827,7 +2842,7 @@ async function deleteReview() {
 
     } catch (error) {
         console.error('Failed to delete review:', error);
-        showToast('Failed to delete review 😅');
+        showToast('Failed to delete review 😅', deleteReview);
     }
 }
 

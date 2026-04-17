@@ -1027,6 +1027,34 @@ body {
     box-shadow: 0 4px 16px rgba(224, 123, 123, 0.4);
 }
 
+/* Toast with retry button */
+.toast:has(.toast-retry-btn) {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    pointer-events: auto;
+}
+
+.toast-retry-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.toast-retry-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.toast-retry-btn:active {
+    transform: scale(0.95);
+}
+
 /* Visited badge */
 .visited-badge {
     display: inline-flex;
