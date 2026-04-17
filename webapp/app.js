@@ -2695,10 +2695,10 @@ async function openReviewSheet(placeId) {
             const overallPhotos = (currentReview.photos || []).filter(p => !p.dish_id);
             updatePhotoGrid(overallPhotosGrid, overallPhotos, 3, null);
 
-            // Show edit timestamp
+            // Show edit timestamp using consistent relative format
             if (currentReview.updated_at) {
                 const date = new Date(currentReview.updated_at);
-                document.getElementById('overall-edited').textContent = `Edited ${date.toLocaleDateString()}`;
+                document.getElementById('overall-edited').textContent = `Edited ${formatTimeAgo(date)}`;
             }
 
             // Show delete button for existing review
