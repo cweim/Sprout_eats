@@ -116,11 +116,31 @@ function initTelegram() {
             document.documentElement.style.setProperty('--tg-viewport-height', `${tg.viewportHeight}px`);
         });
 
+        // Listen for theme changes
+        tg.onEvent('themeChanged', applyTheme);
+
         return tg;
     } else {
         console.log('Not running in Telegram WebApp context');
         return null;
     }
+}
+
+// Apply light/dark theme based on Telegram or system preference
+function applyTheme() {
+    let theme = 'light';
+
+    // Check Telegram colorScheme first
+    if (window.Telegram?.WebApp?.colorScheme) {
+        theme = window.Telegram.WebApp.colorScheme;
+        console.log('Theme from Telegram:', theme);
+    } else if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+        // Fallback to system preference
+        theme = 'dark';
+        console.log('Theme from system preference:', theme);
+    }
+
+    document.documentElement.dataset.theme = theme;
 }
 
 // Fetch places from API with timeout and retry
@@ -2441,6 +2461,9 @@ function setupViewToggle() {
 async function initApp() {
     // Initialize Telegram
     const tg = initTelegram();
+
+    // Apply theme immediately
+    applyTheme();
 
     // Setup view toggle
     setupViewToggle();
