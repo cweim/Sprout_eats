@@ -442,6 +442,31 @@ body {
     cursor: pointer;
     transition: all 0.2s ease;
     min-height: 48px;
+    position: relative;
+}
+
+/* Swipe-to-delete indicator */
+.place-card::after {
+    content: '🗑️ Delete';
+    position: absolute;
+    right: -100px;
+    top: 0;
+    bottom: 0;
+    width: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--danger-bg, #FFEBEB);
+    color: #FF6B6B;
+    font-weight: 600;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    border-radius: 0 16px 16px 0;
+}
+
+.place-card.swipe-delete-ready::after {
+    opacity: 1;
 }
 
 .place-card:hover {

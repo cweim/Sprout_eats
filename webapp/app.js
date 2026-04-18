@@ -2539,6 +2539,68 @@ function setupViewToggle() {
     document.getElementById('btn-reviews').addEventListener('click', () => switchView('reviews'));
 }
 
+// Setup swipe-to-delete on place cards
+function setupSwipeToDelete() {
+    const container = document.getElementById('places-list');
+    let touchStartX = 0;
+    let touchCurrentX = 0;
+    let activeCard = null;
+    const deleteThreshold = 100;
+
+    container.addEventListener('touchstart', (e) => {
+        const card = e.target.closest('.place-card');
+        if (!card) return;
+        touchStartX = e.touches[0].clientX;
+        touchCurrentX = touchStartX;
+        activeCard = card;
+        card.style.transition = 'none';
+    }, { passive: true });
+
+    container.addEventListener('touchmove', (e) => {
+        if (!activeCard) return;
+        touchCurrentX = e.touches[0].clientX;
+        const deltaX = touchCurrentX - touchStartX;
+        // Only allow swipe left (negative)
+        if (deltaX < 0) {
+            activeCard.style.transform = `translateX(${deltaX}px)`;
+            // Show delete indicator
+            if (deltaX < -deleteThreshold) {
+                activeCard.classList.add('swipe-delete-ready');
+            } else {
+                activeCard.classList.remove('swipe-delete-ready');
+            }
+        }
+    }, { passive: true });
+
+    container.addEventListener('touchend', async () => {
+        if (!activeCard) return;
+        const deltaX = touchCurrentX - touchStartX;
+        activeCard.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+
+        if (deltaX < -deleteThreshold) {
+            // Delete the place
+            const placeId = parseInt(activeCard.dataset.placeId);
+            activeCard.style.transform = 'translateX(-100%)';
+            activeCard.style.opacity = '0';
+            hapticFeedback('medium');
+            const cardToRemove = activeCard;
+            setTimeout(async () => {
+                await deletePlace(placeId);
+                cardToRemove.remove();
+                // Update counts
+                updateVisitedChipCounts();
+            }, 300);
+        } else {
+            // Snap back
+            activeCard.style.transform = '';
+        }
+        activeCard.classList.remove('swipe-delete-ready');
+        activeCard = null;
+        touchStartX = 0;
+        touchCurrentX = 0;
+    });
+}
+
 // Initialize app
 async function initApp() {
     // Initialize Telegram
@@ -2637,6 +2699,9 @@ async function initApp() {
 
     // Render list view
     renderPlacesList(places);
+
+    // Setup swipe-to-delete on place cards
+    setupSwipeToDelete();
 
     // Update all filter counts
     updateMapFilterCounts();
