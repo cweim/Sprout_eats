@@ -2944,19 +2944,6 @@ button:disabled,
     transition: width 0.2s ease-out;
 }
 
-/* Section sublabel for photos */
-.section-sublabel {
-    display: block;
-    font-size: 12px;
-    color: var(--hint-color);
-    margin-bottom: 6px;
-}
-
-.overall-photos-section {
-    margin-top: 16px;
-    margin-bottom: 8px;
-}
-
 /* Photo fullscreen overlay */
 .photo-fullscreen {
     position: fixed;
