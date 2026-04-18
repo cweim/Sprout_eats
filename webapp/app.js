@@ -2915,49 +2915,9 @@ async function openReviewSheet(placeId) {
     const place = places.find(p => p.id === placeId);
     if (!place) return;
 
-    // Set title
-    document.getElementById('review-sheet-title').textContent = `Review: ${place.name}`;
-
-    // Add or update "View Place" button
-    const sheetHeader = document.querySelector('.sheet-header');
-    let viewPlaceBtn = document.getElementById('view-place-btn');
-
-    if (!viewPlaceBtn) {
-        viewPlaceBtn = document.createElement('button');
-        viewPlaceBtn.id = 'view-place-btn';
-        viewPlaceBtn.className = 'view-place-btn';
-        viewPlaceBtn.textContent = '📍 View Place';
-        viewPlaceBtn.addEventListener('click', () => {
-            // Close review sheet
-            document.getElementById('review-sheet').style.display = 'none';
-
-            // Switch to map view
-            switchView('map');
-
-            // Center on place marker
-            if (map && place.latitude && place.longitude) {
-                map.setView([place.latitude, place.longitude], 15);
-
-                // Open marker popup
-                markersLayer.eachLayer(marker => {
-                    if (marker.placeData && marker.placeData.id === placeId) {
-                        marker.openPopup();
-                    }
-                });
-            }
-
-            hapticFeedback('medium');
-        });
-
-        sheetHeader.appendChild(viewPlaceBtn);
-    }
-
-    // Show/hide View Place button based on current view
-    if (currentView === 'reviews') {
-        viewPlaceBtn.style.display = 'inline-block';
-    } else {
-        viewPlaceBtn.style.display = 'none';
-    }
+    // Set title and subtitle
+    document.getElementById('review-sheet-title').textContent = 'Review';
+    document.getElementById('review-sheet-place').textContent = place.name;
 
     // Clear dishes
     document.getElementById('review-dishes').innerHTML = '';
@@ -3009,7 +2969,7 @@ async function openReviewSheet(placeId) {
             document.getElementById('delete-review-btn').style.display = 'block';
 
             // Show share button for existing review
-            document.getElementById('share-review-btn').style.display = 'flex';
+            document.getElementById('share-review-btn').style.display = 'block';
 
             // Update save button text for edit mode
             document.getElementById('save-review-btn').textContent = 'Update Review';

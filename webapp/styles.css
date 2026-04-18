@@ -2377,25 +2377,19 @@ body {
     text-align: center;
 }
 
-.view-place-btn {
-    position: absolute;
-    left: 16px;
-    top: -8px;
-    padding: 6px 12px;
-    border: none;
-    background: var(--sprout-purple);
-    color: white;
-    border-radius: 16px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
+.sheet-title-group {
+    text-align: center;
+    flex: 1;
 }
 
-.view-place-btn:hover {
-    background: #7A6BB8;
-    box-shadow: 0 2px 8px rgba(139, 126, 200, 0.3);
+.sheet-subtitle {
+    display: block;
+    font-size: 13px;
+    color: var(--hint-color);
+    font-weight: 400;
+    margin-top: 2px;
 }
+
 
 .sheet-close-btn {
     position: absolute;
@@ -2416,28 +2410,6 @@ body {
 .sheet-close-btn:hover {
     background: var(--danger-bg);
     color: var(--danger-color);
-}
-
-.sheet-icon-btn {
-    position: absolute;
-    right: 56px;
-    top: -8px;
-    width: 32px;
-    height: 32px;
-    border: none;
-    background: var(--secondary-bg);
-    color: var(--hint-color);
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.sheet-icon-btn:hover {
-    background: var(--sprout-purple-light);
-    color: var(--sprout-purple);
 }
 
 .sheet-body {
@@ -3218,7 +3190,6 @@ button:disabled,
 .drawer-btn:active,
 .add-dish-btn:active,
 .dish-remove-btn:active,
-.view-place-btn:active,
 .search-btn:active,
 .search-google-btn:active,
 .filter-btn:active,
