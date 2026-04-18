@@ -2658,13 +2658,13 @@ body {
 .dish-card-header {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
+    gap: 8px;
 }
 
 .dish-card-name {
     flex: 1;
-    padding: 8px 12px;
+    min-width: 0;
+    padding: 8px 10px;
     border: 1px solid var(--secondary-bg);
     border-radius: 8px;
     background: white;
@@ -2701,31 +2701,62 @@ body {
     color: white;
 }
 
-.dish-card-body {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+.dish-expand-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: var(--secondary-bg);
+    color: var(--hint-color);
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
 }
 
-.dish-card-body label {
-    font-size: 13px;
-    color: var(--hint-color);
-    min-width: 40px;
+.dish-expand-btn:hover {
+    background: var(--sprout-purple-light);
+    color: var(--sprout-purple);
+}
+
+.dish-expand-btn:active {
+    transform: scale(0.95);
+}
+
+/* Collapsible dish details */
+.dish-card-details {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-height 0.25s ease, opacity 0.2s ease, margin 0.25s ease;
+    margin-top: 0;
+}
+
+.dish-card.expanded .dish-card-details {
+    max-height: 200px;
+    opacity: 1;
+    margin-top: 12px;
+}
+
+/* Hide drag handle for single dish */
+.dish-card:only-child .dish-drag-handle {
+    display: none;
 }
 
 .dish-card-stars {
     display: flex;
     gap: 2px;
+    flex-shrink: 0;
 }
 
 .dish-card-stars .star {
-    width: 24px;
-    height: 24px;
-    font-size: 18px;
+    width: 20px;
+    height: 20px;
+    font-size: 16px;
 }
 
 .dish-remarks {
-    margin-top: 10px;
+    margin-top: 8px;
 }
 
 .dish-remarks textarea {

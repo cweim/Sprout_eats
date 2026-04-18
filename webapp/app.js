@@ -2831,26 +2831,29 @@ function createDishCard(dish = {}) {
     const remarks = dish.remarks || '';
     const photos = dish.photos || [];
 
+    // Start expanded if new (no id) or has content (photos/remarks)
+    const hasContent = photos.length > 0 || remarks;
+    const isNew = !dish.id;
+    const startExpanded = isNew || hasContent;
+
     const card = document.createElement('div');
-    card.className = 'dish-card';
+    card.className = 'dish-card' + (startExpanded ? ' expanded' : '');
     card.dataset.dishId = id;
     card.draggable = true;
 
     card.innerHTML = `
         <div class="dish-card-header">
             <span class="dish-drag-handle" aria-label="Drag to reorder">⠿</span>
-            <input type="text" class="dish-card-name" placeholder="What did you order?" value="${name.replace(/"/g, '&quot;')}" maxlength="100">
-            <button type="button" class="dish-remove-btn" onclick="removeDishCard('${id}')">×</button>
-        </div>
-        <div class="dish-card-body">
-            <label>Rating</label>
+            <input type="text" class="dish-card-name" placeholder="Dish name" value="${name.replace(/"/g, '&quot;')}" maxlength="100">
             <div class="dish-card-stars star-rating" data-rating="${rating}"></div>
+            <button type="button" class="dish-expand-btn" aria-label="Expand details">${startExpanded ? '▲' : '▼'}</button>
+            <button type="button" class="dish-remove-btn" onclick="removeDishCard('${id}')" aria-label="Remove dish">×</button>
         </div>
-        <div class="dish-photos photo-grid small" data-dish-id="${id}">
-            <!-- Photos will be populated by updatePhotoGrid -->
-        </div>
-        <div class="dish-remarks">
-            <textarea placeholder="Any thoughts on this dish?" maxlength="300">${remarks}</textarea>
+        <div class="dish-card-details">
+            <div class="dish-photos photo-grid small" data-dish-id="${id}"></div>
+            <div class="dish-remarks">
+                <textarea placeholder="Notes" maxlength="300">${remarks}</textarea>
+            </div>
         </div>
     `;
 
@@ -2861,6 +2864,23 @@ function createDishCard(dish = {}) {
     // Initialize photo grid (max 2 photos per dish)
     const photoGrid = card.querySelector('.dish-photos');
     updatePhotoGrid(photoGrid, photos, 2, id);
+
+    // Setup expand/collapse toggle
+    const expandBtn = card.querySelector('.dish-expand-btn');
+    expandBtn.addEventListener('click', () => {
+        card.classList.toggle('expanded');
+        expandBtn.textContent = card.classList.contains('expanded') ? '▲' : '▼';
+        hapticFeedback('light');
+    });
+
+    // Auto-expand on name input focus
+    const nameInput = card.querySelector('.dish-card-name');
+    nameInput.addEventListener('focus', () => {
+        if (!card.classList.contains('expanded')) {
+            card.classList.add('expanded');
+            expandBtn.textContent = '▲';
+        }
+    });
 
     return card;
 }
