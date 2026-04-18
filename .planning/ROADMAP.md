@@ -7,7 +7,7 @@ Transform the existing place-extraction bot into a polished, reliable, and delig
 ## Milestones
 
 - [x] **v1.1** - Core Features (Phases 1-11)
-- [ ] **v1.2** - UX Polish (Phases 12-15)
+- [ ] **v1.2** - UX Polish (Phases 12-16)
 
 ## Domain Expertise
 
@@ -37,7 +37,8 @@ None
 - [ ] **Phase 12: Critical UX Fixes** - Bot progress feedback, photo upload progress, accessibility, list card behavior
 - [ ] **Phase 13: Quick Wins** - Button states, copy improvements, small polish items
 - [ ] **Phase 14: Medium Priority UX** - Map improvements, dark mode, search, loading states
-- [ ] **Phase 15: Polish** - Marker clustering, animations, sharing features
+- [x] **Phase 15: Polish** - Marker clustering, animations, sharing features
+- [ ] **Phase 16: Review UI Overhaul** - Compact layout, better hierarchy, cleaner UX
 
 ## Phase Details
 
@@ -304,9 +305,9 @@ Features:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 15-01: Map polish (marker clustering)
-- [ ] 15-02: Review enhancements (drag-to-reorder dishes, share feature)
-- [ ] 15-03: Animations and gestures (success animations, swipe-to-delete)
+- [x] 15-01: Map polish (marker clustering)
+- [x] 15-02: Review enhancements (drag-to-reorder dishes, share feature)
+- [x] 15-03: Animations and gestures (success animations, swipe-to-delete)
 
 Features:
 - Leaflet marker clustering for 50+ places
@@ -314,6 +315,25 @@ Features:
 - Share review via Telegram API
 - Success confetti/checkmark animations
 - Swipe-to-delete gestures on cards
+
+### Phase 16: Review UI Overhaul
+**Goal**: Redesign review sheet for better usability and visual hierarchy
+**Depends on**: Phase 15
+**Research**: Unlikely (implementing audit findings)
+**Plans**: 2 plans
+
+Plans:
+- [ ] 16-01: Layout restructure (Overall first, compact header, inline ratings)
+- [ ] 16-02: Collapsible dish cards (inline summary, expand for details)
+
+Features:
+- Overall section before Dishes (most users rate overall first)
+- Rating + Price on same row (saves vertical space)
+- Clean header with place name as subtitle
+- Collapsible dish cards (name + stars inline, tap to expand)
+- Hide drag handle for single dish
+- Consistent 24px stars throughout
+- Shorter placeholder text
 
 ## Progress
 
@@ -340,4 +360,5 @@ Features:
 | 12. Critical UX Fixes | 3/3 | Complete | 2026-04-16 |
 | 13. Quick Wins | 2/2 | Complete | 2026-04-17 |
 | 14. Medium Priority UX | 4/4 | Complete | 2026-04-17 |
-| 15. Polish | 0/3 | Not Started | - |
+| 15. Polish | 3/3 | Complete | 2026-04-18 |
+| 16. Review UI Overhaul | 0/2 | Not Started | - |

@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Save places from travel videos so you never lose track of discoveries
-**Current focus:** Milestone v1.2 complete!
+**Current focus:** Milestone v1.2 - Phase 16 (Review UI Overhaul)
 
 ## Current Position
 
-Phase: 15 of 15 (Polish) ✅
-Plan: 3 of 3 in current phase ✅
-Status: Milestone v1.2 complete
-Last activity: 2026-04-18 — Completed 15-03-PLAN.md
+Phase: 16 of 16 (Review UI Overhaul)
+Plan: 0 of 2 in current phase
+Status: Ready to start
+Last activity: 2026-04-18 — Created Phase 16 plans
 
-Progress: ████████████████████ 38/38 plans complete (Milestone v1.2 complete!)
+Progress: ██████████████████░░ 38/40 plans complete (Milestone v1.2 in progress)
 
 ## Performance Metrics
 
@@ -77,8 +77,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-18
-Stopped at: Milestone v1.2 complete
-Resume file: N/A (milestone complete)
+Stopped at: Created Phase 16 plans
+Resume file: .planning/phases/16-review-ui/16-01-PLAN.md
 
 ## Milestone v1.1 Status
 
@@ -106,6 +106,7 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 - [x] Phase 13: Quick Wins (2 plans) ✅
 - [x] Phase 14: Medium Priority UX (4 plans) ✅
 - [x] Phase 15: Polish (3 plans) ✅
+- [ ] Phase 16: Review UI Overhaul (2 plans) ← Next
 
 **Phase 12 Plans:**
 - [x] 12-01: Bot progress feedback (status messages during video processing)
@@ -127,8 +128,6 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 - [x] 15-02: Review enhancements (drag-to-reorder dishes, share)
 - [x] 15-03: Animations and gestures (success animations, swipe-to-delete)
 
-**Milestone v1.2 Summary:**
-- 4 phases complete (12-15)
-- 12 plans executed
-- UX polish based on audit complete
-- Milestone v1.2 complete!
+**Phase 16 Plans:**
+- [ ] 16-01: Layout restructure (Overall first, compact header, inline ratings)
+- [ ] 16-02: Collapsible dish cards (inline summary, expand for details)
