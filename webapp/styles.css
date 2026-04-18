@@ -2544,19 +2544,36 @@ body {
     align-self: center;
 }
 
-/* Overall Rating Rows */
-.overall-rating-row {
+/* Overall Ratings Row (compact inline) */
+.overall-ratings-row {
     display: flex;
-    align-items: center;
-    gap: 16px;
+    gap: 24px;
     margin-bottom: 16px;
 }
 
-.overall-rating-row label {
-    font-size: 14px;
+.rating-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rating-group label {
+    font-size: 13px;
     font-weight: 500;
-    color: var(--text-color);
-    min-width: 50px;
+    color: var(--hint-color);
+}
+
+/* Smaller stars for overall ratings */
+.overall-ratings-row .star-rating .star {
+    width: 24px;
+    height: 24px;
+    font-size: 18px;
+}
+
+.overall-ratings-row .price-icon {
+    width: 22px;
+    height: 22px;
+    font-size: 16px;
 }
 
 .overall-remarks-row {
