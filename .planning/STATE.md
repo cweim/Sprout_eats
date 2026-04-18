@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Save places from travel videos so you never lose track of discoveries
-**Current focus:** Milestone v1.2 - Phase 15 (Polish)
+**Current focus:** Milestone v1.2 complete!
 
 ## Current Position
 
-Phase: 15 of 15 (Polish)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-04-18 — Completed 15-02-PLAN.md
+Phase: 15 of 15 (Polish) ✅
+Plan: 3 of 3 in current phase ✅
+Status: Milestone v1.2 complete
+Last activity: 2026-04-18 — Completed 15-03-PLAN.md
 
-Progress: ██████████████████░ 37/38 plans complete (Milestone v1.2 in progress)
+Progress: ████████████████████ 38/38 plans complete (Milestone v1.2 complete!)
 
 ## Performance Metrics
 
@@ -77,8 +77,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-18
-Stopped at: Completed 15-02-PLAN.md
-Resume file: .planning/phases/15-polish/15-03-PLAN.md
+Stopped at: Milestone v1.2 complete
+Resume file: N/A (milestone complete)
 
 ## Milestone v1.1 Status
 
@@ -105,7 +105,7 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 - [x] Phase 12: Critical UX Fixes (3 plans) ✅
 - [x] Phase 13: Quick Wins (2 plans) ✅
 - [x] Phase 14: Medium Priority UX (4 plans) ✅
-- [ ] Phase 15: Polish (3 plans) ← Next
+- [x] Phase 15: Polish (3 plans) ✅
 
 **Phase 12 Plans:**
 - [x] 12-01: Bot progress feedback (status messages during video processing)
@@ -125,4 +125,10 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 **Phase 15 Plans:**
 - [x] 15-01: Map polish (marker clustering)
 - [x] 15-02: Review enhancements (drag-to-reorder dishes, share)
-- [ ] 15-03: Animations and gestures (success animations, swipe-to-delete)
+- [x] 15-03: Animations and gestures (success animations, swipe-to-delete)
+
+**Milestone v1.2 Summary:**
+- 4 phases complete (12-15)
+- 12 plans executed
+- UX polish based on audit complete
+- Milestone v1.2 complete!
