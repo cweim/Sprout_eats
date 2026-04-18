@@ -323,7 +323,7 @@ Features:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 16-01: Layout restructure (Overall first, compact header, inline ratings)
+- [x] 16-01: Layout restructure (Overall first, compact header, inline ratings)
 - [ ] 16-02: Collapsible dish cards (inline summary, expand for details)
 
 Features:
@@ -361,4 +361,4 @@ Features:
 | 13. Quick Wins | 2/2 | Complete | 2026-04-17 |
 | 14. Medium Priority UX | 4/4 | Complete | 2026-04-17 |
 | 15. Polish | 3/3 | Complete | 2026-04-18 |
-| 16. Review UI Overhaul | 0/2 | Not Started | - |
+| 16. Review UI Overhaul | 1/2 | In Progress | - |
