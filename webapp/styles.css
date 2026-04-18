@@ -1107,6 +1107,63 @@ body {
     transform: scale(0.95);
 }
 
+/* Success animation overlay */
+.success-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+.success-overlay.show {
+    opacity: 1;
+}
+
+.success-checkmark {
+    width: 80px;
+    height: 80px;
+    color: var(--sprout-green);
+    transform: scale(0);
+    animation: success-pop 0.5s ease forwards;
+}
+
+.success-checkmark svg {
+    width: 100%;
+    height: 100%;
+}
+
+.success-checkmark circle {
+    stroke-dasharray: 166;
+    stroke-dashoffset: 166;
+    animation: success-circle 0.6s ease forwards;
+}
+
+.success-checkmark path {
+    stroke-dasharray: 48;
+    stroke-dashoffset: 48;
+    animation: success-check 0.3s 0.4s ease forwards;
+}
+
+@keyframes success-pop {
+    0% { transform: scale(0); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+@keyframes success-circle {
+    100% { stroke-dashoffset: 0; }
+}
+
+@keyframes success-check {
+    100% { stroke-dashoffset: 0; }
+}
+
 /* Visited badge */
 .visited-badge {
     display: inline-flex;

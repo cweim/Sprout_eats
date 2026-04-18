@@ -813,6 +813,32 @@ function showToast(message, retryFn = null) {
     }, duration);
 }
 
+// Show success animation overlay
+function showSuccessAnimation() {
+    const overlay = document.createElement('div');
+    overlay.className = 'success-overlay';
+    overlay.innerHTML = `
+        <div class="success-checkmark">
+            <svg viewBox="0 0 52 52">
+                <circle cx="26" cy="26" r="25" fill="none" stroke="currentColor" stroke-width="2"/>
+                <path fill="none" stroke="currentColor" stroke-width="3" d="M14 27l7 7 16-16"/>
+            </svg>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    // Trigger animation
+    requestAnimationFrame(() => overlay.classList.add('show'));
+
+    // Remove after animation
+    setTimeout(() => {
+        overlay.classList.remove('show');
+        setTimeout(() => overlay.remove(), 300);
+    }, 1200);
+
+    hapticFeedback('medium');
+}
+
 // Go to user's location
 function goToMyLocation() {
     if (!navigator.geolocation) {
@@ -3072,7 +3098,7 @@ async function saveReview() {
         if (!response.ok) throw new Error('Failed to save review');
 
         const data = await response.json();
-        showToast('Review saved! ⭐');
+        showSuccessAnimation();
         closeReviewSheet();
 
         // Reload reviews and refresh displays
