@@ -2457,6 +2457,17 @@ body {
     background: var(--danger-bg);
 }
 
+.sheet-btn.secondary {
+    background: var(--secondary-bg);
+    color: var(--text-color);
+    flex: 0 0 auto;
+}
+
+.sheet-btn.secondary:hover {
+    background: var(--sprout-purple-light);
+    color: var(--sprout-purple);
+}
+
 /* Review Sections */
 .review-section {
     margin-bottom: 20px;
