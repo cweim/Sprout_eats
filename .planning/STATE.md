@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Save places from travel videos so you never lose track of discoveries
-**Current focus:** Milestone v1.2 - Phase 16 (Review UI Overhaul)
+**Current focus:** Milestone v1.2 complete!
 
 ## Current Position
 
 Phase: 16 of 16 (Review UI Overhaul)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-04-18 — Completed 16-01-PLAN.md
+Plan: 2 of 2 in current phase
+Status: Complete
+Last activity: 2026-04-18 — Completed 16-02-PLAN.md
 
-Progress: ███████████████████░ 39/40 plans complete (Milestone v1.2 in progress)
+Progress: ████████████████████ 40/40 plans complete (Milestone v1.2 complete!)
 
 ## Performance Metrics
 
@@ -77,8 +77,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-18
-Stopped at: Completed 16-01-PLAN.md
-Resume file: .planning/phases/16-review-ui/16-02-PLAN.md
+Stopped at: Milestone v1.2 complete
+Resume file: None (milestone complete)
 
 ## Milestone v1.1 Status
 
@@ -106,7 +106,7 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 - [x] Phase 13: Quick Wins (2 plans) ✅
 - [x] Phase 14: Medium Priority UX (4 plans) ✅
 - [x] Phase 15: Polish (3 plans) ✅
-- [ ] Phase 16: Review UI Overhaul (2 plans) ← Next
+- [x] Phase 16: Review UI Overhaul (2 plans) ✅
 
 **Phase 12 Plans:**
 - [x] 12-01: Bot progress feedback (status messages during video processing)
@@ -130,4 +130,6 @@ Based on UX Audit (.planning/UX_AUDIT.md)
 
 **Phase 16 Plans:**
 - [x] 16-01: Layout restructure (Overall first, compact header, inline ratings)
-- [ ] 16-02: Collapsible dish cards (inline summary, expand for details)
+- [x] 16-02: Collapsible dish cards (inline summary, expand for details)
+
+Milestone v1.2 complete!

@@ -7,7 +7,7 @@ Transform the existing place-extraction bot into a polished, reliable, and delig
 ## Milestones
 
 - [x] **v1.1** - Core Features (Phases 1-11)
-- [ ] **v1.2** - UX Polish (Phases 12-16)
+- [x] **v1.2** - UX Polish (Phases 12-16)
 
 ## Domain Expertise
 
@@ -38,7 +38,7 @@ None
 - [ ] **Phase 13: Quick Wins** - Button states, copy improvements, small polish items
 - [ ] **Phase 14: Medium Priority UX** - Map improvements, dark mode, search, loading states
 - [x] **Phase 15: Polish** - Marker clustering, animations, sharing features
-- [ ] **Phase 16: Review UI Overhaul** - Compact layout, better hierarchy, cleaner UX
+- [x] **Phase 16: Review UI Overhaul** - Compact layout, better hierarchy, cleaner UX
 
 ## Phase Details
 
@@ -324,7 +324,7 @@ Features:
 
 Plans:
 - [x] 16-01: Layout restructure (Overall first, compact header, inline ratings)
-- [ ] 16-02: Collapsible dish cards (inline summary, expand for details)
+- [x] 16-02: Collapsible dish cards (inline summary, expand for details)
 
 Features:
 - Overall section before Dishes (most users rate overall first)
@@ -361,4 +361,4 @@ Features:
 | 13. Quick Wins | 2/2 | Complete | 2026-04-17 |
 | 14. Medium Priority UX | 4/4 | Complete | 2026-04-17 |
 | 15. Polish | 3/3 | Complete | 2026-04-18 |
-| 16. Review UI Overhaul | 1/2 | In Progress | - |
+| 16. Review UI Overhaul | 2/2 | Complete | 2026-04-18 |
