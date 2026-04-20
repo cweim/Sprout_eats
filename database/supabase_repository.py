@@ -8,6 +8,16 @@ from typing import Optional, List, Dict, Any
 from database.supabase_client import get_supabase, delete_photo as delete_storage_photo
 
 
+def _coerce_int(value: Any) -> Optional[int]:
+    """Convert API numeric fields to ints before writing to integer columns."""
+    if value is None:
+        return None
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
 # =============================================================================
 # Place Operations
 # =============================================================================
@@ -61,11 +71,11 @@ def add_place(
         "source_platform": source_platform,
         "source_title": source_title,
         "source_uploader": source_uploader,
-        "source_duration": source_duration,
+        "source_duration": _coerce_int(source_duration),
         "source_hashtags": source_hashtags,
         "place_types": place_types,
         "place_rating": place_rating,
-        "place_rating_count": place_rating_count,
+        "place_rating_count": _coerce_int(place_rating_count),
         "place_price_level": place_price_level,
         "place_opening_hours": place_opening_hours,
         "source_language": source_language,
