@@ -96,6 +96,23 @@ def format_place_line(place, index: int) -> str:
     return "\n".join(lines)
 
 
+def get_saved_place_id(saved_place) -> int | None:
+    """Return a saved place id from either Supabase dicts or legacy ORM objects."""
+    if not saved_place:
+        return None
+    if isinstance(saved_place, dict):
+        return saved_place.get("id")
+    return getattr(saved_place, "id", None)
+
+
+async def safe_edit_status(status_msg, text: str):
+    """Best-effort status edit; avoids secondary crashes after message deletion."""
+    try:
+        await status_msg.edit_text(text)
+    except Exception:
+        logger.warning("Could not edit status message", exc_info=True)
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     keyboard = []
@@ -860,17 +877,20 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             confirmation += f"\n🗺️ Google Maps: {maps_url}"
             confirmation += f"\n▶️ Original: {text}"
 
-            correction_keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton(
-                    "This is incorrect",
-                    callback_data=f"incorrect_place_{saved_place.id}",
-                )
-            ]])
-            context.user_data["correction_place_context"] = {
-                "place_id": saved_place.id,
-                "source_url": text,
-                "source_platform": result.platform,
-            }
+            saved_place_id = get_saved_place_id(saved_place)
+            correction_keyboard = None
+            if saved_place_id:
+                correction_keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton(
+                        "This is incorrect",
+                        callback_data=f"incorrect_place_{saved_place_id}",
+                    )
+                ]])
+                context.user_data["correction_place_context"] = {
+                    "place_id": saved_place_id,
+                    "source_url": text,
+                    "source_platform": result.platform,
+                }
 
             await update.message.reply_text(
                 confirmation,
@@ -943,22 +963,26 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except DownloadTimeoutError:
         logger.error("Download timed out")
-        await status_msg.edit_text(
+        await safe_edit_status(
+            status_msg,
             "This one's taking too long! 🐌\n\nTry a shorter video?"
         )
     except VideoTooLongError as e:
         logger.warning(f"Video too long: {e}")
-        await status_msg.edit_text(
+        await safe_edit_status(
+            status_msg,
             f"That video's too long! 📹\n\nMax {config.MAX_VIDEO_DURATION // 60} minutes allowed."
         )
     except Exception as e:
         logger.error(f"Error processing URL: {e}")
         if "connect" in str(e).lower() or "network" in str(e).lower():
-            await status_msg.edit_text(
+            await safe_edit_status(
+                status_msg,
                 "Hit a connection snag! 🌧️\n\nGive it a moment and try again."
             )
         else:
-            await status_msg.edit_text(
+            await safe_edit_status(
+                status_msg,
                 "Oops, something went wrong!\n\nMind trying that again?"
             )
 
