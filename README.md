@@ -189,19 +189,4 @@ discovery-bot/
 └── requirements.txt     # Dependencies
 ```
 
-### Running Tests
 
-```bash
-# Install dev dependencies
-pip install pytest pytest-asyncio
-
-# Run all tests
-pytest
-
-# Run with verbose output
-pytest -v
-```
-
-## License
-
-MIT

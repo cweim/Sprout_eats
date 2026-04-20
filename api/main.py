@@ -8,17 +8,21 @@ import config
 
 app = FastAPI(title="Discovery Bot API", version="1.0.0")
 
-# Build allowed origins
+# Build allowed origins - NEVER fall back to wildcard
 allowed_origins = []
 if config.WEBAPP_URL:
     allowed_origins.append(config.WEBAPP_URL)
 if config.LOCAL_DEV_AUTH:
     allowed_origins.extend(["http://localhost:8000", "http://127.0.0.1:8000"])
 
-# CORS middleware - locked to WEBAPP_URL in production
+if not allowed_origins:
+    import logging
+    logging.warning("No CORS origins configured. Set WEBAPP_URL or LOCAL_DEV_AUTH.")
+
+# CORS middleware - empty list rejects all cross-origin if misconfigured
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if allowed_origins else ["*"],
+    allow_origins=allowed_origins,  # No wildcard fallback
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"],
