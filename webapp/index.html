@@ -18,7 +18,7 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 
     <!-- App styles - Playful & Warm theme -->
-    <link rel="stylesheet" href="styles.css?v=20">
+    <link rel="stylesheet" href="styles.css?v=23">
 </head>
 <body>
     <header class="app-header">
@@ -241,8 +241,33 @@
                 </div>
                 <button id="review-sheet-close" class="sheet-close-btn" aria-label="Close">×</button>
             </div>
-            <div class="sheet-body" id="review-sheet-body">
-                <!-- Overall Section (FIRST) -->
+
+            <!-- VIEW MODE (read-only) -->
+            <div class="sheet-body" id="review-view-mode">
+                <div class="review-section">
+                    <div class="review-view-ratings">
+                        <div class="view-rating-item">
+                            <span class="view-rating-label">Rating</span>
+                            <span id="view-overall-stars" class="view-stars"></span>
+                        </div>
+                        <div class="view-rating-item">
+                            <span class="view-rating-label">Price</span>
+                            <span id="view-price-rating" class="view-price"></span>
+                        </div>
+                    </div>
+                    <div id="view-overall-photos" class="photo-grid view-photos"></div>
+                    <div id="view-overall-remarks" class="view-remarks"></div>
+                    <div id="view-edited" class="view-edited"></div>
+                </div>
+
+                <div class="review-section">
+                    <div class="section-header">Dishes</div>
+                    <div id="view-dishes"></div>
+                </div>
+            </div>
+
+            <!-- EDIT MODE (interactive) -->
+            <div class="sheet-body" id="review-edit-mode" style="display: none;">
                 <div class="review-section">
                     <div class="section-header">Overall</div>
                     <div class="overall-ratings-row">
@@ -255,33 +280,49 @@
                             <div id="price-rating" class="price-rating" data-rating="0"></div>
                         </div>
                     </div>
-                    <div id="overall-photos" class="photo-grid">
-                        <!-- Photos inserted here -->
-                    </div>
+                    <div id="overall-photos" class="photo-grid"></div>
                     <div class="overall-remarks-row">
                         <textarea id="overall-remarks" placeholder="Overall thoughts" maxlength="500"></textarea>
-                        <div class="remarks-meta">
-                            <span id="overall-edited" class="edited-timestamp"></span>
-                        </div>
                     </div>
                 </div>
 
-                <!-- Dishes Section (SECOND) -->
                 <div class="review-section">
                     <div class="section-header">Dishes</div>
-                    <div id="review-dishes">
-                        <!-- Dish cards inserted here -->
-                    </div>
+                    <div id="review-dishes"></div>
                     <button id="add-dish-btn" class="add-dish-btn">+ Add another dish</button>
                 </div>
             </div>
-            <div class="sheet-footer">
+
+            <!-- VIEW MODE footer -->
+            <div class="sheet-footer" id="review-view-footer">
+                <button id="edit-review-btn" class="sheet-btn primary">Edit Review</button>
+            </div>
+
+            <!-- EDIT MODE footer -->
+            <div class="sheet-footer" id="review-edit-footer" style="display: none;">
+                <button id="cancel-edit-btn" class="sheet-btn secondary">Cancel</button>
                 <button id="delete-review-btn" class="sheet-btn danger" style="display: none;">Delete</button>
                 <button id="save-review-btn" class="sheet-btn primary">Save</button>
             </div>
         </div>
     </div>
 
-    <script src="app.js?v=33"></script>
+    <!-- Photo Fullscreen Viewer -->
+    <div id="photo-viewer" class="photo-viewer" style="display: none;">
+        <div class="photo-viewer-header">
+            <span id="photo-viewer-counter" class="photo-counter">1 / 3</span>
+            <button id="photo-viewer-close" class="photo-viewer-close" aria-label="Close">×</button>
+        </div>
+        <div class="photo-viewer-body">
+            <button id="photo-viewer-prev" class="photo-nav photo-nav-prev" aria-label="Previous">‹</button>
+            <img id="photo-viewer-img" src="" alt="Photo">
+            <button id="photo-viewer-next" class="photo-nav photo-nav-next" aria-label="Next">›</button>
+        </div>
+        <div class="photo-viewer-footer">
+            <button id="photo-viewer-delete" class="photo-viewer-delete">Delete Photo</button>
+        </div>
+    </div>
+
+    <script src="app.js?v=36"></script>
 </body>
 </html>

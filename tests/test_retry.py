@@ -32,6 +32,7 @@ class TestPlacesRetry:
                         "formattedAddress": "123 Test St",
                         "location": {"latitude": 1.0, "longitude": 2.0},
                         "id": "test_id",
+                        "types": ["restaurant", "food"],
                     }]
                 },
             )

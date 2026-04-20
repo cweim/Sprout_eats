@@ -1,0 +1,61 @@
+{
+  "content_type": "video",
+  "platform": "instagram",
+  "downloaded_video": true,
+  "downloaded_audio": true,
+  "downloaded_images_count": 0,
+  "ocr": {
+    "images": [],
+    "combined": {
+      "text": "",
+      "length": 0,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    }
+  },
+  "transcription": {
+    "language": "en",
+    "language_detection_reliable": true,
+    "text": "Now both good spots stop where you agree.",
+    "text_length": 41,
+    "english_text": "Now both good spots stop where you agree.",
+    "english_text_length": 41,
+    "preferred_text": "Now both good spots stop where you agree.",
+    "preferred_text_length": 41,
+    "preferred_text_source": "transcribe",
+    "raw_transcript_quality": "good",
+    "translation_quality": null,
+    "raw_transcript_score": 0.837,
+    "translation_score": null,
+    "text_signals": {
+      "text": "Now both good spots stop where you agree.",
+      "length": 41,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    },
+    "english_text_signals": {
+      "text": "Now both good spots stop where you agree.",
+      "length": 41,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    },
+    "preferred_text_signals": {
+      "text": "Now both good spots stop where you agree.",
+      "length": 41,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    }
+  }
+}

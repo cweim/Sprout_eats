@@ -1,0 +1,61 @@
+{
+  "content_type": "video",
+  "platform": "instagram",
+  "downloaded_video": true,
+  "downloaded_audio": true,
+  "downloaded_images_count": 0,
+  "ocr": {
+    "images": [],
+    "combined": {
+      "text": "",
+      "length": 0,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    }
+  },
+  "transcription": {
+    "language": "ms",
+    "language_detection_reliable": true,
+    "text": "Kau minta me toЖ-melan ini, selepasreating gua lain dulu, jenis esat pada 18-25 A",
+    "text_length": 81,
+    "english_text": "Kau minta me toЖ-melan ini, selepasreating gua lain dulu, jenis esat pada 18-25 A",
+    "english_text_length": 81,
+    "preferred_text": "Kau minta me toЖ-melan ini, selepasreating gua lain dulu, jenis esat pada 18-25 A",
+    "preferred_text_length": 81,
+    "preferred_text_source": "transcribe",
+    "raw_transcript_quality": "weak",
+    "translation_quality": null,
+    "raw_transcript_score": 0.65,
+    "translation_score": null,
+    "text_signals": {
+      "text": "Kau minta me toЖ-melan ini, selepasreating gua lain dulu, jenis esat pada 18-25 A",
+      "length": 81,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    },
+    "english_text_signals": {
+      "text": "Kau minta me toЖ-melan ini, selepasreating gua lain dulu, jenis esat pada 18-25 A",
+      "length": 81,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    },
+    "preferred_text_signals": {
+      "text": "Kau minta me toЖ-melan ini, selepasreating gua lain dulu, jenis esat pada 18-25 A",
+      "length": 81,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    }
+  }
+}

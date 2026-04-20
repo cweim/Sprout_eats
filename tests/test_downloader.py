@@ -6,6 +6,7 @@ from services.downloader import (
     cleanup_files,
     DownloadTimeoutError,
     DOWNLOAD_TIMEOUT,
+    _detect_content_type,
 )
 
 
@@ -112,3 +113,23 @@ class TestDownloadTimeout:
     def test_download_timeout_constant(self):
         """Test that DOWNLOAD_TIMEOUT is set to expected value."""
         assert DOWNLOAD_TIMEOUT == 120  # 2 minutes
+
+
+class TestContentTypeDetection:
+    def test_detects_video_content(self):
+        info = {"duration": 12, "webpage_url": "https://www.instagram.com/reel/ABC123/"}
+        assert _detect_content_type(info, info["webpage_url"]) == "video"
+
+    def test_detects_image_post_content(self):
+        info = {"title": "Post by test", "webpage_url": "https://www.instagram.com/p/XYZ789/"}
+        assert _detect_content_type(info, info["webpage_url"]) == "image"
+
+    def test_detects_carousel_content(self):
+        info = {
+            "webpage_url": "https://www.instagram.com/p/XYZ789/",
+            "entries": [
+                {"ext": "jpg", "url": "https://example.com/1.jpg"},
+                {"ext": "jpg", "url": "https://example.com/2.jpg"},
+            ],
+        }
+        assert _detect_content_type(info, info["webpage_url"]) == "carousel"

@@ -1,6 +1,20 @@
 // Configuration
 const API_URL = ''; // Set to your API URL, e.g., 'http://localhost:8000'
 
+// Get auth headers for API requests
+function getAuthHeaders() {
+    const headers = {
+        'ngrok-skip-browser-warning': 'true'
+    };
+
+    // Add Telegram initData for authentication
+    if (window.Telegram?.WebApp?.initData) {
+        headers['X-Telegram-Init-Data'] = window.Telegram.WebApp.initData;
+    }
+
+    return headers;
+}
+
 // State
 let places = [];
 let allReviews = [];
@@ -157,9 +171,7 @@ async function fetchPlaces(retries = 3) {
 
             const response = await fetch(`${API_URL}/api/places`, {
                 signal: controller.signal,
-                headers: {
-                    'ngrok-skip-browser-warning': 'true'
-                }
+                headers: getAuthHeaders()
             });
             clearTimeout(timeoutId);
 
@@ -1416,10 +1428,7 @@ async function updatePlaceVisited(placeId, isVisited, fromPopup = false) {
     try {
         const response = await fetch(`${API_URL}/api/places/${placeId}`, {
             method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': 'true'
-            },
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ is_visited: isVisited })
         });
         if (!response.ok) {
@@ -1462,10 +1471,7 @@ async function updatePlaceNotes(placeId, notes) {
     try {
         const response = await fetch(`${API_URL}/api/places/${placeId}`, {
             method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': 'true'
-            },
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ notes: notes })
         });
         if (!response.ok) {
@@ -1548,9 +1554,7 @@ async function deletePlace(placeId) {
     try {
         const response = await fetch(`${API_URL}/api/places/${placeId}`, {
             method: 'DELETE',
-            headers: {
-                'ngrok-skip-browser-warning': 'true'
-            }
+            headers: getAuthHeaders()
         });
         if (!response.ok) {
             throw new Error('Failed to delete');
@@ -1707,10 +1711,7 @@ async function savePlaceEdit(placeId) {
     try {
         const response = await fetch(`${API_URL}/api/places/${placeId}`, {
             method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': 'true'
-            },
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: newName, place_types: newType || null })
         });
         if (!response.ok) {
@@ -1744,10 +1745,7 @@ async function renamePlace(placeId, currentName) {
     try {
         const response = await fetch(`${API_URL}/api/places/${placeId}`, {
             method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': 'true'
-            },
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: newName.trim() })
         });
         if (!response.ok) {
@@ -1963,9 +1961,7 @@ async function searchNearbyPlaces(type) {
 
     try {
         const response = await fetch(`${API_URL}/api/search?q=${encodeURIComponent(query)}&max_results=10`, {
-            headers: {
-                'ngrok-skip-browser-warning': 'true'
-            }
+            headers: getAuthHeaders()
         });
         if (!response.ok) throw new Error('Search failed');
 
@@ -2077,9 +2073,7 @@ async function searchGooglePlaces() {
 
     try {
         const response = await fetch(`${API_URL}/api/search?q=${encodeURIComponent(query)}&max_results=10`, {
-            headers: {
-                'ngrok-skip-browser-warning': 'true'
-            }
+            headers: getAuthHeaders()
         });
         if (!response.ok) throw new Error('Search failed');
 
@@ -2118,10 +2112,7 @@ async function addPlaceFromSearch(place) {
     try {
         const response = await fetch(`${API_URL}/api/places`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': 'true'
-            },
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify(place)
         });
 
@@ -2929,6 +2920,9 @@ function collectDishData() {
     return dishes;
 }
 
+// Review mode state
+let reviewMode = 'view'; // 'view' or 'edit'
+
 // Open review sheet for a place
 async function openReviewSheet(placeId) {
     currentReviewPlaceId = placeId;
@@ -2939,89 +2933,231 @@ async function openReviewSheet(placeId) {
     document.getElementById('review-sheet-title').textContent = 'Review';
     document.getElementById('review-sheet-place').textContent = place.name;
 
-    // Clear dishes
-    document.getElementById('review-dishes').innerHTML = '';
-    dishIdCounter = 0;
+    // Show sheet immediately
+    const sheet = document.getElementById('review-sheet');
+    sheet.style.display = 'flex';
+    sheet.classList.add('loading');
 
-    // Try to load existing review
+    // Hide both modes while loading
+    document.getElementById('review-view-mode').style.display = 'none';
+    document.getElementById('review-edit-mode').style.display = 'none';
+    document.getElementById('review-view-footer').style.display = 'none';
+    document.getElementById('review-edit-footer').style.display = 'none';
+
+    hapticFeedback('light');
+
+    // Load existing review
     try {
         const response = await fetch(`${API_URL}/api/places/${placeId}/review`, {
-            headers: { 'ngrok-skip-browser-warning': 'true' }
+            headers: getAuthHeaders()
         });
+
+        sheet.classList.remove('loading');
 
         if (response.ok) {
             const data = await response.json();
             currentReview = data.review;
-
-            // Populate dishes with photos
-            if (currentReview.dishes && currentReview.dishes.length > 0) {
-                currentReview.dishes.forEach(dish => {
-                    addDishCard({
-                        id: dish.id,
-                        name: dish.name,
-                        rating: dish.rating,
-                        remarks: dish.remarks,
-                        photos: dish.photos || []
-                    });
-                });
-            } else {
-                // Add one empty dish card
-                addDishCard();
-            }
-
-            // Set overall ratings
-            document.getElementById('overall-stars').dataset.rating = currentReview.overall_rating;
-            document.getElementById('price-rating').dataset.rating = currentReview.price_rating;
-            document.getElementById('overall-remarks').value = currentReview.overall_remarks || '';
-
-            // Initialize overall photos grid (max 3 photos)
-            const overallPhotosGrid = document.getElementById('overall-photos');
-            const overallPhotos = (currentReview.photos || []).filter(p => !p.dish_id);
-            updatePhotoGrid(overallPhotosGrid, overallPhotos, 3, null);
-
-            // Show edit timestamp using consistent relative format
-            if (currentReview.updated_at) {
-                const date = new Date(currentReview.updated_at);
-                document.getElementById('overall-edited').textContent = `Edited ${formatTimeAgo(date)}`;
-            }
-
-            // Show delete button for existing review
-            document.getElementById('delete-review-btn').style.display = 'block';
-
-            // Update save button text for edit mode
-            document.getElementById('save-review-btn').textContent = 'Update Review';
-
+            showReviewViewMode();
         } else if (response.status === 404) {
-            // No existing review - start fresh
             currentReview = null;
-            addDishCard();
-            document.getElementById('overall-stars').dataset.rating = 0;
-            document.getElementById('price-rating').dataset.rating = 0;
-            document.getElementById('overall-remarks').value = '';
-            document.getElementById('overall-edited').textContent = '';
-            document.getElementById('delete-review-btn').style.display = 'none';
-
-            // Update save button text for new review
-            document.getElementById('save-review-btn').textContent = 'Save Review';
-            // Initialize empty overall photos grid
-            updatePhotoGrid(document.getElementById('overall-photos'), [], 3, null);
+            showReviewEditMode(true);
         }
     } catch (error) {
         console.error('Failed to load review:', error);
+        sheet.classList.remove('loading');
         currentReview = null;
+        showReviewEditMode(true);
+    }
+}
+
+// Render view mode (read-only)
+function showReviewViewMode() {
+    reviewMode = 'view';
+
+    // Show view mode, hide edit mode
+    document.getElementById('review-view-mode').style.display = 'block';
+    document.getElementById('review-edit-mode').style.display = 'none';
+    document.getElementById('review-view-footer').style.display = 'flex';
+    document.getElementById('review-edit-footer').style.display = 'none';
+
+    if (!currentReview) return;
+
+    // Render overall stars (styled like edit mode)
+    const rating = currentReview.overall_rating || 0;
+    let starsHtml = '';
+    for (let i = 1; i <= 5; i++) {
+        starsHtml += `<span class="star${i <= rating ? ' filled' : ''}">★</span>`;
+    }
+    document.getElementById('view-overall-stars').innerHTML = starsHtml;
+
+    // Render price rating (styled like edit mode)
+    const price = currentReview.price_rating || 0;
+    let priceHtml = '';
+    for (let i = 1; i <= 5; i++) {
+        priceHtml += `<span class="price-icon${i <= price ? ' filled' : ''}">💰</span>`;
+    }
+    document.getElementById('view-price-rating').innerHTML = priceHtml;
+
+    // Render overall photos (view only, clickable)
+    const photosContainer = document.getElementById('view-overall-photos');
+    const overallPhotos = currentReview.overall_photos || [];
+    renderViewPhotos(photosContainer, overallPhotos);
+
+    // Render remarks
+    document.getElementById('view-overall-remarks').textContent = currentReview.overall_remarks || '';
+
+    // Render edited timestamp
+    if (currentReview.updated_at) {
+        const date = new Date(currentReview.updated_at);
+        document.getElementById('view-edited').textContent = `Last edited ${formatTimeAgo(date)}`;
+    } else {
+        document.getElementById('view-edited').textContent = '';
+    }
+
+    // Render dishes
+    renderViewDishes();
+}
+
+// Render view-only photos (clickable for fullscreen)
+function renderViewPhotos(container, photos) {
+    container.innerHTML = '';
+
+    photos.forEach((photo, index) => {
+        const thumb = document.createElement('div');
+        thumb.className = 'photo-thumb';
+        thumb.innerHTML = `<img src="${photo.url}" alt="Photo">`;
+        thumb.addEventListener('click', () => {
+            openPhotoViewer(photos, index, false);
+        });
+        container.appendChild(thumb);
+    });
+}
+
+// Render view-only dishes (collapsible)
+function renderViewDishes() {
+    const container = document.getElementById('view-dishes');
+    container.innerHTML = '';
+
+    if (!currentReview?.dishes?.length) {
+        container.innerHTML = '<div class="view-remarks" style="text-align: center; color: var(--hint-color);">No dishes reviewed</div>';
+        return;
+    }
+
+    currentReview.dishes.forEach(dish => {
+        // Build styled stars
+        let starsHtml = '';
+        const rating = dish.rating || 0;
+        for (let i = 1; i <= 5; i++) {
+            starsHtml += `<span class="star${i <= rating ? ' filled' : ''}">★</span>`;
+        }
+
+        const card = document.createElement('div');
+        card.className = 'view-dish-card';
+
+        card.innerHTML = `
+            <div class="view-dish-header">
+                <span class="view-dish-name">${dish.name}</span>
+                <span class="view-dish-rating">${starsHtml}</span>
+                <span class="view-dish-toggle">▼</span>
+            </div>
+            <div class="view-dish-content">
+                <div class="view-dish-remarks">${dish.remarks || ''}</div>
+                <div class="view-dish-photos"></div>
+            </div>
+        `;
+
+        // Add photos
+        const photosContainer = card.querySelector('.view-dish-photos');
+        const dishPhotos = dish.photos || [];
+        dishPhotos.forEach((photo, index) => {
+            const thumb = document.createElement('div');
+            thumb.className = 'photo-thumb';
+            thumb.innerHTML = `<img src="${photo.url}" alt="Photo">`;
+            thumb.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openPhotoViewer(dishPhotos, index, false);
+            });
+            photosContainer.appendChild(thumb);
+        });
+
+        // Toggle expand/collapse
+        card.querySelector('.view-dish-header').addEventListener('click', () => {
+            card.classList.toggle('expanded');
+        });
+
+        container.appendChild(card);
+    });
+}
+
+// Show edit mode
+function showReviewEditMode(isNew = false) {
+    reviewMode = 'edit';
+
+    // Show edit mode, hide view mode
+    document.getElementById('review-view-mode').style.display = 'none';
+    document.getElementById('review-edit-mode').style.display = 'block';
+    document.getElementById('review-view-footer').style.display = 'none';
+    document.getElementById('review-edit-footer').style.display = 'flex';
+
+    // Clear dishes
+    document.getElementById('review-dishes').innerHTML = '';
+    dishIdCounter = 0;
+
+    if (currentReview && !isNew) {
+        // Populate from existing review
+        if (currentReview.dishes && currentReview.dishes.length > 0) {
+            currentReview.dishes.forEach(dish => {
+                addDishCard({
+                    id: dish.id,
+                    name: dish.name,
+                    rating: dish.rating,
+                    remarks: dish.remarks,
+                    photos: dish.photos || []
+                });
+            });
+        } else {
+            addDishCard();
+        }
+
+        document.getElementById('overall-stars').dataset.rating = currentReview.overall_rating;
+        document.getElementById('price-rating').dataset.rating = currentReview.price_rating;
+        document.getElementById('overall-remarks').value = currentReview.overall_remarks || '';
+
+        const overallPhotosGrid = document.getElementById('overall-photos');
+        updatePhotoGrid(overallPhotosGrid, currentReview.overall_photos || [], 3, null);
+
+        document.getElementById('delete-review-btn').style.display = 'block';
+        document.getElementById('save-review-btn').textContent = 'Save';
+    } else {
+        // New review
         addDishCard();
-        document.getElementById('delete-review-btn').style.display = 'none';
-        document.getElementById('save-review-btn').textContent = 'Save Review';
-        // Initialize empty overall photos grid
+        document.getElementById('overall-stars').dataset.rating = 0;
+        document.getElementById('price-rating').dataset.rating = 0;
+        document.getElementById('overall-remarks').value = '';
         updatePhotoGrid(document.getElementById('overall-photos'), [], 3, null);
+
+        document.getElementById('delete-review-btn').style.display = 'none';
+        document.getElementById('save-review-btn').textContent = 'Save';
     }
 
     // Initialize rating components
     initStarRating(document.getElementById('overall-stars'));
     initPriceRating(document.getElementById('price-rating'));
+}
 
-    // Show sheet
-    document.getElementById('review-sheet').style.display = 'flex';
+// Switch to edit mode button handler
+function switchToEditMode() {
+    showReviewEditMode(false);
+    hapticFeedback('light');
+}
+
+// Cancel edit and return to view mode
+function cancelEditMode() {
+    if (currentReview) {
+        showReviewViewMode();
+    } else {
+        closeReviewSheet();
+    }
     hapticFeedback('light');
 }
 
@@ -3030,6 +3166,121 @@ function closeReviewSheet() {
     document.getElementById('review-sheet').style.display = 'none';
     currentReviewPlaceId = null;
     currentReview = null;
+    reviewMode = 'view';
+}
+
+// ========== PHOTO VIEWER ==========
+
+let photoViewerPhotos = [];
+let photoViewerIndex = 0;
+let photoViewerEditMode = false;
+
+function openPhotoViewer(photos, startIndex = 0, allowDelete = false) {
+    if (!photos || photos.length === 0) return;
+
+    photoViewerPhotos = photos;
+    photoViewerIndex = startIndex;
+    photoViewerEditMode = allowDelete;
+
+    const viewer = document.getElementById('photo-viewer');
+    viewer.style.display = 'flex';
+    viewer.classList.toggle('view-mode', !allowDelete);
+
+    updatePhotoViewer();
+    hapticFeedback('light');
+}
+
+function closePhotoViewer() {
+    document.getElementById('photo-viewer').style.display = 'none';
+    photoViewerPhotos = [];
+    photoViewerIndex = 0;
+}
+
+function updatePhotoViewer() {
+    const photo = photoViewerPhotos[photoViewerIndex];
+    if (!photo) return;
+
+    document.getElementById('photo-viewer-img').src = photo.url;
+    document.getElementById('photo-viewer-counter').textContent =
+        `${photoViewerIndex + 1} / ${photoViewerPhotos.length}`;
+
+    // Enable/disable nav buttons
+    document.getElementById('photo-viewer-prev').disabled = photoViewerIndex === 0;
+    document.getElementById('photo-viewer-next').disabled = photoViewerIndex === photoViewerPhotos.length - 1;
+}
+
+function photoViewerPrev() {
+    if (photoViewerIndex > 0) {
+        photoViewerIndex--;
+        updatePhotoViewer();
+        hapticFeedback('light');
+    }
+}
+
+function photoViewerNext() {
+    if (photoViewerIndex < photoViewerPhotos.length - 1) {
+        photoViewerIndex++;
+        updatePhotoViewer();
+        hapticFeedback('light');
+    }
+}
+
+async function photoViewerDelete() {
+    const photo = photoViewerPhotos[photoViewerIndex];
+    if (!photo || !currentReview) return;
+
+    if (!confirm('Delete this photo?')) return;
+
+    hapticFeedback('medium');
+
+    if (await deletePhoto(currentReview.id, photo.id)) {
+        // Remove from array
+        photoViewerPhotos.splice(photoViewerIndex, 1);
+
+        if (photoViewerPhotos.length === 0) {
+            closePhotoViewer();
+            // Refresh the edit mode photo grid
+            if (reviewMode === 'edit') {
+                const overallPhotosGrid = document.getElementById('overall-photos');
+                updatePhotoGrid(overallPhotosGrid, [], 3, null);
+            }
+        } else {
+            if (photoViewerIndex >= photoViewerPhotos.length) {
+                photoViewerIndex = photoViewerPhotos.length - 1;
+            }
+            updatePhotoViewer();
+        }
+    }
+}
+
+// Setup photo viewer swipe gestures
+function setupPhotoViewerGestures() {
+    const body = document.getElementById('photo-viewer')?.querySelector('.photo-viewer-body');
+    if (!body) return;
+
+    let startX = 0;
+    let startY = 0;
+
+    body.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+    });
+
+    body.addEventListener('touchend', (e) => {
+        const endX = e.changedTouches[0].clientX;
+        const endY = e.changedTouches[0].clientY;
+        const diffX = endX - startX;
+        const diffY = endY - startY;
+
+        // Only swipe if horizontal movement is greater than vertical
+        if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
+            if (diffX > 0) {
+                photoViewerPrev();
+            } else {
+                photoViewerNext();
+            }
+        }
+    });
 }
 
 // Setup swipe-to-close gesture for bottom sheets
@@ -3094,10 +3345,7 @@ async function saveReview() {
     try {
         const response = await fetch(`${API_URL}/api/places/${currentReviewPlaceId}/review`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': 'true'
-            },
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 overall_rating: overallRating,
                 price_rating: priceRating,
@@ -3109,8 +3357,11 @@ async function saveReview() {
         if (!response.ok) throw new Error('Failed to save review');
 
         const data = await response.json();
+        currentReview = data.review;
         showSuccessAnimation();
-        closeReviewSheet();
+
+        // Show view mode with updated review
+        showReviewViewMode();
 
         // Reload reviews and refresh displays
         await loadReviews();
@@ -3134,7 +3385,7 @@ async function deleteReview() {
     try {
         const response = await fetch(`${API_URL}/api/places/${currentReviewPlaceId}/review`, {
             method: 'DELETE',
-            headers: { 'ngrok-skip-browser-warning': 'true' }
+            headers: getAuthHeaders()
         });
 
         if (!response.ok) throw new Error('Failed to delete review');
@@ -3253,14 +3504,14 @@ async function uploadPhoto(reviewId, file, dishId = null) {
         // Upload to API
         const response = await fetch(`${API_URL}/api/reviews/${reviewId}/photos`, {
             method: 'POST',
-            headers: { 'ngrok-skip-browser-warning': 'true' },
+            headers: getAuthHeaders(),
             body: formData
         });
 
         if (response.ok) {
-            const photo = await response.json();
+            const data = await response.json();
             showToast('Photo added!');
-            return photo;
+            return data.photo;
         } else {
             const error = await response.json();
             showToast(error.detail || 'Failed to upload photo');
@@ -3302,9 +3553,9 @@ async function uploadPhotoWithProgress(reviewId, file, dishId = null, onProgress
             xhr.addEventListener('load', () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
                     try {
-                        const photo = JSON.parse(xhr.responseText);
+                        const response = JSON.parse(xhr.responseText);
                         showToast('Photo added!');
-                        resolve(photo);
+                        resolve(response.photo);
                     } catch {
                         showToast('Error processing response');
                         resolve(null);
@@ -3326,7 +3577,11 @@ async function uploadPhotoWithProgress(reviewId, file, dishId = null, onProgress
             });
 
             xhr.open('POST', `${API_URL}/api/reviews/${reviewId}/photos`);
-            xhr.setRequestHeader('ngrok-skip-browser-warning', 'true');
+            // Add auth headers
+            const authHeaders = getAuthHeaders();
+            Object.keys(authHeaders).forEach(key => {
+                xhr.setRequestHeader(key, authHeaders[key]);
+            });
             xhr.send(formData);
         });
     } catch (e) {
@@ -3345,7 +3600,7 @@ async function deletePhoto(reviewId, photoId) {
             `${API_URL}/api/reviews/${reviewId}/photos/${photoId}`,
             {
                 method: 'DELETE',
-                headers: { 'ngrok-skip-browser-warning': 'true' }
+                headers: getAuthHeaders()
             }
         );
 
@@ -3369,7 +3624,7 @@ function updatePhotoGrid(container, photos, maxPhotos, dishId = null) {
     container.innerHTML = '';
 
     // Add existing photos
-    photos.forEach(photo => {
+    photos.forEach((photo, index) => {
         const thumb = document.createElement('div');
         thumb.className = 'photo-thumb';
         thumb.dataset.photoId = photo.id;
@@ -3391,9 +3646,9 @@ function updatePhotoGrid(container, photos, maxPhotos, dishId = null) {
             }
         });
 
-        // Tap to view full size
+        // Tap to view full size with swipe
         thumb.querySelector('img').addEventListener('click', () => {
-            viewPhotoFullscreen(photo.url);
+            openPhotoViewer(photos, index, true);
         });
 
         container.appendChild(thumb);
@@ -3476,9 +3731,16 @@ function addPhotoButton(container, maxPhotos, dishId) {
                 }
             });
 
-            // Add fullscreen handler
+            // Add fullscreen handler with swipe support
             thumb.querySelector('img').addEventListener('click', () => {
-                viewPhotoFullscreen(photo.url);
+                // Gather all photos from container for swipe navigation
+                const allThumbs = container.querySelectorAll('.photo-thumb');
+                const photos = Array.from(allThumbs).map(t => ({
+                    id: parseInt(t.dataset.photoId),
+                    url: t.querySelector('img').src
+                }));
+                const index = photos.findIndex(p => p.id === photo.id);
+                openPhotoViewer(photos, index >= 0 ? index : 0, true);
             });
 
             placeholder.replaceWith(thumb);
@@ -3499,19 +3761,7 @@ function addPhotoButton(container, maxPhotos, dishId) {
     container.appendChild(label);
 }
 
-/**
- * View photo in fullscreen overlay
- */
-function viewPhotoFullscreen(url) {
-    const overlay = document.createElement('div');
-    overlay.className = 'photo-fullscreen';
-    overlay.innerHTML = `
-        <img src="${url}" alt="Photo">
-        <button class="photo-fullscreen-close" aria-label="Close">×</button>
-    `;
-    overlay.addEventListener('click', () => overlay.remove());
-    document.body.appendChild(overlay);
-}
+// viewPhotoFullscreen removed - now uses openPhotoViewer with swipe support
 
 // Setup review sheet
 // Setup drag-and-drop for dish cards
@@ -3565,6 +3815,10 @@ function setupReviewSheet() {
     document.getElementById('save-review-btn').addEventListener('click', saveReview);
     document.getElementById('delete-review-btn').addEventListener('click', deleteReview);
 
+    // View/Edit mode buttons
+    document.getElementById('edit-review-btn').addEventListener('click', switchToEditMode);
+    document.getElementById('cancel-edit-btn').addEventListener('click', cancelEditMode);
+
     // Close on backdrop click
     document.getElementById('review-sheet').addEventListener('click', (e) => {
         if (e.target.id === 'review-sheet') {
@@ -3577,6 +3831,26 @@ function setupReviewSheet() {
 
     // Setup dish drag-and-drop
     setupDishDragAndDrop();
+
+    // Setup photo viewer
+    setupPhotoViewer();
+}
+
+function setupPhotoViewer() {
+    document.getElementById('photo-viewer-close').addEventListener('click', closePhotoViewer);
+    document.getElementById('photo-viewer-prev').addEventListener('click', photoViewerPrev);
+    document.getElementById('photo-viewer-next').addEventListener('click', photoViewerNext);
+    document.getElementById('photo-viewer-delete').addEventListener('click', photoViewerDelete);
+
+    // Close on backdrop click
+    document.getElementById('photo-viewer').addEventListener('click', (e) => {
+        if (e.target.id === 'photo-viewer') {
+            closePhotoViewer();
+        }
+    });
+
+    // Setup swipe gestures
+    setupPhotoViewerGestures();
 }
 
 // ========== REVIEWS VIEW ==========
@@ -3590,7 +3864,7 @@ function getPlaceReview(placeId) {
 async function loadReviews() {
     try {
         const response = await fetch(`${API_URL}/api/reviews`, {
-            headers: { 'ngrok-skip-browser-warning': 'true' }
+            headers: getAuthHeaders()
         });
         if (response.ok) {
             const data = await response.json();

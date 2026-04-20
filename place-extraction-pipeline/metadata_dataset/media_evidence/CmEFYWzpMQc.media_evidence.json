@@ -1,0 +1,61 @@
+{
+  "content_type": "video",
+  "platform": "instagram",
+  "downloaded_video": true,
+  "downloaded_audio": true,
+  "downloaded_images_count": 0,
+  "ocr": {
+    "images": [],
+    "combined": {
+      "text": "",
+      "length": 0,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    }
+  },
+  "transcription": {
+    "language": "en",
+    "language_detection_reliable": true,
+    "text": "I finally tried out this famous Thai restaurant in Pijay and I must say it didn't disappoint. It's called Yen Wautai and it serve authentic northern Thai food in a cozy ambience with an open kitchen. I tried the Tom Yum going with huge prawns and it was probably the first time at such thick Tom Yum soup. There was so much flavour. Then I had the soft shell crab with curry egg which was my favourite of the night. I tried fish with lots of lemongrass which was nice but was a bit too sour for me. A braised pork leg which had a nice mix of lean and melt in your mouth meat. And if you like pork skin, the braised pig kale was really nice too. I also like that the service was good and food came fast. Follow me from all good food in KL. Thank you.",
+    "text_length": 749,
+    "english_text": "I finally tried out this famous Thai restaurant in Pijay and I must say it didn't disappoint. It's called Yen Wautai and it serve authentic northern Thai food in a cozy ambience with an open kitchen. I tried the Tom Yum going with huge prawns and it was probably the first time at such thick Tom Yum soup. There was so much flavour. Then I had the soft shell crab with curry egg which was my favourite of the night. I tried fish with lots of lemongrass which was nice but was a bit too sour for me. A braised pork leg which had a nice mix of lean and melt in your mouth meat. And if you like pork skin, the braised pig kale was really nice too. I also like that the service was good and food came fast. Follow me from all good food in KL. Thank you.",
+    "english_text_length": 749,
+    "preferred_text": "I finally tried out this famous Thai restaurant in Pijay and I must say it didn't disappoint. It's called Yen Wautai and it serve authentic northern Thai food in a cozy ambience with an open kitchen. I tried the Tom Yum going with huge prawns and it was probably the first time at such thick Tom Yum soup. There was so much flavour. Then I had the soft shell crab with curry egg which was my favourite of the night. I tried fish with lots of lemongrass which was nice but was a bit too sour for me. A braised pork leg which had a nice mix of lean and melt in your mouth meat. And if you like pork skin, the braised pig kale was really nice too. I also like that the service was good and food came fast. Follow me from all good food in KL. Thank you.",
+    "preferred_text_length": 749,
+    "preferred_text_source": "transcribe",
+    "raw_transcript_quality": "good",
+    "translation_quality": null,
+    "raw_transcript_score": 0.989,
+    "translation_score": null,
+    "text_signals": {
+      "text": "I finally tried out this famous Thai restaurant in Pijay and I must say it didn't disappoint. It's called Yen Wautai and it serve authentic northern Thai food in a cozy ambience with an open kitchen. I tried the Tom Yum going with huge prawns and it was probably the first time at such thick Tom Yum soup. There was so much flavour. Then I had the soft shell crab with curry egg which was my favourite of the night. I tried fish with lots of lemongrass which was nice but was a bit too sour for me. A braised pork leg which had a nice mix of lean and melt in your mouth meat. And if you like pork skin, the braised pig kale was really nice too. I also like that the service was good and food came fast. Follow me from all good food in KL. Thank you.",
+      "length": 749,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    },
+    "english_text_signals": {
+      "text": "I finally tried out this famous Thai restaurant in Pijay and I must say it didn't disappoint. It's called Yen Wautai and it serve authentic northern Thai food in a cozy ambience with an open kitchen. I tried the Tom Yum going with huge prawns and it was probably the first time at such thick Tom Yum soup. There was so much flavour. Then I had the soft shell crab with curry egg which was my favourite of the night. I tried fish with lots of lemongrass which was nice but was a bit too sour for me. A braised pork leg which had a nice mix of lean and melt in your mouth meat. And if you like pork skin, the braised pig kale was really nice too. I also like that the service was good and food came fast. Follow me from all good food in KL. Thank you.",
+      "length": 749,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    },
+    "preferred_text_signals": {
+      "text": "I finally tried out this famous Thai restaurant in Pijay and I must say it didn't disappoint. It's called Yen Wautai and it serve authentic northern Thai food in a cozy ambience with an open kitchen. I tried the Tom Yum going with huge prawns and it was probably the first time at such thick Tom Yum soup. There was so much flavour. Then I had the soft shell crab with curry egg which was my favourite of the night. I tried fish with lots of lemongrass which was nice but was a bit too sour for me. A braised pork leg which had a nice mix of lean and melt in your mouth meat. And if you like pork skin, the braised pig kale was really nice too. I also like that the service was good and food came fast. Follow me from all good food in KL. Thank you.",
+      "length": 749,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    }
+  }
+}

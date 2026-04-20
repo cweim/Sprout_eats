@@ -6,13 +6,17 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppI
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 
 import config
-from services.downloader import download_content, is_valid_url, cleanup_files, DownloadTimeoutError
-from services.ocr import extract_text_from_images
+from services.downloader import download_content, is_valid_url, cleanup_files, DownloadTimeoutError, VideoTooLongError
+from services.ocr import extract_text_from_images, extract_text_from_video
 from services.transcriber import transcribe_audio
-from services.places import search_place, search_places_from_text
+from services.places import search_place
+from services.place_pipeline import (
+    build_runtime_metadata_record,
+    extract_place_evidence_from_metadata,
+    resolve_place_slots,
+)
 from services.maps import generate_map_image
-from database import repository
-from database.models import init_db
+from database import supabase_repository as repository
 
 logger = logging.getLogger(__name__)
 
@@ -73,17 +77,17 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
 
 def format_place_line(place, index: int) -> str:
     """Format a place for display in listings with optional metadata."""
-    lines = [f"{index}. {place.name}"]
-    if place.address:
-        lines.append(f"   {place.address}")
+    lines = [f"{index}. {place['name']}"]
+    if place.get('address'):
+        lines.append(f"   {place['address']}")
 
     # Build metadata line (rating + types)
     meta_parts = []
-    if place.place_rating:
-        meta_parts.append(f"⭐ {place.place_rating}/5")
-    if place.place_types:
+    if place.get('place_rating'):
+        meta_parts.append(f"⭐ {place['place_rating']}/5")
+    if place.get('place_types'):
         # Parse comma-separated types, title case, limit to 2
-        types_list = [t.replace("_", " ").title() for t in place.place_types.split(",")[:2]]
+        types_list = [t.replace("_", " ").title() for t in place['place_types'].split(",")[:2]]
         meta_parts.append(", ".join(types_list))
 
     if meta_parts:
@@ -93,6 +97,7 @@ def format_place_line(place, index: int) -> str:
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     keyboard = []
 
     # Add viewer button if WEBAPP_URL is configured
@@ -110,7 +115,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    count = repository.get_place_count()
+    count = repository.get_place_count(user_id)
     if count > 0:
         count_text = f"📍 You've saved {count} place{'s' if count != 1 else ''}!"
     else:
@@ -126,7 +131,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def places_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    places = repository.get_all_places()
+    user_id = update.effective_user.id
+    places = repository.get_all_places(user_id)
 
     if not places:
         await update.message.reply_text(
@@ -143,7 +149,8 @@ async def places_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    places = repository.get_all_places()
+    user_id = update.effective_user.id
+    places = repository.get_all_places(user_id)
 
     if not places:
         await update.message.reply_text(
@@ -155,7 +162,7 @@ async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Drawing your map... 🗺️")
 
     # Prepare places for map
-    map_places = [(p.latitude, p.longitude, p.name) for p in places]
+    map_places = [(p['latitude'], p['longitude'], p['name']) for p in places]
 
     try:
         image_bytes = await generate_map_image(map_places)
@@ -196,6 +203,7 @@ async def viewer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     keyboard = [
         [
             InlineKeyboardButton("Yes, clear all", callback_data="clear_confirm"),
@@ -203,7 +211,7 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    count = repository.get_place_count()
+    count = repository.get_place_count(user_id)
     await update.message.reply_text(
         f"🗑️ Clear all your saved places? ({count} will be removed)",
         reply_markup=reply_markup,
@@ -211,22 +219,24 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def clear_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
 
     if query.data == "clear_confirm":
-        count = repository.clear_all_places()
+        count = repository.clear_all_places(user_id)
         await query.edit_message_text(f"All cleared! {count} place{'s' if count != 1 else ''} removed. 🗑️")
     else:
         await query.edit_message_text("No worries, your places are safe! 📍")
 
 
 async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
 
     if query.data == "action_places":
-        places = repository.get_all_places()
+        places = repository.get_all_places(user_id)
         if not places:
             await query.edit_message_text(
                 "No places saved yet! 📍\n\nSend me a video link to find some.",
@@ -241,7 +251,7 @@ async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=get_menu_keyboard())
 
     elif query.data == "action_map":
-        places = repository.get_all_places()
+        places = repository.get_all_places(user_id)
         if not places:
             await query.edit_message_text(
                 "No places saved yet! 📍\n\nSend me a video link to find some.",
@@ -250,7 +260,7 @@ async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         await query.edit_message_text("Drawing your map... 🗺️")
-        map_places = [(p.latitude, p.longitude, p.name) for p in places]
+        map_places = [(p['latitude'], p['longitude'], p['name']) for p in places]
 
         try:
             image_bytes = await generate_map_image(map_places)
@@ -280,14 +290,14 @@ async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("Keep them", callback_data="action_menu"),
             ]
         ]
-        count = repository.get_place_count()
+        count = repository.get_place_count(user_id)
         await query.edit_message_text(
             f"🗑️ Clear all your saved places? ({count} will be removed)",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
     elif query.data == "action_delete":
-        places = repository.get_all_places()
+        places = repository.get_all_places(user_id)
         if not places:
             await query.edit_message_text(
                 "Nothing to remove! No places saved yet. 📍",
@@ -297,8 +307,8 @@ async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         keyboard = []
         for place in places:
-            name = place.name[:25] + "..." if len(place.name) > 25 else place.name
-            keyboard.append([InlineKeyboardButton(name, callback_data=f"delete_place_{place.id}")])
+            name = place['name'][:25] + "..." if len(place['name']) > 25 else place['name']
+            keyboard.append([InlineKeyboardButton(name, callback_data=f"delete_place_{place['id']}")])
         keyboard.append([InlineKeyboardButton("« Back", callback_data="action_menu")])
 
         await query.edit_message_text(
@@ -319,7 +329,7 @@ async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.delete_message()
 
     elif query.data == "action_menu":
-        count = repository.get_place_count()
+        count = repository.get_place_count(user_id)
         if count > 0:
             count_text = f"📍 You've saved {count} place{'s' if count != 1 else ''}!"
         else:
@@ -356,12 +366,16 @@ def get_menu_keyboard():
 def get_match_source_label(video_meta: dict) -> str:
     """Return a short label describing where the matches came from."""
     source = video_meta.get("match_source")
-    if source == "transcript":
+    if source in {"transcript", "chunk"}:
         return "transcript"
+    if source == "video_ocr":
+        return "video text"
     if source == "ocr":
         return "image text"
-    if source == "caption":
+    if source in {"caption", "caption_pin", "caption_list"}:
         return "caption"
+    if source == "mention":
+        return "tagged account"
     return "reel details"
 
 
@@ -379,14 +393,11 @@ def format_selection_place_summary(
     place: dict,
     index: int,
     selected_indices: set,
-    is_best_match: bool,
     source_label: str,
 ) -> str:
     """Format a candidate place summary for the review message."""
     prefix = "☑️" if index in selected_indices else "⬜"
     title = f"{prefix} {index + 1}. {place['name']}"
-    if is_best_match:
-        title += "  [Best match]"
 
     lines = [title]
     if place.get("address"):
@@ -409,8 +420,6 @@ def format_selection_place_summary(
     reason = place.get("confidence_reason")
     if reason:
         lines.append(f"   {reason}")
-    elif is_best_match:
-        lines.append(f"   Strongest match from {source_label}")
 
     return "\n".join(lines)
 
@@ -432,12 +441,15 @@ def build_selection_message(places: list, selected_indices: set, video_meta: dic
                 place,
                 i,
                 selected_indices,
-                is_best_match=(i == 0),
                 source_label=source_label,
             )
         )
         if i != len(places) - 1:
             lines.append("")
+
+    unresolved_message = video_meta.get("unresolved_message")
+    if unresolved_message:
+        lines.append(unresolved_message)
 
     lines.extend([
         "",
@@ -454,7 +466,7 @@ def build_selection_keyboard(places: list, selected_indices: set) -> InlineKeybo
 
     for i, place in enumerate(places):
         checkbox = "☑️" if i in selected_indices else "⬜"
-        label = "Best" if i == 0 else f"#{i + 1}"
+        label = f"#{i + 1}"
         name = place["name"][:20] + "..." if len(place["name"]) > 20 else place["name"]
         keyboard.append([InlineKeyboardButton(f"{checkbox} {label}: {name}", callback_data=f"toggle_place_{i}")])
 
@@ -466,6 +478,38 @@ def build_selection_keyboard(places: list, selected_indices: set) -> InlineKeybo
     ])
 
     return InlineKeyboardMarkup(keyboard)
+
+
+def collect_places_from_slot_suggestions(suggestions: list) -> tuple[list, list]:
+    """Split slot suggestions into resolved Google places and unresolved evidence."""
+    places = []
+    unresolved = []
+
+    for suggestion in suggestions:
+        if suggestion.status == "resolved" and suggestion.selected:
+            places.append(suggestion.selected)
+        else:
+            unresolved.append(suggestion)
+
+    return places, unresolved
+
+
+def build_unresolved_slot_message(unresolved_suggestions: list) -> str:
+    """Explain source-backed slots that could not be safely resolved."""
+    if not unresolved_suggestions:
+        return ""
+
+    lines = ["", "Needs review:"]
+    for suggestion in unresolved_suggestions[:6]:
+        evidence = suggestion.evidence
+        source = evidence.source.replace("_", " ")
+        reason = suggestion.reason or "Could not confidently match this to a food place."
+        lines.append(f"- {evidence.name_candidate} ({source}): {reason}")
+
+    if len(unresolved_suggestions) > 6:
+        lines.append(f"- {len(unresolved_suggestions) - 6} more unresolved place names")
+
+    return "\n".join(lines)
 
 
 async def toggle_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -505,6 +549,7 @@ async def toggle_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Save all selected places."""
+    user_id = update.effective_user.id
     query = update.callback_query
 
     pending_places = context.user_data.get("pending_places")
@@ -532,6 +577,7 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     for i in sorted(selected):
         place_data = pending_places[i]
         repository.add_place(
+            user_id=user_id,
             name=place_data["name"],
             address=place_data["address"],
             latitude=place_data["latitude"],
@@ -595,7 +641,42 @@ async def cancel_selection_callback(update: Update, context: ContextTypes.DEFAUL
     )
 
 
+async def incorrect_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Unsave an auto-saved single result and ask for the correct place name."""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        place_id = int(query.data.replace("incorrect_place_", ""))
+    except ValueError:
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text("Reply with the correct place name and I'll search for it.")
+        return
+
+    correction_context = context.user_data.get("correction_place_context") or {}
+    if correction_context.get("place_id") == place_id:
+        context.user_data["pending_url"] = correction_context.get("source_url", "")
+        context.user_data["pending_platform"] = correction_context.get("source_platform", "unknown")
+        context.user_data.pop("correction_place_context", None)
+
+    deleted = repository.delete_place(user_id, place_id)
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    if deleted:
+        await query.message.reply_text(
+            "Removed that saved place.\n\n"
+            "Reply with the correct place name and I'll search for it instead."
+        )
+    else:
+        await query.message.reply_text(
+            "That saved place was already removed.\n\n"
+            "Reply with the correct place name and I'll search for it instead."
+        )
+
+
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     text = update.message.text.strip()
 
     if not is_valid_url(text):
@@ -608,21 +689,37 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text("Downloading video... 📥")
         result = await download_content(text)
 
-        # Step 2: Try to find places using caption/title first
+        # Step 2: Extract source-backed place slots, then resolve each slot.
         places = []
-        metadata_text = f"{result.title} {result.description}".strip()
-        transcription_result = None
+        unresolved_suggestions = []
+        slots = []
+        ocr_text = ""
+        video_ocr_payload = {}
         match_source = None
+        transcription_result = None
+        metadata_text = f"{result.title} {result.description}".strip()
+
+        def build_metadata_record():
+            return build_runtime_metadata_record(
+                title=result.title,
+                description=result.description,
+                source_url=text,
+                platform=result.platform,
+                content_type=result.content_type,
+                uploader=result.uploader,
+                duration=result.duration,
+                hashtags=result.hashtags,
+                ocr_text=ocr_text,
+                video_ocr=video_ocr_payload,
+                transcription=transcription_result,
+            )
 
         if metadata_text:
             await status_msg.edit_text("Reading the caption... 📝")
-            places = await search_places_from_text(metadata_text)
-            if places:
-                match_source = "caption"
+            slots = extract_place_evidence_from_metadata(build_metadata_record())
 
-        # Step 3: For photo posts, OCR images before audio fallback.
-        ocr_text = ""
-        if not places and result.image_paths:
+        # Step 3: For photo posts, OCR images only if caption/title did not yield slots.
+        if not slots and result.image_paths:
             await status_msg.edit_text("Scanning images for text... 🖼️")
             try:
                 ocr_text = extract_text_from_images(result.image_paths)
@@ -630,13 +727,22 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.warning(f"OCR failed: {e}")
 
             if ocr_text:
-                await status_msg.edit_text("Finding places... 🔎")
-                places = await search_places_from_text(f"{metadata_text}\n{ocr_text}".strip())
-                if places:
-                    match_source = "ocr"
+                slots = extract_place_evidence_from_metadata(build_metadata_record())
 
-        # Step 4: If still not found and audio exists, fallback to transcription.
-        if not places and result.audio_path and result.audio_path.exists():
+        # Step 4: For videos, OCR sampled frames only if no text/image slots were found.
+        if not slots and result.video_path and result.video_path.exists():
+            await status_msg.edit_text("Scanning video text... 🖼️")
+            try:
+                video_ocr_payload = extract_text_from_video(result.video_path)
+            except Exception as e:
+                logger.warning(f"Video OCR failed: {e}")
+                video_ocr_payload = {}
+
+            if video_ocr_payload.get("combined_text"):
+                slots = extract_place_evidence_from_metadata(build_metadata_record())
+
+        # Step 5: If still no slots and audio exists, fallback to transcription.
+        if not slots and result.audio_path and result.audio_path.exists():
             await status_msg.edit_text("Transcribing audio... 🎤")
             try:
                 transcription_result = await transcribe_audio(result.audio_path)
@@ -644,21 +750,33 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.warning(f"Transcription failed: {e}")
 
             if transcription_result:
-                await status_msg.edit_text("Finding places... 🔎")
-                # Use English text for better Google Places API results
-                search_text = transcription_result.english_text or transcription_result.text
-                places = await search_places_from_text(search_text)
-                if places:
-                    match_source = "transcript"
+                slots = extract_place_evidence_from_metadata(build_metadata_record())
+
+        if slots:
+            await status_msg.edit_text("Resolving place names... 🔎")
+            suggestions = await resolve_place_slots(slots)
+            places, unresolved_suggestions = collect_places_from_slot_suggestions(suggestions)
+            resolved_sources = [place.matched_source_type for place in places if place.matched_source_type]
+            if resolved_sources:
+                match_source = resolved_sources[0]
+            elif slots:
+                match_source = slots[0].source
 
         # Handle case where no location could be found
         if not places:
             transcript_text = transcription_result.text if transcription_result else ""
-            combined_text = f"{metadata_text} {ocr_text} {transcript_text}".strip()
+            video_ocr_text = video_ocr_payload.get("combined_text", "") if video_ocr_payload else ""
+            combined_text = f"{metadata_text} {ocr_text} {video_ocr_text} {transcript_text}".strip()
             if not combined_text:
                 await status_msg.edit_text(
                     "Hmm, couldn't find any text or audio to work with. 🤔\n\n"
                     "Reply with the place name and I'll search for it!"
+                )
+            elif unresolved_suggestions:
+                await status_msg.edit_text(
+                    "I found possible place names, but couldn't safely match them to a specific food place. 🔍\n"
+                    f"{build_unresolved_slot_message(unresolved_suggestions)}\n\n"
+                    "Reply with the exact place or branch name and I'll search for it."
                 )
             else:
                 # Show detected language if transcription was used
@@ -683,10 +801,11 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         source_hashtags = ",".join(result.hashtags) if result.hashtags else None
 
         # Step 4: Handle results based on count
-        if len(places) == 1:
+        if len(places) == 1 and not unresolved_suggestions:
             # Single place: auto-save (backward compatible behavior)
             place = places[0]
             saved_place = repository.add_place(
+                user_id=user_id,
                 name=place.name,
                 address=place.address,
                 latitude=place.latitude,
@@ -705,7 +824,10 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 place_opening_hours=place.opening_hours,
                 source_language=transcription_result.language if transcription_result else None,
                 source_transcript=transcription_result.text if transcription_result else None,
-                source_transcript_en=transcription_result.english_text if transcription_result else None,
+                source_transcript_en=(
+                    (transcription_result.preferred_text or transcription_result.english_text)
+                    if transcription_result else None
+                ),
             )
 
             await status_msg.delete()
@@ -738,7 +860,23 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             confirmation += f"\n🗺️ Google Maps: {maps_url}"
             confirmation += f"\n▶️ Original: {text}"
 
-            await update.message.reply_text(confirmation, disable_web_page_preview=True)
+            correction_keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    "This is incorrect",
+                    callback_data=f"incorrect_place_{saved_place.id}",
+                )
+            ]])
+            context.user_data["correction_place_context"] = {
+                "place_id": saved_place.id,
+                "source_url": text,
+                "source_platform": result.platform,
+            }
+
+            await update.message.reply_text(
+                confirmation,
+                reply_markup=correction_keyboard,
+                disable_web_page_preview=True,
+            )
         else:
             # Multiple places: show selection keyboard
             # Store places in user_data for callback (include metadata)
@@ -772,8 +910,12 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "source_hashtags": source_hashtags,
                 "source_language": transcription_result.language if transcription_result else None,
                 "source_transcript": transcription_result.text if transcription_result else None,
-                "source_transcript_en": transcription_result.english_text if transcription_result else None,
+                "source_transcript_en": (
+                    (transcription_result.preferred_text or transcription_result.english_text)
+                    if transcription_result else None
+                ),
                 "match_source": match_source,
+                "unresolved_message": build_unresolved_slot_message(unresolved_suggestions),
             }
 
             # Preselect every high-confidence result; otherwise fall back to the top-ranked result.
@@ -804,6 +946,11 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(
             "This one's taking too long! 🐌\n\nTry a shorter video?"
         )
+    except VideoTooLongError as e:
+        logger.warning(f"Video too long: {e}")
+        await status_msg.edit_text(
+            f"That video's too long! 📹\n\nMax {config.MAX_VIDEO_DURATION // 60} minutes allowed."
+        )
     except Exception as e:
         logger.error(f"Error processing URL: {e}")
         if "connect" in str(e).lower() or "network" in str(e).lower():
@@ -818,9 +965,10 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages that might be place name responses."""
+    user_id = update.effective_user.id
     text = update.message.text.strip()
 
-    # Always treat valid URLs as new link submissions, 
+    # Always treat valid URLs as new link submissions,
     # even if we were waiting for a manual place name.
     if is_valid_url(text):
         context.user_data.pop("pending_url", None)
@@ -848,6 +996,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Save the place
         saved_place = repository.add_place(
+            user_id=user_id,
             name=place.name,
             address=place.address,
             latitude=place.latitude,
@@ -883,7 +1032,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show list of places to delete."""
-    places = repository.get_all_places()
+    user_id = update.effective_user.id
+    places = repository.get_all_places(user_id)
 
     if not places:
         await update.message.reply_text("Nothing to remove! No places saved yet. 📍")
@@ -891,8 +1041,8 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = []
     for place in places:
-        name = place.name[:25] + "..." if len(place.name) > 25 else place.name
-        keyboard.append([InlineKeyboardButton(name, callback_data=f"delete_place_{place.id}")])
+        name = place['name'][:25] + "..." if len(place['name']) > 25 else place['name']
+        keyboard.append([InlineKeyboardButton(name, callback_data=f"delete_place_{place['id']}")])
 
     await update.message.reply_text(
         "Which place would you like to remove? 🗑️",
@@ -902,6 +1052,7 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def delete_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle place deletion from inline keyboard."""
+    user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
 
@@ -913,7 +1064,7 @@ async def delete_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     # Delete the place
-    deleted = repository.delete_place(place_id)
+    deleted = repository.delete_place(user_id, place_id)
 
     if deleted:
         await query.edit_message_text("Removed! 🗑️")
@@ -936,10 +1087,11 @@ async def nearby_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle shared location and show top 5 nearest saved places."""
+    user_id = update.effective_user.id
     location = update.message.location
     lat, lng = location.latitude, location.longitude
 
-    places = repository.get_all_places()
+    places = repository.get_all_places(user_id)
     if not places:
         await update.message.reply_text(
             "No places saved yet! 📍\n\n"
@@ -951,8 +1103,8 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Calculate distances for ALL places (no radius limit)
     places_with_dist = []
     for place in places:
-        if place.latitude and place.longitude:
-            dist = haversine_distance(lat, lng, place.latitude, place.longitude)
+        if place['latitude'] and place['longitude']:
+            dist = haversine_distance(lat, lng, place['latitude'], place['longitude'])
             places_with_dist.append((place, dist))
 
     # Sort by distance and take top 5
@@ -973,16 +1125,16 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dist_str = f"{int(dist * 1000)}m" if dist < 1 else f"{dist:.1f}km"
 
         # Build Google Maps URL
-        if place.google_place_id:
-            maps_url = f"https://www.google.com/maps/search/?api=1&query={quote(place.name)}&query_place_id={place.google_place_id}"
+        if place.get('google_place_id'):
+            maps_url = f"https://www.google.com/maps/search/?api=1&query={quote(place['name'])}&query_place_id={place['google_place_id']}"
         else:
-            maps_url = f"https://www.google.com/maps/search/?api=1&query={place.latitude},{place.longitude}"
+            maps_url = f"https://www.google.com/maps/search/?api=1&query={place['latitude']},{place['longitude']}"
 
         # Build line with clickable links
-        text += f"<b>{place.name}</b> ({dist_str})\n"
+        text += f"<b>{place['name']}</b> ({dist_str})\n"
         links = [f'<a href="{maps_url}">Google Maps</a>']
-        if place.source_url:
-            links.append(f'<a href="{place.source_url}">Visit Reel</a>')
+        if place.get('source_url'):
+            links.append(f'<a href="{place["source_url"]}">Visit Reel</a>')
         text += " · ".join(links) + "\n\n"
 
     total = len(places_with_dist)
@@ -1211,6 +1363,7 @@ async def cancel_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle 'Write Review' button callback."""
+    user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
 
@@ -1223,14 +1376,13 @@ async def handle_review_callback(update: Update, context: ContextTypes.DEFAULT_T
     place_name = parts[2]
 
     # Check if place is marked as visited
-    repo = repository.PlaceRepository()
-    place = repo.get_place_by_id(place_id)
+    place = repository.get_place_by_id(user_id, place_id)
 
     if not place:
         await query.message.reply_text("❌ Place not found!")
         return ConversationHandler.END
 
-    if not place.is_visited:
+    if not place.get('is_visited'):
         await query.message.reply_text(
             f"📍 Please mark *{place_name}* as visited first before writing a review!\n\n"
             f"You can mark it as visited in the Mini App viewer.",

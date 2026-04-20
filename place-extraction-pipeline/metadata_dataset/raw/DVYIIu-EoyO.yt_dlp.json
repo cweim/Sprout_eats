@@ -1,0 +1,350 @@
+{
+  "id": "DVYIIu-EoyO",
+  "formats": {
+    "count": 11,
+    "items": [
+      {
+        "format_id": "dash-1966551997543653a",
+        "ext": "m4a",
+        "width": null,
+        "height": null,
+        "resolution": "audio only",
+        "format_note": "DASH audio",
+        "vcodec": "none",
+        "acodec": "mp4a.40.5",
+        "tbr": 53.089,
+        "abr": 53.089,
+        "vbr": 0,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-849199838128963v",
+        "ext": "mp4",
+        "width": 720,
+        "height": 1280,
+        "resolution": "720x1280",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.31.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 229.621,
+        "abr": 0,
+        "vbr": 229.621,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-1825468268167795v",
+        "ext": "mp4",
+        "width": 720,
+        "height": 1280,
+        "resolution": "720x1280",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.31.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 290.121,
+        "abr": 0,
+        "vbr": 290.121,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-1602272261021732v",
+        "ext": "mp4",
+        "width": 720,
+        "height": 1280,
+        "resolution": "720x1280",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.31.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 403.577,
+        "abr": 0,
+        "vbr": 403.577,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-1874969563156680v",
+        "ext": "mp4",
+        "width": 720,
+        "height": 1280,
+        "resolution": "720x1280",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.31.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 538.919,
+        "abr": 0,
+        "vbr": 538.919,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-1643974799958795v",
+        "ext": "mp4",
+        "width": 720,
+        "height": 1280,
+        "resolution": "720x1280",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.31.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 745.142,
+        "abr": 0,
+        "vbr": 745.142,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-908139385257680v",
+        "ext": "mp4",
+        "width": 720,
+        "height": 1280,
+        "resolution": "720x1280",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.31.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 1004.615,
+        "abr": 0,
+        "vbr": 1004.615,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-1483223943135883v",
+        "ext": "mp4",
+        "width": 720,
+        "height": 1280,
+        "resolution": "720x1280",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.31.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 1341.848,
+        "abr": 0,
+        "vbr": 1341.848,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "8",
+        "ext": "mp4",
+        "width": 1080,
+        "height": 1920,
+        "resolution": "1080x1920",
+        "format_note": null,
+        "vcodec": null,
+        "acodec": null,
+        "tbr": null,
+        "abr": null,
+        "vbr": null,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-1969691023758325v",
+        "ext": "mp4",
+        "width": 1080,
+        "height": 1920,
+        "resolution": "1080x1920",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.40.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 1931.831,
+        "abr": 0,
+        "vbr": 1931.831,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-1432616238353713v",
+        "ext": "mp4",
+        "width": 1080,
+        "height": 1920,
+        "resolution": "1080x1920",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.40.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 2954.967,
+        "abr": 0,
+        "vbr": 2954.967,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      }
+    ],
+    "truncated": false
+  },
+  "title": "Video by ericnyker",
+  "description": "📍Pazonia Italian Street Food @ Amoy\n49 Amoy St, Singapore 069875\n\nGuys @pazonia.sg made me feel that I’ve overpaid for western sandwiches the entire time , not to mention subway…\n\nI could literally eat the Panuozzo Carne everyday lol. Get the burrata to indulge a bit it’s seriously so perfect with the Parma ham. \n\n@pazonia.sg also has a promo going on - for week night dinners- you get the 2nd pizza for 50% off ! It’s from March 3 - 14 :)",
+  "duration": 58.4,
+  "timestamp": 1772444074,
+  "uploader_id": "56721664373",
+  "uploader": "Eric",
+  "channel": "ericnyker",
+  "like_count": 4276,
+  "comment_count": 33,
+  "comments": [
+    {
+      "author": "yyun.nu_yy",
+      "author_id": "76146197337",
+      "id": "17878213032549965",
+      "text": "(ﾟ∀ﾟ)",
+      "timestamp": 1774801205
+    },
+    {
+      "author": "gc_ceramicstudio",
+      "author_id": "79447804703",
+      "id": "18098116024988710",
+      "text": "😍",
+      "timestamp": 1774795464
+    },
+    {
+      "author": "ed.teo",
+      "author_id": "1449885278",
+      "id": "18119574754623602",
+      "text": "Subway in SG no more pork, why even bother?! This looks amazing yo",
+      "timestamp": 1774769256
+    },
+    {
+      "author": "floatingkyintheuniverse",
+      "author_id": "4712963154",
+      "id": "18114687205660957",
+      "text": "What are their opening times?",
+      "timestamp": 1774438185
+    },
+    {
+      "author": "porkchopmousie",
+      "author_id": "505832830",
+      "id": "17853302835650383",
+      "text": "Oh man I missed the deal",
+      "timestamp": 1774280148
+    },
+    {
+      "author": "alexskbab",
+      "author_id": "442895387",
+      "id": "17851229541644794",
+      "text": "That Burrata ... 😍",
+      "timestamp": 1773846373
+    },
+    {
+      "author": "eddyjohn27",
+      "author_id": "73446163268",
+      "id": "18436476796112159",
+      "text": "Cai Ping doesn't cost $10",
+      "timestamp": 1772957933
+    },
+    {
+      "author": "medic_with_an_r",
+      "author_id": "4690740935",
+      "id": "17907959532186048",
+      "text": "The promo isn't stated in their page tho 😅",
+      "timestamp": 1772786628
+    },
+    {
+      "author": "kat.ieho1",
+      "author_id": "79946811912",
+      "id": "17978047343823165",
+      "text": "How was it?",
+      "timestamp": 1772782764
+    }
+  ],
+  "thumbnails": [
+    {
+      "url": {
+        "redacted": true,
+        "length": 569,
+        "host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      "width": 640,
+      "height": 1137,
+      "id": "0",
+      "resolution": "640x1137"
+    },
+    {
+      "url": {
+        "redacted": true,
+        "length": 569,
+        "host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      "width": 750,
+      "height": 1333,
+      "id": "1",
+      "resolution": "750x1333"
+    },
+    {
+      "url": {
+        "redacted": true,
+        "length": 567,
+        "host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      "width": 1080,
+      "height": 1920,
+      "id": "2",
+      "resolution": "1080x1920"
+    }
+  ],
+  "http_headers": {
+    "keys": [
+      "Referer"
+    ],
+    "count": 1
+  },
+  "webpage_url": "https://www.instagram.com/reel/DVYIIu-EoyO/?igsh=MW96N2xnZjQ5OWJlMA==",
+  "original_url": "https://www.instagram.com/reel/DVYIIu-EoyO/?igsh=MW96N2xnZjQ5OWJlMA==",
+  "webpage_url_basename": "DVYIIu-EoyO",
+  "webpage_url_domain": "instagram.com",
+  "extractor": "Instagram",
+  "extractor_key": "Instagram",
+  "playlist": null,
+  "playlist_index": null,
+  "thumbnail": "https://instagram.fsin12-1.fna.fbcdn.net/v/t51.82787-15/640414995_18005474045888374_6960087526319606880_n.jpg?stp=dst-jpg_e15_fr_p1080x1080_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6ImltYWdlX3VybGdlbi4xMDgweDE5MjAuc2RyLmY4Mjc4Ny5kZWZhdWx0X2NvdmVyX2ZyYW1lLmMyIn0&_nc_ht=instagram.fsin12-1.fna.fbcdn.net&_nc_cat=110&_nc_oc=Q6cZ2gF9atfCRAwPcLrOtFlOZAvQhBsK9AE-d2TVY23NUZUvjk-gxeC6-nt5qz3VlBCu8-A5PQIbXeneyyNxDBDsU5ZR&_nc_ohc=BBEGPeE0DlYQ7kNvwEqfkhS&_nc_gid=jDmUnRd-x48WvWG8mR1f7w&edm=ANTKIIoBAAAA&ccb=7-5&oh=00_Af1Wk5FAPVh1ocvJnsYtq1tzC3EfMNjcISlT41Bj8deKsQ&oe=69EAF5BB&_nc_sid=d885a2",
+  "display_id": "DVYIIu-EoyO",
+  "fulltitle": "Video by ericnyker",
+  "duration_string": "58",
+  "upload_date": "20260302",
+  "release_year": null,
+  "requested_subtitles": null,
+  "_has_drm": null,
+  "epoch": 1776618100,
+  "requested_formats": {
+    "count": 2,
+    "items": [
+      {
+        "format_id": "dash-1432616238353713v",
+        "ext": "mp4",
+        "width": 1080,
+        "height": 1920,
+        "resolution": "1080x1920",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.40.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 2954.967,
+        "abr": 0,
+        "vbr": 2954.967,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-1966551997543653a",
+        "ext": "m4a",
+        "width": null,
+        "height": null,
+        "resolution": "audio only",
+        "format_note": "DASH audio",
+        "vcodec": "none",
+        "acodec": "mp4a.40.5",
+        "tbr": 53.089,
+        "abr": 53.089,
+        "vbr": 0,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      }
+    ],
+    "truncated": false
+  },
+  "format": "dash-1432616238353713v - 1080x1920 (DASH video)+dash-1966551997543653a - audio only (DASH audio)",
+  "format_id": "dash-1432616238353713v+dash-1966551997543653a",
+  "ext": "mp4",
+  "protocol": "https+https",
+  "language": null,
+  "format_note": "DASH video+DASH audio",
+  "filesize_approx": 21958808,
+  "tbr": 3008.056,
+  "width": 1080,
+  "height": 1920,
+  "resolution": "1080x1920",
+  "fps": null,
+  "dynamic_range": "SDR",
+  "vcodec": "vp09.00.40.08.00.01.01.01.00",
+  "vbr": 2954.967,
+  "stretched_ratio": null,
+  "aspect_ratio": 0.56,
+  "acodec": "mp4a.40.5",
+  "abr": 53.089,
+  "asr": 44100,
+  "audio_channels": null
+}

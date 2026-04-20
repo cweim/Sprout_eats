@@ -11,8 +11,7 @@ from telegram.ext import (
 )
 
 import config
-from database.models import init_db
-from database import repository
+from database import supabase_repository as repository
 from services.transcriber import preload_model
 from bot.handlers import (
     start_command,
@@ -27,6 +26,7 @@ from bot.handlers import (
     toggle_place_callback,
     save_selected_callback,
     cancel_selection_callback,
+    incorrect_place_callback,
     delete_place_callback,
     handle_text,
     handle_location,
@@ -53,45 +53,50 @@ async def check_review_reminders(context: ContextTypes.DEFAULT_TYPE):
 
     for reminder in pending:
         try:
+            user_id = reminder['user_id']
+            place_id = reminder['place_id']
+            reminder_id = reminder['id']
+
             # Get place name
-            place = repository.get_place_by_id(reminder.place_id)
+            place = repository.get_place_by_id(user_id, place_id)
             if not place:
                 continue
 
             # Check if user already wrote a review
-            existing_review = repository.get_review(reminder.place_id)
+            existing_review = repository.get_review(user_id, place_id)
             if existing_review:
-                repository.mark_reminder_sent(reminder.id)
+                repository.mark_reminder_sent(reminder_id)
                 continue
 
             # Send reminder message
+            place_name = place['name'][:50]
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton(
                     "📝 Write Review",
-                    callback_data=f"review:{reminder.place_id}:{place.name[:50]}"
+                    callback_data=f"review:{place_id}:{place_name}"
                 )],
                 [
                     InlineKeyboardButton(
                         "Ask Later",
-                        callback_data=f"remind_later:{reminder.id}"
+                        callback_data=f"remind_later:{reminder_id}"
                     ),
                     InlineKeyboardButton(
                         "Don't Ask",
-                        callback_data=f"remind_stop:{reminder.place_id}"
+                        callback_data=f"remind_stop:{place_id}"
                     )
                 ]
             ])
 
             await context.bot.send_message(
-                chat_id=reminder.user_id,
-                text=f"Hey! How was *{place.name}*? 🍜\n\n"
+                chat_id=user_id,
+                text=f"Hey! How was *{place['name']}*? 🍜\n\n"
                      f"Share your thoughts while it's fresh!",
                 parse_mode='Markdown',
                 reply_markup=keyboard
             )
 
-            repository.mark_reminder_sent(reminder.id)
-            logger.info(f"Sent review reminder for place {reminder.place_id} to user {reminder.user_id}")
+            repository.mark_reminder_sent(reminder_id)
+            logger.info(f"Sent review reminder for place {place_id} to user {user_id}")
 
         except Exception as e:
             logger.error(f"Failed to send reminder {reminder.id}: {e}")
@@ -157,6 +162,7 @@ def main():
     app.add_handler(CallbackQueryHandler(toggle_place_callback, pattern="^toggle_place_"))
     app.add_handler(CallbackQueryHandler(save_selected_callback, pattern="^save_selected$"))
     app.add_handler(CallbackQueryHandler(cancel_selection_callback, pattern="^cancel_selection$"))
+    app.add_handler(CallbackQueryHandler(incorrect_place_callback, pattern="^incorrect_place_"))
     app.add_handler(CallbackQueryHandler(delete_place_callback, pattern="^delete_place_"))
 
     # Reminder callback handlers

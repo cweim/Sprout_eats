@@ -1,0 +1,20 @@
+{
+  "content_type": "image",
+  "platform": "instagram",
+  "downloaded_video": false,
+  "downloaded_audio": false,
+  "downloaded_images_count": 0,
+  "ocr": {
+    "images": [],
+    "combined": {
+      "text": "",
+      "length": 0,
+      "hashtags": [],
+      "mentions": [],
+      "location_pin_lines": [],
+      "bracketed_names": [],
+      "address_like_snippets": []
+    }
+  },
+  "transcription": null
+}

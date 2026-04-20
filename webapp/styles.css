@@ -27,6 +27,15 @@
 
     /* Border color */
     --border-color: #E8E4DC;
+
+    /* Cards and surfaces */
+    --card-bg: #FFFFFF;
+    --card-bg-alpha: rgba(255, 255, 255, 0.95);
+    --overlay-bg: rgba(255, 255, 255, 0.96);
+    --header-gradient-end: #FFF8F0;
+    --input-bg: #F0EDFF;
+    --shadow-color: rgba(0, 0, 0, 0.06);
+    --shadow-strong: rgba(0, 0, 0, 0.1);
 }
 
 /* Dark theme overrides */
@@ -48,6 +57,15 @@
     /* Semantic colors for dark */
     --success-bg: #1E3A28;
     --danger-bg: #3D1F1F;
+
+    /* Cards and surfaces for dark */
+    --card-bg: #2C2C2E;
+    --card-bg-alpha: rgba(44, 44, 46, 0.95);
+    --overlay-bg: rgba(44, 44, 46, 0.96);
+    --header-gradient-end: #2C2C2E;
+    --input-bg: #3A3A3C;
+    --shadow-color: rgba(0, 0, 0, 0.3);
+    --shadow-strong: rgba(0, 0, 0, 0.5);
 }
 
 /* Reset and base styles */
@@ -72,7 +90,7 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 14px 16px;
-    background: linear-gradient(135deg, var(--bg-color) 0%, #FFF8F0 100%);
+    background: linear-gradient(135deg, var(--bg-color) 0%, var(--header-gradient-end) 100%);
     border-bottom: 1px solid var(--secondary-bg);
 }
 
@@ -89,7 +107,7 @@ body {
     background-color: var(--secondary-bg);
     border-radius: 20px;
     padding: 3px;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06);
+    box-shadow: inset 0 1px 3px var(--shadow-color);
 }
 
 .toggle-btn {
@@ -147,7 +165,7 @@ body {
 .map-filter-row {
     display: flex;
     gap: 6px;
-    background: rgba(255, 255, 255, 0.95);
+    background: var(--card-bg-alpha);
     padding: 6px;
     border-radius: 20px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
@@ -181,7 +199,7 @@ body {
 .map-cuisine-select {
     padding: 8px 12px;
     border: none;
-    background: rgba(255, 255, 255, 0.95);
+    background: var(--card-bg-alpha);
     color: var(--text-color);
     font-size: 13px;
     border-radius: 16px;
@@ -260,7 +278,7 @@ body {
 .visited-chip {
     padding: 6px 14px;
     border: 1.5px solid var(--secondary-bg);
-    background-color: white;
+    background-color: var(--card-bg);
     color: var(--hint-color);
     font-size: 13px;
     font-weight: 600;
@@ -312,7 +330,7 @@ body {
     flex-shrink: 0;
     padding: 6px 14px;
     border: 1.5px solid var(--secondary-bg);
-    background-color: white;
+    background-color: var(--card-bg);
     color: var(--hint-color);
     font-size: 13px;
     font-weight: 600;
@@ -352,7 +370,7 @@ body {
     flex-shrink: 0;
     padding: 6px 14px;
     border: 1.5px solid transparent;
-    background-color: white;
+    background-color: var(--card-bg);
     color: var(--text-color);
     border-radius: 16px;
     font-size: 13px;
@@ -433,7 +451,7 @@ body {
 
 /* Place card */
 .place-card {
-    background-color: white;
+    background-color: var(--card-bg);
     border: 1.5px solid var(--secondary-bg);
     border-radius: 16px;
     padding: 16px;
@@ -715,7 +733,7 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(180deg, var(--bg-color) 0%, #FFF8F0 100%);
+    background: linear-gradient(180deg, var(--bg-color) 0%, var(--header-gradient-end) 100%);
 }
 
 .loading-spinner {
@@ -775,7 +793,7 @@ body {
     justify-content: center;
     padding: 32px;
     text-align: center;
-    background: linear-gradient(180deg, var(--bg-color) 0%, #FFF8F0 100%);
+    background: linear-gradient(180deg, var(--bg-color) 0%, var(--header-gradient-end) 100%);
 }
 
 .empty-state::before {
@@ -811,7 +829,7 @@ body {
     justify-content: center;
     padding: 32px;
     text-align: center;
-    background: linear-gradient(180deg, var(--bg-color) 0%, #FFF8F0 100%);
+    background: linear-gradient(180deg, var(--bg-color) 0%, var(--header-gradient-end) 100%);
 }
 
 .error-state::before {
@@ -982,7 +1000,7 @@ body {
     gap: 8px;
     padding: 10px 16px;
     border: 2px solid var(--secondary-bg);
-    background-color: white;
+    background-color: var(--card-bg);
     color: var(--text-color);
     border-radius: 24px;
     font-size: 14px;
@@ -1037,7 +1055,7 @@ body {
     height: 48px;
     border: 2px solid white;
     border-radius: 50%;
-    background-color: white;
+    background-color: var(--card-bg);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
     font-size: 20px;
     cursor: pointer;
@@ -1204,7 +1222,7 @@ body {
 
 .place-card.visited {
     border-left: 4px solid var(--sprout-green);
-    background: linear-gradient(90deg, var(--success-bg) 0%, white 8%);
+    background: linear-gradient(90deg, var(--success-bg) 0%, var(--card-bg) 8%);
 }
 
 /* Notes indicator */
@@ -1234,7 +1252,7 @@ body {
 }
 
 .notes-bubble:hover {
-    background: linear-gradient(135deg, #F0EDFF 0%, #E8E4FF 100%);
+    background: linear-gradient(135deg, var(--input-bg) 0%, var(--secondary-bg) 100%);
     border-color: var(--sprout-purple);
 }
 
@@ -1363,7 +1381,7 @@ body {
     max-width: 160px;
     padding: 8px 12px;
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.96);
+    background: var(--overlay-bg);
     border: 1.5px solid var(--sprout-purple-light);
     box-shadow: 0 4px 12px rgba(139, 126, 200, 0.15);
 }
@@ -1379,7 +1397,7 @@ body {
     height: 0;
     border-left: 8px solid transparent;
     border-right: 8px solid transparent;
-    border-top: 8px solid rgba(255, 255, 255, 0.96);
+    border-top: 8px solid var(--overlay-bg);
     filter: drop-shadow(0 2px 2px rgba(139, 126, 200, 0.1));
 }
 
@@ -1422,7 +1440,7 @@ body {
 .modal-content {
     width: 100%;
     max-width: 500px;
-    background-color: white;
+    background-color: var(--card-bg);
     border-radius: 24px 24px 0 0;
     padding: 24px;
     animation: slideUp 0.25s ease;
@@ -1517,7 +1535,7 @@ body {
 }
 
 .modal-btn:hover {
-    background-color: #E8E3DC;
+    background-color: var(--secondary-bg);
 }
 
 .modal-btn.primary {
@@ -1691,7 +1709,7 @@ body {
     flex-shrink: 0;
     padding: 8px 14px;
     border: 1.5px solid var(--secondary-bg);
-    background: white;
+    background: var(--card-bg);
     color: var(--text-color);
     font-size: 13px;
     font-weight: 500;
@@ -1724,7 +1742,7 @@ body {
 /* Redesigned search result cards - similar to place cards */
 .search-result-card {
     padding: 16px;
-    background: white;
+    background: var(--card-bg);
     border: 1.5px solid var(--secondary-bg);
     border-radius: 16px;
     cursor: pointer;
@@ -1878,7 +1896,7 @@ body {
     width: 44px;
     height: 44px;
     border: 1.5px solid var(--secondary-bg);
-    background: white;
+    background: var(--card-bg);
     border-radius: 12px;
     font-size: 18px;
     cursor: pointer;
@@ -1989,7 +2007,7 @@ body {
     width: 100%;
     max-width: 500px;
     max-height: 70vh;
-    background: white;
+    background: var(--card-bg);
     border-radius: 24px 24px 0 0;
     display: flex;
     flex-direction: column;
@@ -2055,7 +2073,7 @@ body {
 .filter-option {
     padding: 8px 14px;
     border: 1.5px solid var(--secondary-bg);
-    background: white;
+    background: var(--card-bg);
     color: var(--text-color);
     border-radius: 20px;
     font-size: 13px;
@@ -2187,7 +2205,7 @@ body {
 .place-menu-content {
     width: 100%;
     max-width: 500px;
-    background: white;
+    background: var(--card-bg);
     border-radius: 16px 16px 0 0;
     padding: 8px;
     animation: slideUp 0.2s ease;
@@ -2345,12 +2363,38 @@ body {
     width: 100%;
     max-width: 500px;
     max-height: 90vh;
-    background: white;
+    background: var(--card-bg);
     border-radius: 24px 24px 0 0;
     display: flex;
     flex-direction: column;
-    animation: slideUp 0.25s ease;
+    animation: slideUp 0.2s ease-out;
     box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12);
+}
+
+/* Loading state - show spinner in content area */
+.sheet.loading .sheet-content::after {
+    content: '';
+    display: flex;
+    justify-content: center;
+    padding: 48px;
+    min-height: 120px;
+}
+
+.sheet.loading .sheet-body {
+    display: flex !important;
+    justify-content: center;
+    align-items: center;
+    min-height: 120px;
+}
+
+.sheet.loading .sheet-body::before {
+    content: '';
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--secondary-bg);
+    border-top-color: var(--sprout-green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
 }
 
 .sheet-handle {
@@ -2667,7 +2711,7 @@ body {
     padding: 8px 10px;
     border: 1px solid var(--secondary-bg);
     border-radius: 8px;
-    background: white;
+    background: var(--card-bg);
     color: var(--text-color);
     font-size: 14px;
     font-weight: 500;
@@ -2765,7 +2809,7 @@ body {
     padding: 8px 10px;
     border: 1px solid var(--secondary-bg);
     border-radius: 8px;
-    background: white;
+    background: var(--card-bg);
     color: var(--text-color);
     font-size: 13px;
     font-family: inherit;
@@ -3051,7 +3095,7 @@ button:disabled,
 .reviews-sort-select {
     padding: 6px 12px;
     border: 1px solid var(--secondary-bg);
-    background-color: white;
+    background-color: var(--card-bg);
     color: var(--text-color);
     border-radius: 12px;
     font-size: 13px;
@@ -3076,7 +3120,7 @@ button:disabled,
     flex-shrink: 0;
     padding: 6px 14px;
     border: 1.5px solid var(--secondary-bg);
-    background-color: white;
+    background-color: var(--card-bg);
     color: var(--hint-color);
     font-size: 13px;
     font-weight: 600;
@@ -3128,7 +3172,7 @@ button:disabled,
 
 /* Review card */
 .review-card {
-    background-color: white;
+    background-color: var(--card-bg);
     border: 1.5px solid var(--secondary-bg);
     border-radius: 16px;
     padding: 16px;
@@ -3443,4 +3487,306 @@ button:disabled,
 [data-theme="dark"] .skeleton-line {
     background: linear-gradient(90deg, var(--border-color) 25%, #3C3C3E 50%, var(--border-color) 75%);
     background-size: 200% 100%;
+}
+
+/* ========== REVIEW VIEW MODE ========== */
+
+.review-view-ratings {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 16px;
+}
+
+.view-rating-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.view-rating-label {
+    font-size: 12px;
+    color: var(--hint-color);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.view-stars {
+    display: flex;
+    gap: 2px;
+}
+
+.view-stars .star {
+    font-size: 22px;
+    color: var(--secondary-bg);
+}
+
+.view-stars .star.filled {
+    color: #FFD700;
+}
+
+.view-price {
+    display: flex;
+    gap: 2px;
+}
+
+.view-price .price-icon {
+    font-size: 18px;
+    opacity: 0.3;
+}
+
+.view-price .price-icon.filled {
+    opacity: 1;
+}
+
+.view-photos {
+    margin-bottom: 16px;
+}
+
+.view-photos .photo-thumb {
+    cursor: pointer;
+}
+
+.view-photos .photo-delete-btn {
+    display: none;
+}
+
+.view-remarks {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text-color);
+    white-space: pre-wrap;
+    padding: 12px;
+    background: var(--secondary-bg);
+    border-radius: 12px;
+    margin-bottom: 12px;
+}
+
+.view-remarks:empty {
+    display: none;
+}
+
+.view-edited {
+    font-size: 12px;
+    color: var(--hint-color);
+    text-align: right;
+}
+
+/* View mode dish cards */
+.view-dish-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+
+.view-dish-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.view-dish-header:active {
+    background: var(--secondary-bg);
+}
+
+.view-dish-name {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--text-color);
+}
+
+.view-dish-rating {
+    display: flex;
+    gap: 1px;
+}
+
+.view-dish-rating .star {
+    font-size: 14px;
+    color: var(--secondary-bg);
+}
+
+.view-dish-rating .star.filled {
+    color: #FFD700;
+}
+
+.view-dish-toggle {
+    font-size: 12px;
+    color: var(--hint-color);
+    transition: transform 0.2s;
+}
+
+.view-dish-card.expanded .view-dish-toggle {
+    transform: rotate(180deg);
+}
+
+.view-dish-content {
+    display: none;
+    padding: 0 16px 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.view-dish-card.expanded .view-dish-content {
+    display: block;
+}
+
+.view-dish-remarks {
+    font-size: 14px;
+    color: var(--text-color);
+    line-height: 1.4;
+    margin-bottom: 12px;
+    white-space: pre-wrap;
+}
+
+.view-dish-remarks:empty {
+    display: none;
+}
+
+.view-dish-photos {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.view-dish-photos .photo-thumb {
+    width: 80px;
+    height: 80px;
+}
+
+/* ========== PHOTO FULLSCREEN VIEWER ========== */
+
+.photo-viewer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.95);
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+}
+
+.photo-viewer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    color: white;
+}
+
+.photo-counter {
+    font-size: 14px;
+    opacity: 0.8;
+}
+
+.photo-viewer-close {
+    width: 40px;
+    height: 40px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.photo-viewer-close:active {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.photo-viewer-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    touch-action: pan-x;
+}
+
+.photo-viewer-body img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.photo-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 48px;
+    height: 48px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.photo-nav:active {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.photo-nav-prev {
+    left: 16px;
+}
+
+.photo-nav-next {
+    right: 16px;
+}
+
+.photo-nav:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.photo-viewer-footer {
+    padding: 16px;
+    display: flex;
+    justify-content: center;
+}
+
+.photo-viewer-delete {
+    padding: 12px 24px;
+    border: 1px solid rgba(255, 100, 100, 0.5);
+    background: transparent;
+    color: #ff6b6b;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 20px;
+    cursor: pointer;
+}
+
+.photo-viewer-delete:active {
+    background: rgba(255, 100, 100, 0.1);
+}
+
+/* Hide delete in view mode */
+.photo-viewer.view-mode .photo-viewer-footer {
+    display: none;
+}
+
+/* Secondary button style */
+.sheet-btn.secondary {
+    background: var(--secondary-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+}
+
+.sheet-btn.secondary:active {
+    background: var(--border-color);
 }

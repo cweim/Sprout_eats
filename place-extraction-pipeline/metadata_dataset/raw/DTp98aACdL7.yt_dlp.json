@@ -1,0 +1,238 @@
+{
+  "id": "DTp98aACdL7",
+  "formats": {
+    "count": 6,
+    "items": [
+      {
+        "format_id": "dash-1221900769364249a",
+        "ext": "m4a",
+        "width": null,
+        "height": null,
+        "resolution": "audio only",
+        "format_note": "DASH audio",
+        "vcodec": "none",
+        "acodec": "mp4a.40.5",
+        "tbr": 61.044,
+        "abr": 61.044,
+        "vbr": 0,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-760379006529885v",
+        "ext": "mp4",
+        "width": 360,
+        "height": 638,
+        "resolution": "360x638",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.21.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 385.934,
+        "abr": 0,
+        "vbr": 385.934,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-24959400043735143v",
+        "ext": "mp4",
+        "width": 540,
+        "height": 958,
+        "resolution": "540x958",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.30.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 1017.418,
+        "abr": 0,
+        "vbr": 1017.418,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "3",
+        "ext": "mp4",
+        "width": 640,
+        "height": 1136,
+        "resolution": "640x1136",
+        "format_note": null,
+        "vcodec": null,
+        "acodec": null,
+        "tbr": null,
+        "abr": null,
+        "vbr": null,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-920520137298037v",
+        "ext": "mp4",
+        "width": 720,
+        "height": 1278,
+        "resolution": "720x1278",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.31.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 1712.462,
+        "abr": 0,
+        "vbr": 1712.462,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-1800815887988727v",
+        "ext": "mp4",
+        "width": 984,
+        "height": 1748,
+        "resolution": "984x1748",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.40.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 2111.642,
+        "abr": 0,
+        "vbr": 2111.642,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      }
+    ],
+    "truncated": false
+  },
+  "title": "Video by selfcarelivingdays",
+  "description": "I used to think paying for Japanese food is super not worth it until @ganko.sushi_sg \n\nIt is one of the BEST Japanese restaurants in Singapore I’ve been to 🍣❤️✨\n\nThey apparently have their ingredients airflown from Japan 3x a week, so it’s super fresh and of high quality 🤤 \n\nIt’s not cheap, but you get what you pay for and I think it’s a great place to splurge on for special occasions ❤️\n\nMy favourites were:\n🐟Truffle Sashimi Don 8.8/10 - super fresh fish and filled with premium ingredients like freshly shaved truffle, uni and caviar 🤩 incredibly luxurious \n\n🍣 Premium Nigiri Platter 8.6/10: super fresh, sweet & clean tasting sashimi slices!!! It’s the first time I feel knife skills matter 😜 really very smooth, buttery tuna slices 👍🏻\n\n🥪 Wagyu Sando 8.2/10: Wagyu leaner cut but still has that rich, buttery fragrance - good if you’re not into that creamy fatty taste that typical Wagyu has ✨\n\nOverall, a great place for dates and special occasions ❤️\n\n📍Ganko Sushi\n9 Penang Rd, 01-01, Singapore 238459\n\n#sg #sgfoodies #japanesefood #sashimi #sushi",
+  "duration": 25.366,
+  "timestamp": 1768747639,
+  "uploader_id": "12429614927",
+  "uploader": "Self Care Foodie | Singapore SG",
+  "channel": "selfcarelivingdays",
+  "like_count": 648,
+  "comment_count": 29,
+  "comments": [
+    {
+      "author": "evaaaa0717",
+      "author_id": "42800647268",
+      "id": "18002446745857327",
+      "text": "This makes me hungry 🤤",
+      "timestamp": 1773835120
+    },
+    {
+      "author": "ladybird_lyn",
+      "author_id": "2304698615",
+      "id": "17935675473013958",
+      "text": "How much !?",
+      "timestamp": 1770080164
+    },
+    {
+      "author": "christmastan27",
+      "author_id": "29439034874",
+      "id": "18107632318779478",
+      "text": "Price",
+      "timestamp": 1769869340
+    }
+  ],
+  "thumbnails": [
+    {
+      "url": {
+        "redacted": true,
+        "length": 551,
+        "host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      "width": 640,
+      "height": 1136,
+      "id": "0",
+      "resolution": "640x1136"
+    },
+    {
+      "url": {
+        "redacted": true,
+        "length": 551,
+        "host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      "width": 750,
+      "height": 1331,
+      "id": "1",
+      "resolution": "750x1331"
+    },
+    {
+      "url": {
+        "redacted": true,
+        "length": 551,
+        "host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      "width": 1080,
+      "height": 1917,
+      "id": "2",
+      "resolution": "1080x1917"
+    }
+  ],
+  "http_headers": {
+    "keys": [
+      "Referer"
+    ],
+    "count": 1
+  },
+  "webpage_url": "https://www.instagram.com/reel/DTp98aACdL7/?igsh=MXJhd3V6dmQzdmF4Zw==",
+  "original_url": "https://www.instagram.com/reel/DTp98aACdL7/?igsh=MXJhd3V6dmQzdmF4Zw==",
+  "webpage_url_basename": "DTp98aACdL7",
+  "webpage_url_domain": "instagram.com",
+  "extractor": "Instagram",
+  "extractor_key": "Instagram",
+  "playlist": null,
+  "playlist_index": null,
+  "thumbnail": "https://instagram.fsin12-1.fna.fbcdn.net/v/t51.71878-15/618653037_1859734014909508_3117604732035731165_n.jpg?stp=dst-jpg_e15_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6ImltYWdlX3VybGdlbi42NDB4MTEzNi5zZHIuZjcxODc4LmRlZmF1bHRfY292ZXJfZnJhbWUuYzIifQ&_nc_ht=instagram.fsin12-1.fna.fbcdn.net&_nc_cat=104&_nc_oc=Q6cZ2gHoCfe9xRS4ChPyMjd7yXDn3NbTiEqAf8_bkpSebKyKyyu0XtJcrhMylNNOAXPRVizE4o_xG-DZwt0RPT3xiLZs&_nc_ohc=RCG_EvXr7sMQ7kNvwEvd5DC&_nc_gid=rlgTW21_z8XNmVCqSBIPOQ&edm=ANTKIIoBAAAA&ccb=7-5&oh=00_Af3Kg52SehMbL0EOZST1tN3ikShH27V0fhSdQ0hAnjD6rA&oe=69EAD074&_nc_sid=d885a2",
+  "display_id": "DTp98aACdL7",
+  "fulltitle": "Video by selfcarelivingdays",
+  "duration_string": "25",
+  "upload_date": "20260118",
+  "release_year": null,
+  "requested_subtitles": null,
+  "_has_drm": null,
+  "epoch": 1776618031,
+  "requested_formats": {
+    "count": 2,
+    "items": [
+      {
+        "format_id": "dash-1800815887988727v",
+        "ext": "mp4",
+        "width": 984,
+        "height": 1748,
+        "resolution": "984x1748",
+        "format_note": "DASH video",
+        "vcodec": "vp09.00.40.08.00.01.01.01.00",
+        "acodec": "none",
+        "tbr": 2111.642,
+        "abr": 0,
+        "vbr": 2111.642,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      },
+      {
+        "format_id": "dash-1221900769364249a",
+        "ext": "m4a",
+        "width": null,
+        "height": null,
+        "resolution": "audio only",
+        "format_note": "DASH audio",
+        "vcodec": "none",
+        "acodec": "mp4a.40.5",
+        "tbr": 61.044,
+        "abr": 61.044,
+        "vbr": 0,
+        "url_host": "instagram.fsin12-1.fna.fbcdn.net"
+      }
+    ],
+    "truncated": false
+  },
+  "format": "dash-1800815887988727v - 984x1748 (DASH video)+dash-1221900769364249a - audio only (DASH audio)",
+  "format_id": "dash-1800815887988727v+dash-1221900769364249a",
+  "ext": "mp4",
+  "protocol": "https+https",
+  "language": null,
+  "format_note": "DASH video+DASH audio",
+  "filesize_approx": 6889043,
+  "tbr": 2172.6859999999997,
+  "width": 984,
+  "height": 1748,
+  "resolution": "984x1748",
+  "fps": null,
+  "dynamic_range": "SDR",
+  "vcodec": "vp09.00.40.08.00.01.01.01.00",
+  "vbr": 2111.642,
+  "stretched_ratio": null,
+  "aspect_ratio": 0.56,
+  "acodec": "mp4a.40.5",
+  "abr": 61.044,
+  "asr": 44100,
+  "audio_channels": null
+}

@@ -133,7 +133,7 @@ The interactive Mini App lets you browse saved places on a map with search, filt
 
 1. **Start the API server:**
 ```bash
-uvicorn api.server:app --reload --port 8000
+uvicorn api.main:app --reload --port 8000
 ```
 
 2. **For local development:**

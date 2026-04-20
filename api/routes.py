@@ -1,14 +1,13 @@
 import logging
 import math
-import asyncio
-import httpx
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from pydantic import BaseModel, Field
 
-import config
-from database import repository
+from api.telegram_auth import get_current_user, TelegramUser
+from database import supabase_repository as repository
+from database.supabase_client import upload_photo as storage_upload_photo
 from services.places import search_place
 
 logger = logging.getLogger(__name__)
@@ -25,7 +24,14 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return R * c
 
+
 router = APIRouter(prefix="/api")
+
+
+@router.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
+    return {"status": "ok"}
 
 
 class PlaceUpdate(BaseModel):
@@ -50,90 +56,87 @@ class PlaceCreate(BaseModel):
     place_opening_hours: Optional[str] = None
 
 
-def place_to_dict(place) -> dict:
-    """Convert Place model to dictionary for JSON response."""
+def place_to_dict(place: dict) -> dict:
+    """Convert place dict for JSON response."""
     return {
-        "id": place.id,
-        "name": place.name,
-        "address": place.address,
-        "latitude": place.latitude,
-        "longitude": place.longitude,
-        "google_place_id": place.google_place_id,
-        "source_url": place.source_url,
-        "source_platform": place.source_platform,
-        "created_at": place.created_at.isoformat() if place.created_at else None,
-        "source_title": place.source_title,
-        "source_uploader": place.source_uploader,
-        "source_duration": place.source_duration,
-        "source_hashtags": place.source_hashtags,
-        "place_types": place.place_types,
-        "place_rating": place.place_rating,
-        "place_rating_count": place.place_rating_count,
-        "place_price_level": place.place_price_level,
-        "place_opening_hours": place.place_opening_hours,
-        "source_language": place.source_language,
-        "source_transcript": place.source_transcript,
-        "source_transcript_en": place.source_transcript_en,
-        "is_visited": place.is_visited or False,
-        "notes": place.notes,
+        "id": place.get("id"),
+        "name": place.get("name"),
+        "address": place.get("address"),
+        "latitude": place.get("latitude"),
+        "longitude": place.get("longitude"),
+        "google_place_id": place.get("google_place_id"),
+        "source_url": place.get("source_url"),
+        "source_platform": place.get("source_platform"),
+        "created_at": place.get("created_at"),
+        "source_title": place.get("source_title"),
+        "source_uploader": place.get("source_uploader"),
+        "source_duration": place.get("source_duration"),
+        "source_hashtags": place.get("source_hashtags"),
+        "place_types": place.get("place_types"),
+        "place_rating": place.get("place_rating"),
+        "place_rating_count": place.get("place_rating_count"),
+        "place_price_level": place.get("place_price_level"),
+        "place_opening_hours": place.get("place_opening_hours"),
+        "source_language": place.get("source_language"),
+        "source_transcript": place.get("source_transcript"),
+        "source_transcript_en": place.get("source_transcript_en"),
+        "is_visited": place.get("is_visited") or False,
+        "notes": place.get("notes"),
     }
 
 
 @router.get("/places")
-async def get_places():
-    """Get all saved places."""
-    places = repository.get_all_places()
+async def get_places(user: TelegramUser = Depends(get_current_user)):
+    """Get all saved places for current user."""
+    places = repository.get_all_places(user.id)
     return {"places": [place_to_dict(p) for p in places]}
 
 
 @router.get("/places/nearby")
-async def get_nearby_places(lat: float, lng: float, radius_km: float = 5.0):
-    """
-    Get places within radius of given coordinates.
-
-    Returns places sorted by distance, with distance included.
-    """
-    all_places = repository.get_all_places()
+async def get_nearby_places(
+    lat: float,
+    lng: float,
+    radius_km: float = 5.0,
+    user: TelegramUser = Depends(get_current_user)
+):
+    """Get places within radius of given coordinates."""
+    all_places = repository.get_all_places(user.id)
 
     nearby = []
     for place in all_places:
-        if place.latitude and place.longitude:
-            dist = haversine_distance(lat, lng, place.latitude, place.longitude)
+        if place.get("latitude") and place.get("longitude"):
+            dist = haversine_distance(lat, lng, place["latitude"], place["longitude"])
             if dist <= radius_km:
                 place_dict = place_to_dict(place)
                 place_dict['distance_km'] = round(dist, 2)
                 nearby.append(place_dict)
 
-    # Sort by distance
     nearby.sort(key=lambda p: p['distance_km'])
-
     return {"places": nearby, "count": len(nearby), "radius_km": radius_km}
 
 
 @router.get("/places/{place_id}")
-async def get_place(place_id: int):
+async def get_place(place_id: int, user: TelegramUser = Depends(get_current_user)):
     """Get a single place by ID."""
-    place = repository.get_place_by_id(place_id)
+    place = repository.get_place_by_id(user.id, place_id)
     if not place:
         raise HTTPException(status_code=404, detail="Place not found")
     return {"place": place_to_dict(place)}
 
 
 @router.patch("/places/{place_id}")
-async def update_place(place_id: int, update: PlaceUpdate):
-    """
-    Update a place's name, visited status, or notes.
-
-    Only non-None fields in the request body will be updated.
-    """
+async def update_place(
+    place_id: int,
+    update: PlaceUpdate,
+    user: TelegramUser = Depends(get_current_user)
+):
+    """Update a place's name, visited status, or notes."""
     from datetime import datetime
 
-    # Get the place before update to check visited status change
-    old_place = repository.get_place_by_id(place_id)
+    old_place = repository.get_place_by_id(user.id, place_id)
     if not old_place:
         raise HTTPException(status_code=404, detail="Place not found")
 
-    # Build kwargs from non-None fields
     update_data = {}
     if update.name is not None:
         update_data['name'] = update.name
@@ -147,21 +150,17 @@ async def update_place(place_id: int, update: PlaceUpdate):
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    place = repository.update_place(place_id, **update_data)
+    place = repository.update_place(user.id, place_id, **update_data)
     if not place:
         raise HTTPException(status_code=404, detail="Place not found")
 
-    # If place was just marked as visited, create a reminder
-    if update.is_visited is not None and update.is_visited and not old_place.is_visited:
-        # Check if review already exists
-        existing_review = repository.get_review(place_id)
-
+    # Create reminder if place just marked visited and no review exists
+    if update.is_visited and not old_place.get("is_visited"):
+        existing_review = repository.get_review(user.id, place_id)
         if not existing_review:
-            # Create reminder for 1 hour from now
-            # For API, we'll use user_id=1 (single-user bot)
             repository.create_reminder(
+                user_id=user.id,
                 place_id=place_id,
-                user_id=1,
                 visited_at=datetime.utcnow()
             )
 
@@ -169,12 +168,12 @@ async def update_place(place_id: int, update: PlaceUpdate):
 
 
 @router.get("/search")
-async def search_places_api(q: str, max_results: int = 5):
-    """
-    Search Google Places API for places.
-
-    Returns results that can be added to saved places.
-    """
+async def search_places_api(
+    q: str,
+    max_results: int = 5,
+    user: TelegramUser = Depends(get_current_user)
+):
+    """Search Google Places API for places."""
     if not q or len(q) < 2:
         raise HTTPException(status_code=400, detail="Query too short")
 
@@ -211,11 +210,13 @@ async def search_places_api(q: str, max_results: int = 5):
 
 
 @router.post("/places")
-async def create_place(place: PlaceCreate):
-    """
-    Add a new place manually (e.g., from search results).
-    """
+async def create_place(
+    place: PlaceCreate,
+    user: TelegramUser = Depends(get_current_user)
+):
+    """Add a new place manually."""
     saved_place = repository.add_place(
+        user_id=user.id,
         name=place.name,
         address=place.address,
         latitude=place.latitude,
@@ -234,9 +235,9 @@ async def create_place(place: PlaceCreate):
 
 
 @router.delete("/places/{place_id}")
-async def delete_place(place_id: int):
+async def delete_place(place_id: int, user: TelegramUser = Depends(get_current_user)):
     """Delete a place by ID."""
-    deleted = repository.delete_place(place_id)
+    deleted = repository.delete_place(user.id, place_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Place not found")
     return {"success": True, "message": "Place deleted"}
@@ -244,7 +245,7 @@ async def delete_place(place_id: int):
 
 @router.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint (no auth required)."""
     return {"status": "ok"}
 
 
@@ -255,7 +256,7 @@ async def health_check():
 
 class DishRequest(BaseModel):
     """Request model for a dish in a review."""
-    id: Optional[int] = None  # None for new dish
+    id: Optional[int] = None
     name: str = Field(..., min_length=1)
     rating: int = Field(..., ge=1, le=5)
     remarks: Optional[str] = None
@@ -299,50 +300,47 @@ class ReviewResponse(BaseModel):
     overall_photos: List[PhotoResponse] = []
 
 
-def review_to_dict(review) -> dict:
-    """Convert Review model to dictionary for JSON response."""
-    # Get dish photos vs overall photos
-    dish_ids = {d.id for d in review.dishes} if review.dishes else set()
-
+def review_to_dict(review: dict) -> dict:
+    """Convert review dict for JSON response."""
     overall_photos = []
-    if review.photos:
-        for photo in review.photos:
-            if photo.dish_id is None:
+    if review.get("photos"):
+        for photo in review["photos"]:
+            if photo.get("dish_id") is None:
                 overall_photos.append({
-                    "id": photo.id,
-                    "url": photo.file_url,
+                    "id": photo["id"],
+                    "url": photo.get("file_url"),
                     "dish_id": None,
-                    "sort_order": photo.sort_order
+                    "sort_order": photo.get("sort_order", 0)
                 })
 
     dishes = []
-    if review.dishes:
-        for dish in review.dishes:
+    if review.get("dishes"):
+        for dish in review["dishes"]:
             dish_photos = []
-            if dish.photos:
-                for photo in dish.photos:
+            if dish.get("photos"):
+                for photo in dish["photos"]:
                     dish_photos.append({
-                        "id": photo.id,
-                        "url": photo.file_url,
-                        "dish_id": photo.dish_id
+                        "id": photo["id"],
+                        "url": photo.get("file_url"),
+                        "dish_id": photo.get("dish_id")
                     })
             dishes.append({
-                "id": dish.id,
-                "name": dish.dish_name,
-                "rating": dish.rating,
-                "remarks": dish.remarks,
-                "updated_at": dish.updated_at.isoformat() if dish.updated_at else None,
+                "id": dish["id"],
+                "name": dish.get("dish_name"),
+                "rating": dish.get("rating"),
+                "remarks": dish.get("remarks"),
+                "updated_at": dish.get("updated_at"),
                 "photos": dish_photos
             })
 
     return {
-        "id": review.id,
-        "place_id": review.place_id,
-        "overall_rating": review.overall_rating,
-        "price_rating": review.price_rating,
-        "overall_remarks": review.overall_remarks,
-        "created_at": review.created_at.isoformat() if review.created_at else None,
-        "updated_at": review.updated_at.isoformat() if review.updated_at else None,
+        "id": review["id"],
+        "place_id": review.get("place_id"),
+        "overall_rating": review.get("overall_rating"),
+        "price_rating": review.get("price_rating"),
+        "overall_remarks": review.get("overall_remarks"),
+        "created_at": review.get("created_at"),
+        "updated_at": review.get("updated_at"),
         "dishes": dishes,
         "overall_photos": overall_photos
     }
@@ -354,23 +352,25 @@ def review_to_dict(review) -> dict:
 
 
 @router.get("/places/{place_id}/review")
-async def get_review(place_id: int):
+async def get_review(place_id: int, user: TelegramUser = Depends(get_current_user)):
     """Get review for a place with dishes and photos."""
-    review = repository.get_review(place_id)
+    review = repository.get_review(user.id, place_id)
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
     return {"review": review_to_dict(review)}
 
 
 @router.post("/places/{place_id}/review")
-async def create_or_update_review(place_id: int, request: ReviewRequest):
+async def create_or_update_review(
+    place_id: int,
+    request: ReviewRequest,
+    user: TelegramUser = Depends(get_current_user)
+):
     """Create or update review for a place."""
-    # Verify place exists
-    place = repository.get_place_by_id(place_id)
+    place = repository.get_place_by_id(user.id, place_id)
     if not place:
         raise HTTPException(status_code=404, detail="Place not found")
 
-    # Convert dishes to dict format
     dishes_data = [
         {
             "id": d.id,
@@ -381,10 +381,9 @@ async def create_or_update_review(place_id: int, request: ReviewRequest):
         for d in request.dishes
     ]
 
-    # Create/update review (user_id hardcoded to 1 for single-user bot)
     review = repository.create_or_update_review(
+        user_id=user.id,
         place_id=place_id,
-        user_id=1,
         overall_rating=request.overall_rating,
         price_rating=request.price_rating,
         overall_remarks=request.overall_remarks,
@@ -395,26 +394,24 @@ async def create_or_update_review(place_id: int, request: ReviewRequest):
 
 
 @router.delete("/places/{place_id}/review")
-async def delete_review(place_id: int):
+async def delete_review(place_id: int, user: TelegramUser = Depends(get_current_user)):
     """Delete review for a place."""
-    deleted = repository.delete_review(place_id)
+    deleted = repository.delete_review(user.id, place_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Review not found")
     return {"success": True, "message": "Review deleted"}
 
 
 @router.get("/reviews")
-async def get_all_reviews():
+async def get_all_reviews(user: TelegramUser = Depends(get_current_user)):
     """Get all reviews for the user."""
-    # Hardcoded user_id=1 for single-user bot
-    reviews = repository.get_all_reviews(user_id=1)
+    reviews = repository.get_all_reviews(user.id)
 
     result = []
     for review in reviews:
         review_dict = review_to_dict(review)
-        # Include place name for display
-        if review.place:
-            review_dict["place_name"] = review.place.name
+        if review.get("place_name"):
+            review_dict["place_name"] = review["place_name"]
         result.append(review_dict)
 
     return {"reviews": result}
@@ -424,23 +421,17 @@ async def get_all_reviews():
 async def upload_photo(
     review_id: int,
     file: UploadFile = File(...),
-    dish_id: Optional[int] = Form(None)
+    dish_id: Optional[int] = Form(None),
+    user: TelegramUser = Depends(get_current_user)
 ):
-    """
-    Upload a photo to a review.
+    """Upload a photo to a review (Supabase Storage)."""
+    # Verify review exists and belongs to user
+    review = repository.get_review_by_id(review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
 
-    Photos are sent to Telegram Bot API to get a file_id,
-    then stored in the database.
-    """
-    # Verify the review exists (get it from any place)
-    # We need to find the review by ID
-    from database.models import Review, SessionLocal
-
-    with SessionLocal() as session:
-        review = session.query(Review).filter_by(id=review_id).first()
-        if not review:
-            raise HTTPException(status_code=404, detail="Review not found")
-        place_id = review.place_id
+    if review.get("user_id") != user.id:
+        raise HTTPException(status_code=403, detail="Not your review")
 
     # Check photo limits
     count = repository.get_photo_count(review_id, dish_id)
@@ -454,63 +445,24 @@ async def upload_photo(
     # Read file content
     content = await file.read()
 
-    # Validate Telegram configuration
-    if not config.TELEGRAM_BOT_TOKEN:
-        raise HTTPException(status_code=500, detail="Telegram bot token not configured")
-
-    if not config.TELEGRAM_CHAT_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="TELEGRAM_CHAT_ID not configured in .env (get your chat ID from @userinfobot)"
+    # Upload to Supabase Storage
+    try:
+        file_url, storage_path = storage_upload_photo(
+            user_id=user.id,
+            review_id=review_id,
+            file_content=content,
+            filename=file.filename or "photo.jpg"
         )
+    except Exception as e:
+        logger.error(f"Failed to upload photo: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload photo")
 
-    # Upload photo to Telegram to get file_id
-    telegram_file_id = None
-    file_url = None
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            # Send photo to Telegram Bot API
-            url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendPhoto"
-
-            files = {"photo": (file.filename or "photo.jpg", content, file.content_type or "image/jpeg")}
-            data = {"chat_id": config.TELEGRAM_CHAT_ID}
-
-            response = await client.post(url, data=data, files=files)
-            result = response.json()
-
-            if not result.get("ok"):
-                logger.error(f"Telegram API error: {result}")
-                raise HTTPException(status_code=500, detail=f"Failed to upload to Telegram: {result.get('description', 'Unknown error')}")
-
-            # Extract file_id from the largest photo size
-            photos = result["result"]["photo"]
-            telegram_file_id = photos[-1]["file_id"]  # Largest size
-
-            # Get file path from Telegram
-            get_file_url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getFile"
-            file_response = await client.get(get_file_url, params={"file_id": telegram_file_id})
-            file_result = file_response.json()
-
-            if not file_result.get("ok"):
-                logger.error(f"Failed to get file path: {file_result}")
-                raise HTTPException(status_code=500, detail="Failed to get photo file path")
-
-            file_path = file_result["result"]["file_path"]
-
-            # Construct download URL
-            file_url = f"https://api.telegram.org/file/bot{config.TELEGRAM_BOT_TOKEN}/{file_path}"
-
-        except httpx.RequestError as e:
-            logger.error(f"Failed to upload photo to Telegram: {e}")
-            raise HTTPException(status_code=500, detail="Failed to upload photo to Telegram")
-
-    # Store photo in database with file_id
+    # Store in database
     photo = repository.add_photo(
         review_id=review_id,
-        telegram_file_id=telegram_file_id,
+        file_url=file_url,
+        storage_path=storage_path,
         dish_id=dish_id,
-        file_url=file_url
     )
 
     if not photo:
@@ -518,25 +470,30 @@ async def upload_photo(
 
     return {
         "photo": {
-            "id": photo.id,
-            "url": photo.file_url,
-            "telegram_file_id": photo.telegram_file_id,
-            "dish_id": photo.dish_id
+            "id": photo["id"],
+            "url": photo.get("file_url"),
+            "dish_id": photo.get("dish_id")
         },
         "message": "Photo uploaded!"
     }
 
 
 @router.delete("/reviews/{review_id}/photos/{photo_id}")
-async def delete_photo(review_id: int, photo_id: int):
+async def delete_photo(
+    review_id: int,
+    photo_id: int,
+    user: TelegramUser = Depends(get_current_user)
+):
     """Delete a photo from a review."""
-    # Verify photo belongs to the review
-    from database.models import ReviewPhoto, SessionLocal
+    # Verify photo belongs to the review and user
+    photo = repository.get_photo_by_id(photo_id, review_id)
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
 
-    with SessionLocal() as session:
-        photo = session.query(ReviewPhoto).filter_by(id=photo_id, review_id=review_id).first()
-        if not photo:
-            raise HTTPException(status_code=404, detail="Photo not found")
+    # Verify review belongs to user
+    review = repository.get_review_by_id(review_id)
+    if not review or review.get("user_id") != user.id:
+        raise HTTPException(status_code=403, detail="Not your review")
 
     deleted = repository.delete_photo(photo_id)
     if not deleted:
