@@ -11,6 +11,9 @@ import yt_dlp
 import config
 
 
+DOWNLOAD_TIMEOUT = config.DOWNLOAD_TIMEOUT
+
+
 class DownloadTimeoutError(Exception):
     """Raised when media download takes too long."""
 

@@ -131,9 +131,6 @@ async def post_init(application):
 
 
 def main():
-    # Initialize database
-    init_db()
-
     # Pre-load Whisper model (takes a few seconds)
     logger.info("Loading Whisper model...")
     preload_model()
