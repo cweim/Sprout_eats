@@ -574,6 +574,99 @@ def build_runtime_metadata_record(
     }
 
 
+def build_runtime_metadata_record_from_dataset(
+    record: dict[str, Any],
+    *,
+    include_ocr: bool = False,
+    include_video_ocr: bool = False,
+    include_transcription: bool = False,
+) -> dict[str, Any]:
+    """Build a staged runtime record from a normalized dataset entry."""
+    core = record.get("yt_dlp_core") or {}
+    media_evidence = record.get("media_evidence") or {}
+    ocr = media_evidence.get("ocr") or {}
+    video_ocr = media_evidence.get("video_ocr") or {}
+    transcription = media_evidence.get("transcription") or {}
+
+    ocr_text = ""
+    if include_ocr:
+        ocr_text = ((ocr.get("combined") or {}).get("text") or "").strip()
+
+    video_ocr_payload: dict[str, Any] | None = None
+    if include_video_ocr and video_ocr:
+        video_ocr_payload = video_ocr
+
+    transcription_payload: dict[str, Any] | None = None
+    if include_transcription and transcription:
+        transcription_payload = transcription
+
+    return build_runtime_metadata_record(
+        title=core.get("title") or "",
+        description=core.get("description") or "",
+        source_url=((record.get("input") or {}).get("url") or ""),
+        platform=((record.get("input") or {}).get("platform") or ""),
+        content_type=((record.get("derived") or {}).get("content_type") or ""),
+        uploader=core.get("uploader"),
+        duration=core.get("duration"),
+        hashtags=core.get("tags") or [],
+        ocr_text=ocr_text,
+        video_ocr=video_ocr_payload,
+        transcription=transcription_payload,
+    )
+
+
+def extract_place_evidence_with_runtime_order(
+    record: dict[str, Any]
+) -> tuple[list[PlaceEvidence], list[str]]:
+    """
+    Emulate the bot's staged source order for slot extraction.
+
+    Order:
+    1. caption/title
+    2. image OCR
+    3. video OCR
+    4. audio transcription
+    """
+    slots = extract_place_evidence_from_metadata(
+        build_runtime_metadata_record_from_dataset(record)
+    )
+    if slots:
+        return slots, ["caption"]
+
+    ocr_text = (((record.get("media_evidence") or {}).get("ocr") or {}).get("combined") or {}).get("text")
+    if ocr_text:
+        slots = extract_place_evidence_from_metadata(
+            build_runtime_metadata_record_from_dataset(record, include_ocr=True)
+        )
+        if slots:
+            return slots, ["caption", "image_ocr"]
+
+    video_ocr = (record.get("media_evidence") or {}).get("video_ocr") or {}
+    video_ocr_text = ((video_ocr.get("combined") or {}).get("text") or video_ocr.get("combined_text") or "").strip()
+    if video_ocr_text:
+        slots = extract_place_evidence_from_metadata(
+            build_runtime_metadata_record_from_dataset(record, include_video_ocr=True)
+        )
+        if slots:
+            return slots, ["caption", "image_ocr", "video_ocr"]
+
+    transcription = (record.get("media_evidence") or {}).get("transcription") or {}
+    transcript_text = (
+        transcription.get("preferred_text")
+        or transcription.get("english_text")
+        or transcription.get("text")
+        or ""
+    ).strip()
+    if transcript_text:
+        slots = extract_place_evidence_from_metadata(
+            build_runtime_metadata_record_from_dataset(record, include_transcription=True)
+        )
+        if slots:
+            return slots, ["caption", "image_ocr", "video_ocr", "transcription"]
+
+    return [], ["caption", "image_ocr", "video_ocr", "transcription"]
+
+
 def candidate_matches_evidence(candidate: PlaceResult, evidence: PlaceEvidence) -> tuple[bool, str, int]:
     """Validate a Google result against a single evidence slot."""
     evidence_compact = compact_name(evidence.name_candidate)
@@ -661,7 +754,7 @@ async def resolve_place_slots(
             PlaceSlotSuggestion(
                 evidence=slot,
                 status="resolved" if accepted else "unresolved",
-                candidates=accepted,
+                candidates=accepted if accepted else candidates,
                 selected=accepted[0] if accepted else None,
                 reason=None if accepted else "No Google result passed slot validation",
             )
@@ -675,6 +768,17 @@ async def run_slot_pipeline_for_metadata(record: dict[str, Any]) -> list[PlaceSl
     if not slots:
         return []
     return await resolve_place_slots(slots)
+
+
+async def run_bot_like_slot_pipeline_for_metadata(
+    record: dict[str, Any]
+) -> tuple[list[PlaceEvidence], list[PlaceSlotSuggestion], list[str]]:
+    """Run the current staged slot pipeline the same way the bot does."""
+    slots, checked_sources = extract_place_evidence_with_runtime_order(record)
+    if not slots:
+        return [], [], checked_sources
+    suggestions = await resolve_place_slots(slots)
+    return slots, suggestions, checked_sources
 
 
 def slots_to_dict(slots: list[PlaceEvidence]) -> list[dict[str, Any]]:

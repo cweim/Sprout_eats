@@ -5,7 +5,11 @@ Supabase repository - all CRUD operations with user isolation.
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
-from database.supabase_client import get_supabase, delete_photo as delete_storage_photo
+from database.supabase_client import (
+    get_supabase,
+    delete_photo as delete_storage_photo,
+    delete_feedback_attachment as delete_feedback_storage_attachment,
+)
 
 
 def _coerce_int(value: Any) -> Optional[int]:
@@ -671,4 +675,285 @@ def get_review_by_id(review_id: int) -> Optional[Dict[str, Any]]:
     supabase = get_supabase()
 
     result = supabase.table("reviews").select("*").eq("id", review_id).execute()
+    return result.data[0] if result.data else None
+
+
+# =============================================================================
+# Feedback Operations
+# =============================================================================
+
+
+def create_feedback_report(
+    user_id: int,
+    category: str,
+    source: str,
+    title: Optional[str] = None,
+    body: Optional[str] = None,
+    source_link: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Create a new feedback report."""
+    supabase = get_supabase()
+    now = datetime.utcnow().isoformat()
+    result = supabase.table("feedback_reports").insert({
+        "user_id": user_id,
+        "category": category,
+        "source": source,
+        "title": title,
+        "body": body,
+        "source_link": source_link,
+        "created_at": now,
+        "updated_at": now,
+    }).execute()
+    return result.data[0] if result.data else None
+
+
+def append_feedback_attachment(
+    report_id: int,
+    attachment_type: str,
+    file_url: Optional[str] = None,
+    storage_path: Optional[str] = None,
+    text_content: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Append a structured attachment to a feedback report."""
+    supabase = get_supabase()
+    result = supabase.table("feedback_attachments").insert({
+        "report_id": report_id,
+        "attachment_type": attachment_type,
+        "file_url": file_url,
+        "storage_path": storage_path,
+        "text_content": text_content,
+    }).execute()
+    return result.data[0] if result.data else None
+
+
+def append_feedback_text(report_id: int, text: str) -> Optional[Dict[str, Any]]:
+    """Append a text note attachment to a feedback report."""
+    return append_feedback_attachment(
+        report_id=report_id,
+        attachment_type="text_note",
+        text_content=text,
+    )
+
+
+def get_feedback_report(report_id: int, user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """Get feedback report with attachments."""
+    supabase = get_supabase()
+    query = supabase.table("feedback_reports").select("*").eq("id", report_id)
+    if user_id is not None:
+        query = query.eq("user_id", user_id)
+    result = query.execute()
+    if not result.data:
+        return None
+
+    report = result.data[0]
+    attachments = (
+        supabase.table("feedback_attachments")
+        .select("*")
+        .eq("report_id", report_id)
+        .order("created_at")
+        .execute()
+    )
+    report["attachments"] = attachments.data or []
+    return report
+
+
+def update_feedback_report(report_id: int, **fields) -> Optional[Dict[str, Any]]:
+    """Update feedback report fields."""
+    supabase = get_supabase()
+    allowed_fields = {
+        "status",
+        "severity",
+        "admin_notes",
+        "resolved_at",
+        "title",
+        "body",
+        "source_link",
+        "updated_at",
+    }
+    update_data = {k: v for k, v in fields.items() if k in allowed_fields}
+    if not update_data:
+        return get_feedback_report(report_id)
+    if "updated_at" not in update_data:
+        update_data["updated_at"] = datetime.utcnow().isoformat()
+    result = (
+        supabase.table("feedback_reports")
+        .update(update_data)
+        .eq("id", report_id)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def list_feedback_reports(
+    status: Optional[str] = None,
+    category: Optional[str] = None,
+    source: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """List feedback reports with optional filters."""
+    supabase = get_supabase()
+    query = supabase.table("feedback_reports").select("*").order("created_at", desc=True)
+    if status:
+        query = query.eq("status", status)
+    if category:
+        query = query.eq("category", category)
+    if source:
+        query = query.eq("source", source)
+    if search:
+        search_term = f"%{search}%"
+        query = query.or_(f"body.ilike.{search_term},title.ilike.{search_term},source_link.ilike.{search_term}")
+    result = query.range(offset, max(offset + limit - 1, offset)).execute()
+    reports = result.data or []
+    if not reports:
+        return []
+
+    report_ids = [report["id"] for report in reports]
+    attachments_result = (
+        supabase.table("feedback_attachments")
+        .select("*")
+        .in_("report_id", report_ids)
+        .order("created_at")
+        .execute()
+    )
+    attachments_by_report: Dict[int, List[Dict[str, Any]]] = {}
+    for attachment in attachments_result.data or []:
+        attachments_by_report.setdefault(attachment["report_id"], []).append(attachment)
+
+    for report in reports:
+        report["attachments"] = attachments_by_report.get(report["id"], [])
+    return reports
+
+
+def get_feedback_report_count(
+    status: Optional[str] = None,
+    category: Optional[str] = None,
+    source: Optional[str] = None,
+) -> int:
+    """Count feedback reports with optional filters."""
+    supabase = get_supabase()
+    query = supabase.table("feedback_reports").select("id", count="exact")
+    if status:
+        query = query.eq("status", status)
+    if category:
+        query = query.eq("category", category)
+    if source:
+        query = query.eq("source", source)
+    result = query.execute()
+    return result.count or 0
+
+
+def delete_feedback_attachment(attachment_id: int) -> bool:
+    """Delete a feedback attachment and its stored file if present."""
+    supabase = get_supabase()
+    result = supabase.table("feedback_attachments").select("storage_path").eq("id", attachment_id).execute()
+    if result.data and result.data[0].get("storage_path"):
+        delete_feedback_storage_attachment(result.data[0]["storage_path"])
+    deleted = supabase.table("feedback_attachments").delete().eq("id", attachment_id).execute()
+    return len(deleted.data) > 0 if deleted.data else False
+
+
+def delete_feedback_report(report_id: int) -> bool:
+    """Delete feedback report and any stored attachments."""
+    report = get_feedback_report(report_id)
+    if not report:
+        return False
+    for attachment in report.get("attachments", []):
+        if attachment.get("storage_path"):
+            delete_feedback_storage_attachment(attachment["storage_path"])
+    supabase = get_supabase()
+    result = supabase.table("feedback_reports").delete().eq("id", report_id).execute()
+    return len(result.data) > 0 if result.data else False
+
+
+# =============================================================================
+# Admin Operations
+# =============================================================================
+
+
+def is_admin_email(email: str) -> bool:
+    """Return whether the email belongs to an allowlisted admin."""
+    supabase = get_supabase()
+    result = supabase.table("admins").select("id").eq("email", email.lower()).execute()
+    return bool(result.data)
+
+
+def list_admins() -> List[Dict[str, Any]]:
+    """List allowlisted admins."""
+    supabase = get_supabase()
+    result = supabase.table("admins").select("*").order("created_at").execute()
+    return result.data or []
+
+
+def get_dashboard_overview() -> Dict[str, Any]:
+    """Return high-level dashboard counters from current Supabase tables."""
+    supabase = get_supabase()
+    since_7d = (datetime.utcnow() - timedelta(days=7)).isoformat()
+
+    users_total = supabase.table("users").select("id", count="exact").execute().count or 0
+    users_new_7d = (
+        supabase.table("users").select("id", count="exact").gte("created_at", since_7d).execute().count or 0
+    )
+    places_total = supabase.table("places").select("id", count="exact").execute().count or 0
+    places_visited_total = (
+        supabase.table("places").select("id", count="exact").eq("is_visited", True).execute().count or 0
+    )
+    reviews_total = supabase.table("reviews").select("id", count="exact").execute().count or 0
+    pending_reminders = (
+        supabase.table("review_reminders")
+        .select("id", count="exact")
+        .eq("reminder_sent", False)
+        .eq("dont_ask_again", False)
+        .execute()
+        .count or 0
+    )
+    feedback_total = supabase.table("feedback_reports").select("id", count="exact").execute().count or 0
+    feedback_open = (
+        supabase.table("feedback_reports")
+        .select("id", count="exact")
+        .in_("status", ["new", "triaged", "in_progress"])
+        .execute()
+        .count or 0
+    )
+    feedback_with_attachments = (
+        supabase.table("feedback_attachments").select("id", count="exact").execute().count or 0
+    )
+
+    review_rate = round(reviews_total / places_visited_total, 4) if places_visited_total else 0.0
+    visited_rate = round(places_visited_total / places_total, 4) if places_total else 0.0
+
+    return {
+        "users_total": users_total,
+        "users_new_7d": users_new_7d,
+        "places_total": places_total,
+        "places_visited_total": places_visited_total,
+        "visited_rate": visited_rate,
+        "reviews_total": reviews_total,
+        "review_rate": review_rate,
+        "pending_reminders": pending_reminders,
+        "feedback_total": feedback_total,
+        "feedback_open": feedback_open,
+        "feedback_with_attachments": feedback_with_attachments,
+    }
+
+
+def create_app_event(
+    user_id: Optional[int],
+    event_name: str,
+    event_source: str,
+    entity_type: Optional[str] = None,
+    entity_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Persist an operational app event."""
+    supabase = get_supabase()
+    result = supabase.table("app_events").insert({
+        "user_id": user_id,
+        "event_name": event_name,
+        "event_source": event_source,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "metadata": metadata or {},
+    }).execute()
     return result.data[0] if result.data else None

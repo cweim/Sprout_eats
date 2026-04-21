@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprout Admin</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div id="login-screen" class="screen">
+        <div class="auth-card">
+            <h1>Sprout Admin</h1>
+            <p>Sign in with your admin email.</p>
+            <form id="login-form">
+                <label>Email</label>
+                <input id="email" type="email" required>
+                <label>Password</label>
+                <input id="password" type="password" required>
+                <button type="submit">Sign In</button>
+                <div id="login-error" class="error"></div>
+            </form>
+        </div>
+    </div>
+
+    <div id="app-screen" class="screen hidden">
+        <header class="topbar">
+            <div>
+                <h1>Sprout Admin</h1>
+                <p id="admin-email"></p>
+            </div>
+            <button id="sign-out">Sign Out</button>
+        </header>
+
+        <main class="layout">
+            <section class="overview">
+                <h2>Overview</h2>
+                <div id="overview-cards" class="cards"></div>
+            </section>
+
+            <section class="feedback-panel">
+                <div class="panel-header">
+                    <h2>Feedback Inbox</h2>
+                    <div class="filters">
+                        <select id="filter-status">
+                            <option value="">All statuses</option>
+                            <option value="new">New</option>
+                            <option value="triaged">Triaged</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="wont_fix">Won't Fix</option>
+                        </select>
+                        <select id="filter-category">
+                            <option value="">All categories</option>
+                            <option value="bug">Bug</option>
+                            <option value="feature_request">Feature Request</option>
+                            <option value="places_not_found">Places Not Found</option>
+                            <option value="general_feedback">General Feedback</option>
+                        </select>
+                        <select id="filter-source">
+                            <option value="">All sources</option>
+                            <option value="telegram_bot">Telegram Bot</option>
+                            <option value="mini_app">Mini App</option>
+                        </select>
+                        <input id="filter-search" type="search" placeholder="Search text or link">
+                    </div>
+                </div>
+
+                <div class="content-grid">
+                    <div class="report-list-wrap">
+                        <div id="feedback-summary" class="summary"></div>
+                        <div id="report-list" class="report-list"></div>
+                    </div>
+
+                    <div id="report-detail" class="report-detail empty">
+                        <p>Select a report to inspect it.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

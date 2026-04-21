@@ -56,6 +56,12 @@ class PlaceCreate(BaseModel):
     place_opening_hours: Optional[str] = None
 
 
+class ReminderActionResponse(BaseModel):
+    """Response model for reminder preference actions."""
+    success: bool
+    message: str
+
+
 def place_to_dict(place: dict) -> dict:
     """Convert place dict for JSON response."""
     return {
@@ -163,8 +169,46 @@ async def update_place(
                 place_id=place_id,
                 visited_at=datetime.utcnow()
             )
+            repository.create_app_event(
+                user_id=user.id,
+                event_name="review_prompt_shown",
+                event_source="mini_app",
+                entity_type="place",
+                entity_id=str(place_id),
+                metadata={"place_name": place.get("name")},
+            )
+        repository.create_app_event(
+            user_id=user.id,
+            event_name="place_marked_visited",
+            event_source="mini_app",
+            entity_type="place",
+            entity_id=str(place_id),
+            metadata={"place_name": place.get("name")},
+        )
 
     return {"place": place_to_dict(place)}
+
+
+@router.post("/places/{place_id}/review-reminder/dont-ask", response_model=ReminderActionResponse)
+async def dont_ask_review_again(
+    place_id: int,
+    user: TelegramUser = Depends(get_current_user)
+):
+    """Opt out of future review reminders for a specific place."""
+    place = repository.get_place_by_id(user.id, place_id)
+    if not place:
+        raise HTTPException(status_code=404, detail="Place not found")
+
+    repository.set_dont_ask_again(user.id, place_id)
+    repository.create_app_event(
+        user_id=user.id,
+        event_name="review_prompt_dont_ask_clicked",
+        event_source="mini_app",
+        entity_type="place",
+        entity_id=str(place_id),
+        metadata={"place_name": place.get("name")},
+    )
+    return {"success": True, "message": "Won't ask again for this place"}
 
 
 @router.get("/search")

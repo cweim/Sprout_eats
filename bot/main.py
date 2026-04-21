@@ -28,12 +28,16 @@ from bot.handlers import (
     cancel_selection_callback,
     incorrect_place_callback,
     delete_place_callback,
+    unresolved_pick_callback,
     handle_text,
     handle_location,
     review_conversation_handler,
     handle_remind_later,
     handle_remind_stop,
     handle_dismiss,
+    handle_review_photo_callback,
+    handle_review_photo_upload,
+    feedback_conversation_handler,
 )
 
 # Configure logging
@@ -108,6 +112,12 @@ async def check_review_reminders(context: ContextTypes.DEFAULT_TYPE):
 def setup_reminder_job(application):
     """Set up the reminder check job to run every 5 minutes."""
     job_queue = application.job_queue
+    if job_queue is None:
+        logger.warning(
+            "JobQueue is unavailable. Review reminders are disabled. "
+            "Install python-telegram-bot with the job-queue extra."
+        )
+        return False
 
     # Run every 5 minutes
     job_queue.run_repeating(
@@ -117,6 +127,7 @@ def setup_reminder_job(application):
         name='review_reminders'
     )
     logger.info("Review reminder job scheduled")
+    return True
 
 
 async def post_init(application):
@@ -125,6 +136,7 @@ async def post_init(application):
         BotCommand("start", "👋 Start here"),
         BotCommand("viewer", "🗺️ Open my map"),
         BotCommand("nearby", "📍 Find places near me"),
+        BotCommand("feedback", "🛠️ Send feedback or report a bug"),
     ])
     # Set the menu button to show commands instead of a web app
     await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
@@ -162,14 +174,22 @@ def main():
     app.add_handler(CallbackQueryHandler(cancel_selection_callback, pattern="^cancel_selection$"))
     app.add_handler(CallbackQueryHandler(incorrect_place_callback, pattern="^incorrect_place_"))
     app.add_handler(CallbackQueryHandler(delete_place_callback, pattern="^delete_place_"))
+    app.add_handler(CallbackQueryHandler(unresolved_pick_callback, pattern="^unresolved_pick_"))
 
     # Reminder callback handlers
     app.add_handler(CallbackQueryHandler(handle_remind_later, pattern=r'^remind_later:'))
     app.add_handler(CallbackQueryHandler(handle_remind_stop, pattern=r'^remind_stop:'))
     app.add_handler(CallbackQueryHandler(handle_dismiss, pattern=r'^dismiss$'))
+    app.add_handler(CallbackQueryHandler(handle_review_photo_callback, pattern=r'^review_photo:'))
+
+    # Feedback conversation handler must be before generic message handlers
+    app.add_handler(feedback_conversation_handler)
 
     # Review conversation handler (must be before generic text handler)
     app.add_handler(review_conversation_handler)
+
+    # Review photo uploads (only active after Telegram review save)
+    app.add_handler(MessageHandler(filters.PHOTO, handle_review_photo_upload))
 
     # Handle text messages (URLs and place name responses)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

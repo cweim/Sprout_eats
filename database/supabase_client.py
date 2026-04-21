@@ -1,8 +1,8 @@
-"""
-Supabase client initialization and helpers.
-"""
+"""Supabase client initialization and helpers."""
 
+from pathlib import Path
 from typing import Optional
+import uuid
 from supabase import create_client, Client
 
 import config
@@ -46,6 +46,31 @@ def get_storage_bucket():
     return get_supabase().storage.from_("review-photos")
 
 
+def get_feedback_bucket():
+    """Get the feedback-attachments storage bucket."""
+    return get_supabase().storage.from_("feedback-attachments")
+
+
+def _upload_bucket_file(bucket, path_prefix: str, file_content: bytes, filename: str) -> tuple[str, str]:
+    """Upload bytes to a storage bucket and return public URL and path."""
+    ext = Path(filename).suffix or ".jpg"
+    unique_name = f"{uuid.uuid4()}{ext}"
+    path = f"{path_prefix}/{unique_name}"
+    content_type = "image/jpeg"
+    if ext.lower() == ".png":
+        content_type = "image/png"
+    elif ext.lower() == ".webp":
+        content_type = "image/webp"
+
+    bucket.upload(
+        path=path,
+        file=file_content,
+        file_options={"content-type": content_type}
+    )
+    public_url = bucket.get_public_url(path)
+    return public_url, path
+
+
 def upload_photo(user_id: int, review_id: int, file_content: bytes, filename: str) -> str:
     """
     Upload a photo to Supabase Storage.
@@ -59,27 +84,14 @@ def upload_photo(user_id: int, review_id: int, file_content: bytes, filename: st
     Returns:
         Public URL of the uploaded photo
     """
-    import uuid
-    from pathlib import Path
-
-    # Generate unique filename
-    ext = Path(filename).suffix or ".jpg"
-    unique_name = f"{uuid.uuid4()}{ext}"
-    path = f"{user_id}/{review_id}/{unique_name}"
-
     bucket = get_storage_bucket()
+    return _upload_bucket_file(bucket, f"{user_id}/{review_id}", file_content, filename)
 
-    # Upload file
-    bucket.upload(
-        path=path,
-        file=file_content,
-        file_options={"content-type": "image/jpeg"}
-    )
 
-    # Get public URL
-    public_url = bucket.get_public_url(path)
-
-    return public_url, path
+def upload_feedback_attachment(user_id: int, report_id: int, file_content: bytes, filename: str) -> tuple[str, str]:
+    """Upload a feedback attachment to Supabase Storage."""
+    bucket = get_feedback_bucket()
+    return _upload_bucket_file(bucket, f"feedback/{user_id}/{report_id}", file_content, filename)
 
 
 def delete_photo(storage_path: str) -> bool:
@@ -97,6 +109,19 @@ def delete_photo(storage_path: str) -> bool:
 
     try:
         bucket = get_storage_bucket()
+        bucket.remove([storage_path])
+        return True
+    except Exception:
+        return False
+
+
+def delete_feedback_attachment(storage_path: str) -> bool:
+    """Delete a feedback attachment from Supabase Storage."""
+    if not storage_path:
+        return False
+
+    try:
+        bucket = get_feedback_bucket()
         bucket.remove([storage_path])
         return True
     except Exception:

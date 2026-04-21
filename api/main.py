@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from api.routes import router
+from api.admin_routes import router as admin_router
 import config
 
 app = FastAPI(title="Discovery Bot API", version="1.0.0")
@@ -30,6 +31,12 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(router)
+app.include_router(admin_router)
+
+# Serve admin dashboard static files (must be before root mount)
+admin_path = Path(__file__).parent.parent / "admin"
+if admin_path.exists():
+    app.mount("/admin", StaticFiles(directory=admin_path, html=True), name="admin")
 
 # Serve webapp static files (must be after API routes)
 webapp_path = Path(__file__).parent.parent / "webapp"

@@ -117,6 +117,77 @@ CREATE TABLE IF NOT EXISTS review_reminders (
 CREATE INDEX IF NOT EXISTS idx_review_reminders_user_id ON review_reminders(user_id);
 
 -- =============================================================================
+-- Feedback Reports Table
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS feedback_reports (
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('bug', 'feature_request', 'places_not_found', 'general_feedback')),
+    source TEXT NOT NULL CHECK (source IN ('telegram_bot', 'mini_app')),
+    status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'triaged', 'in_progress', 'resolved', 'wont_fix')),
+    severity TEXT CHECK (severity IN ('low', 'medium', 'high')),
+    title TEXT,
+    body TEXT,
+    source_link TEXT,
+    admin_notes TEXT,
+    resolved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_reports_user_id ON feedback_reports(user_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_reports_category ON feedback_reports(category);
+CREATE INDEX IF NOT EXISTS idx_feedback_reports_status ON feedback_reports(status);
+CREATE INDEX IF NOT EXISTS idx_feedback_reports_created_at ON feedback_reports(created_at DESC);
+
+-- =============================================================================
+-- Feedback Attachments Table
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS feedback_attachments (
+    id SERIAL PRIMARY KEY,
+    report_id INT REFERENCES feedback_reports(id) ON DELETE CASCADE NOT NULL,
+    attachment_type TEXT NOT NULL CHECK (attachment_type IN ('image', 'link', 'text_note')),
+    file_url TEXT,
+    storage_path TEXT,
+    text_content TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_attachments_report_id ON feedback_attachments(report_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_attachments_type ON feedback_attachments(attachment_type);
+
+-- =============================================================================
+-- Admins Table
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS admins (
+    id UUID PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================================================
+-- App Events Table
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS app_events (
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    event_name TEXT NOT NULL,
+    event_source TEXT NOT NULL CHECK (event_source IN ('telegram_bot', 'mini_app', 'admin')),
+    entity_type TEXT,
+    entity_id TEXT,
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_events_name ON app_events(event_name);
+CREATE INDEX IF NOT EXISTS idx_app_events_source ON app_events(event_source);
+CREATE INDEX IF NOT EXISTS idx_app_events_created_at ON app_events(created_at DESC);
+
+-- =============================================================================
 -- Row Level Security (RLS)
 -- =============================================================================
 
@@ -127,6 +198,10 @@ ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE review_dishes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE review_photos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE review_reminders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE feedback_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE feedback_attachments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_events ENABLE ROW LEVEL SECURITY;
 
 -- Users: users can only see their own record
 CREATE POLICY "Users see own record" ON users
@@ -164,6 +239,23 @@ CREATE POLICY "Users access own review photos" ON review_photos
 CREATE POLICY "Users access own reminders" ON review_reminders
     FOR ALL USING (user_id = current_setting('app.current_user_id', true)::bigint);
 
+-- Feedback reports: users can only access their own reports
+CREATE POLICY "Users access own feedback reports" ON feedback_reports
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::bigint);
+
+-- Feedback attachments: via report's user_id
+CREATE POLICY "Users access own feedback attachments" ON feedback_attachments
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM feedback_reports fr
+            WHERE fr.id = feedback_attachments.report_id
+            AND fr.user_id = current_setting('app.current_user_id', true)::bigint
+        )
+    );
+
+-- Admins and app_events are internal-only.
+-- No end-user RLS policies are created for these tables.
+
 -- =============================================================================
 -- Service Role Bypass
 -- Service role key bypasses RLS by default in Supabase
@@ -175,8 +267,17 @@ CREATE POLICY "Users access own reminders" ON review_reminders
 -- 1. Create bucket "review-photos" (public)
 -- 2. Set file size limit to 10MB
 -- 3. Allowed MIME types: image/jpeg, image/png, image/webp
+--
+-- 1. Create bucket "feedback-attachments" (public)
+-- 2. Set file size limit to 10MB
+-- 3. Allowed MIME types: image/jpeg, image/png, image/webp
 
 -- Storage RLS policies (create in Dashboard > Storage > Policies):
 -- INSERT: authenticated users can upload to their own folder
 -- SELECT: public access (photos are public URLs)
 -- DELETE: users can delete their own photos
+--
+-- For "feedback-attachments":
+-- INSERT: internal/admin or authenticated upload flow via backend
+-- SELECT: public or signed access depending on future privacy choice
+-- DELETE: backend/admin only

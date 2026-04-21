@@ -1,0 +1,566 @@
+[
+  {
+    "id": "C09WEZkyfys",
+    "url": "https://www.instagram.com/reel/C09WEZkyfys/?igsh=MWdndjZicDFiY3plNw==",
+    "media_type": "reel",
+    "creator": "hiddenjemmmig",
+    "category": "single_place_explicit_caption",
+    "ground_truth_status": "verified_from_caption",
+    "notes": "Caption contains a pin line with venue name and full address.",
+    "places": [
+      {
+        "name": "Hong Chang Frog Porridge and BBQ Fish",
+        "address": "2 Braddell Rd, Singapore 359895",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      }
+    ]
+  },
+  {
+    "id": "DGQOuG2SrnY",
+    "url": "https://www.instagram.com/reel/DGQOuG2SrnY/?igsh=MXZ5ZnNoMGplamRtOA==",
+    "media_type": "reel",
+    "creator": "eshton",
+    "category": "single_place_explicit_caption",
+    "ground_truth_status": "verified_from_caption",
+    "notes": "Caption contains a pin line with venue name and full address.",
+    "places": [
+      {
+        "name": "NOMADA",
+        "address": "1 Keong Saik Rd., 01-05, Singapore 089109",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      }
+    ]
+  },
+  {
+    "id": "DTp98aACdL7",
+    "url": "https://www.instagram.com/reel/DTp98aACdL7/?igsh=MXJhd3V6dmQzdmF4Zw==",
+    "media_type": "reel",
+    "creator": "selfcarelivingdays",
+    "category": "single_place_explicit_caption",
+    "ground_truth_status": "verified_from_caption",
+    "notes": "Caption contains venue name and full address.",
+    "places": [
+      {
+        "name": "Ganko Sushi",
+        "address": "9 Penang Rd, 01-01, Singapore 238459",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      }
+    ]
+  },
+  {
+    "id": "DEAN_ZMyAtl",
+    "url": "https://www.instagram.com/reel/DEAN_ZMyAtl/?igsh=dnFzeWl2dHExejU=",
+    "media_type": "reel",
+    "creator": "sgadventurousduo",
+    "category": "multi_place_explicit_caption_list",
+    "ground_truth_status": "verified_from_caption",
+    "notes": "Caption lists 12 food spots. Several are multiple-location brands without a specific branch.",
+    "places": [
+      {
+        "name": "One Fattened Calf Burgers",
+        "address": "Multiple locations",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "Shang Hai La Mian Xiao Long Bao",
+        "address": "Multiple locations",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "Meadesmoore Steakhouse",
+        "address": "21A Boon Tat Street Level 2, near Telok Ayer St, Singapore 069620",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "FYP (For You People) Cafe - Orchard Central",
+        "address": "181 Orchard Rd, #04-22 Orchard Central, Singapore 238896",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "sen-ryo ION Orchard",
+        "address": "2 Orchard Turn, #03-17/18, Singapore 238801",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "Hot Duck",
+        "address": "1 North Point Dr, B2-147, South Wing, Singapore 768019",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "Khao Hom",
+        "address": "Multiple locations",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "Sin Heng Kee Porridge",
+        "address": "Multiple locations",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "Common Man Coffee Roasters",
+        "address": "Multiple locations",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "Nassim Hill Bakery Bistro Bar",
+        "address": "56 Tanglin Rd, #01-03, Singapore 247964",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "Fiie's Cafe",
+        "address": "Multiple locations",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "A Hot Hideout",
+        "address": "Multiple locations",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      }
+    ]
+  },
+  {
+    "id": "DFCnSjRyk3C",
+    "url": "https://www.instagram.com/reel/DFCnSjRyk3C/?igsh=ZDE2eWExdjZxN29q",
+    "media_type": "reel",
+    "creator": "foodstamp.sg",
+    "category": "ambiguous_roulette_reel",
+    "ground_truth_status": "verified_from_video_frame",
+    "notes": "Caption does not list a venue. Manual frame inspection showed a selected restaurant overlay. This should be treated as ground truth for the visible stopped result, not necessarily every restaurant that appears in the roulette animation.",
+    "places": [
+      {
+        "name": "Lai Heng Fried Kuay Teow & Cooked Food",
+        "address": "320 Shunfu Rd, #02-20, Singapore 570320",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "video_frame_overlay"
+      }
+    ]
+  },
+  {
+    "id": "CmEFYWzpMQc",
+    "url": "https://www.instagram.com/reel/CmEFYWzpMQc/?igsh=MTY0ZnZubjIxY3JnOA==",
+    "media_type": "reel",
+    "creator": "danieldineskl",
+    "category": "single_place_explicit_caption",
+    "ground_truth_status": "verified_from_caption",
+    "notes": "Caption contains a pin line with venue name and area-level address.",
+    "places": [
+      {
+        "name": "Yan Wo Thai",
+        "address": "Jalan PJU 1/43, Aman Suria, 47301 Petaling Jaya",
+        "city": "Petaling Jaya",
+        "country": "Malaysia",
+        "evidence": "caption_pin"
+      }
+    ]
+  },
+  {
+    "id": "DS3v8C4j8dg",
+    "url": "https://www.instagram.com/p/DS3v8C4j8dg/?img_index=4&igsh=MXV3eWZ4dnp1c2l3dw==",
+    "media_type": "carousel_post",
+    "creator": "districtsixtyfive",
+    "category": "multi_place_caption_list_no_addresses",
+    "ground_truth_status": "verified_from_caption",
+    "notes": "Caption lists favourite dining spots for a 2026 food list, but does not provide branch addresses.",
+    "places": [
+      {
+        "name": "Osteria Mozza",
+        "address": null,
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_list"
+      },
+      {
+        "name": "GU:UM",
+        "address": null,
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_list"
+      },
+      {
+        "name": "Uncle Fong Hotpot",
+        "address": null,
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_list"
+      },
+      {
+        "name": "Sushi Zushi",
+        "address": null,
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_list"
+      },
+      {
+        "name": "The Plump Frenchman",
+        "address": null,
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_list"
+      },
+      {
+        "name": "Vios by Blu Kouzina",
+        "address": "Raffles City",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_list"
+      },
+      {
+        "name": "Bochinche",
+        "address": null,
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_list"
+      }
+    ]
+  },
+  {
+    "id": "DUExJM_Ep6i",
+    "url": "https://www.instagram.com/reel/DUExJM_Ep6i/?igsh=MTVrZXlmb2hmbjN5Yg==",
+    "media_type": "reel",
+    "creator": "caitofalltraits",
+    "category": "single_place_mention_plus_address",
+    "ground_truth_status": "verified_from_caption",
+    "notes": "Caption mentions @uokatsu.malaysia and gives a full address, but the explicit venue name is represented by the account handle rather than a normal caption pin line.",
+    "places": [
+      {
+        "name": "Uokatsu Malaysia",
+        "address": "B-0-7, Ground Floor Plaza Damas 3, Jalan Sri Hartamas 1, Sri Hartamas, Kuala Lumpur",
+        "city": "Kuala Lumpur",
+        "country": "Malaysia",
+        "evidence": "caption_mention_and_address"
+      }
+    ]
+  },
+  {
+    "id": "DVYIIu-EoyO",
+    "url": "https://www.instagram.com/reel/DVYIIu-EoyO/?igsh=MW96N2xnZjQ5OWJlMA==",
+    "media_type": "reel",
+    "creator": "ericnyker",
+    "category": "single_place_explicit_caption",
+    "ground_truth_status": "verified_from_caption",
+    "notes": "Caption contains a pin line and tagged account.",
+    "places": [
+      {
+        "name": "Pazonia Italian Street Food @ Amoy",
+        "address": "49 Amoy St, Singapore 069875",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin"
+      }
+    ]
+  },
+  {
+    "id": "DPyhLE4kqmp",
+    "url": "https://www.instagram.com/p/DPyhLE4kqmp/?img_index=1&igsh=MTN3amJyazU3Z2o1bw==",
+    "media_type": "carousel_post",
+    "creator": "certifiedfabclub",
+    "category": "single_place_explicit_caption",
+    "ground_truth_status": "verified_from_caption_and_web",
+    "notes": "Caption names the place and street. Official bakery site confirms the full address.",
+    "places": [
+      {
+        "name": "Baker's Bench Bakery",
+        "address": "6 Bukit Pasoh Road, Singapore 089820",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_pin_and_official_site"
+      }
+    ]
+  },
+  {
+    "id": "DQHPIx0idZr",
+    "url": "https://www.instagram.com/reel/DQHPIx0idZr/?igsh=MTc1ZnpzOHhrM21uNQ==",
+    "media_type": "reel",
+    "creator": "piggweee",
+    "category": "single_place_caption_incomplete_cross_verified",
+    "ground_truth_status": "verified_from_caption_video_and_web",
+    "notes": "Caption says it is a new Korean restaurant by Um Yong Baek and lists dishes, but does not name it. Matching Lemon8 repost and food coverage identify the place as Joong San at 28 Stanley St.",
+    "places": [
+      {
+        "name": "Joong San",
+        "address": "28 Stanley St, #01-01, Singapore 068737",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_context_video_frames_and_web_cross_reference"
+      }
+    ]
+  },
+  {
+    "id": "DOmzzsxEq_9",
+    "url": "https://www.instagram.com/reel/DOmzzsxEq_9/?igsh=MWc0OWw0MDR1OHo4dA==",
+    "media_type": "reel",
+    "creator": "callmepuipuii",
+    "category": "single_place_mention_plus_area",
+    "ground_truth_status": "verified_from_caption_and_web",
+    "notes": "Caption tags @fuegomesa and says Farrer Park. Web listings confirm the Farrer Park address.",
+    "places": [
+      {
+        "name": "Fuego Mesa",
+        "address": "681 Race Course Rd, #01-305, Singapore 210681",
+        "city": "Singapore",
+        "country": "Singapore",
+        "evidence": "caption_mention_and_web_listing"
+      }
+    ]
+  },
+  {
+    "id": "DQwiEYlEgft",
+    "url": "https://www.instagram.com/p/DQwiEYlEgft/?img_index=3&igsh=bGxsYWZxaDM4b3Fj",
+    "media_type": "carousel_post",
+    "creator": "ivyluvv.travel",
+    "category": "carousel_places_in_images_not_publicly_exposed",
+    "ground_truth_status": "needs_manual_review",
+    "notes": "Caption says it contains must-try KL food spots, but public metadata does not list the places. The fetched public image is a cover image and does not reveal the full place list. Ground truth should be filled by authenticated carousel image extraction or manual browser inspection.",
+    "places": []
+  },
+  {
+    "id": "DG7pUH8yICz",
+    "url": "https://www.instagram.com/reel/DG7pUH8yICz/?igsh=ZnQxenB0YW11Z3o=",
+    "media_type": "reel",
+    "creator": "thecassiefeed",
+    "category": "multi_place_explicit_caption_list",
+    "ground_truth_status": "verified_from_caption",
+    "notes": "Caption lists 6 KL/Selangor food spots. One entry says it is not on Google Maps and gives a nearby reference address.",
+    "places": [
+      {
+        "name": "Huen Kee Claypot Chicken Rice",
+        "address": "59, Jln Yew, Pudu, 55100 Kuala Lumpur, Wilayah Persekutuan Kuala Lumpur, Malaysia",
+        "city": "Kuala Lumpur",
+        "country": "Malaysia",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "Restoran Kin Kin",
+        "address": "No. 6, Jalan Perubatan 4, Taman, Pandan Indah, 55100 Kuala Lumpur, Wilayah Persekutuan, Malaysia",
+        "city": "Kuala Lumpur",
+        "country": "Malaysia",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "Lam Kee Wantan Noodles",
+        "address": "Jalan Bunga Tanjung 10A, Taman Muda, 56100 Kuala Lumpur, Selangor, Malaysia",
+        "city": "Kuala Lumpur",
+        "country": "Malaysia",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "Under The Big Tree Fried Nian Gao",
+        "address": "Opposite Restoran Hong Sang: D22, Gerai Staik, Jalan Bunga Tanjung 10, Taman Muda, 68000 Ampang, Selangor, Malaysia",
+        "city": "Ampang",
+        "country": "Malaysia",
+        "evidence": "caption_pin",
+        "notes": "Caption says this place is not on Google Maps."
+      },
+      {
+        "name": "Nasi Lemak Shop",
+        "address": "G10, Oasis Business Center BU4, Changkat Bandar Utama, Bandar Utama, 47800 Petaling Jaya, Selangor, Malaysia",
+        "city": "Petaling Jaya",
+        "country": "Malaysia",
+        "evidence": "caption_pin"
+      },
+      {
+        "name": "YUAN",
+        "address": "40, Jalan 20/16a, Taman Paramount, 46300 Petaling Jaya, Selangor, Malaysia",
+        "city": "Petaling Jaya",
+        "country": "Malaysia",
+        "evidence": "caption_pin"
+      }
+    ]
+  },
+  {
+    "id": "DGanTwny0za",
+    "url": "https://www.instagram.com/reel/DGanTwny0za/?igsh=MThla28xd3FwcXZjbA==",
+    "platform": "instagram",
+    "media_type": "video",
+    "creator": "thecassiefeed",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "C8mQS7aS2lT",
+    "url": "https://www.instagram.com/reel/C8mQS7aS2lT/?igsh=MWtmZzYwb3p6aXMwdQ==",
+    "platform": "instagram",
+    "media_type": "video",
+    "creator": "eshton",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "DNR_3IeSIAE",
+    "url": "https://www.instagram.com/reel/DNR_3IeSIAE/?igsh=dWY5a3g5Y2YyZTJl",
+    "platform": "instagram",
+    "media_type": "video",
+    "creator": "sgfoodmillionaire",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "DSPJ3DIgUza",
+    "url": "https://www.instagram.com/reel/DSPJ3DIgUza/?igsh=MWozbTh3anJjanE1aQ==",
+    "platform": "instagram",
+    "media_type": "video",
+    "creator": "certifiedfabclub",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "DCsxHAqSIby",
+    "url": "https://www.instagram.com/reel/DCsxHAqSIby/?igsh=MWIwZDU0MXJpdjlhdA==",
+    "platform": "instagram",
+    "media_type": "video",
+    "creator": "avicadoesfood",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "ZS9JMgdjP",
+    "url": "https://vt.tiktok.com/ZS9JMgdjP",
+    "platform": "tiktok",
+    "media_type": "video",
+    "creator": "Cass",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "ZS9JMT48Y",
+    "url": "https://vt.tiktok.com/ZS9JMT48Y",
+    "platform": "tiktok",
+    "media_type": "unknown",
+    "creator": null,
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "ZS9JrUgd7",
+    "url": "https://vt.tiktok.com/ZS9JrUgd7",
+    "platform": "tiktok",
+    "media_type": "video",
+    "creator": "Sgadventurousduo",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "ZS9JfsvpD",
+    "url": "https://vt.tiktok.com/ZS9JfsvpD",
+    "platform": "tiktok",
+    "media_type": "unknown",
+    "creator": null,
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "ZS9Jfwkb4",
+    "url": "https://vt.tiktok.com/ZS9Jfwkb4",
+    "platform": "tiktok",
+    "media_type": "video",
+    "creator": "Sgadventurousduo",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "ZS9JftuDa",
+    "url": "https://vt.tiktok.com/ZS9JftuDa",
+    "platform": "tiktok",
+    "media_type": "video",
+    "creator": "auntiekong",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "ZS9JPRm49",
+    "url": "https://vt.tiktok.com/ZS9JPRm49",
+    "platform": "tiktok",
+    "media_type": "video",
+    "creator": "slappedandslayed",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "ZS9JfqUr5",
+    "url": "https://vt.tiktok.com/ZS9JfqUr5",
+    "platform": "tiktok",
+    "media_type": "unknown",
+    "creator": null,
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "ZS9JP9BAA",
+    "url": "https://vt.tiktok.com/ZS9JP9BAA",
+    "platform": "tiktok",
+    "media_type": "video",
+    "creator": "Dead Ebi 🍤",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  },
+  {
+    "id": "ZS9JP2pjV",
+    "url": "https://vt.tiktok.com/ZS9JP2pjV",
+    "platform": "tiktok",
+    "media_type": "video",
+    "creator": "Jason",
+    "category": null,
+    "ground_truth_status": "needs_manual_review",
+    "notes": "New record. Review metadata packet and fill places manually.",
+    "places": []
+  }
+]

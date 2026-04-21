@@ -20,3 +20,6 @@ temp/
 .idea/
 .vscode/
 *.swp
+
+# Local planning workspace
+.planning/

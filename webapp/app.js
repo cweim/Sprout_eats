@@ -34,6 +34,7 @@ let searchDebounceTimer = null;
 
 // Notes modal state
 let currentEditingPlaceId = null;
+let pendingReviewPromptPlaceId = null;
 
 // Location state
 let userLocation = null;
@@ -1434,6 +1435,12 @@ async function updatePlaceVisited(placeId, isVisited, fromPopup = false) {
         if (!response.ok) {
             throw new Error('Failed to update');
         }
+        if (isVisited && !getPlaceReview(placeId)) {
+            openReviewPrompt(placeId);
+        }
+        if (!isVisited && pendingReviewPromptPlaceId === placeId) {
+            closeReviewPrompt();
+        }
     } catch (error) {
         console.error('Failed to update visited status:', error);
         // Revert local state on error
@@ -1449,6 +1456,41 @@ async function updatePlaceVisited(placeId, isVisited, fromPopup = false) {
         // Full re-render for list view changes
         applyFilters();
         displayPlacesOnMap();
+    }
+}
+
+function openReviewPrompt(placeId) {
+    const place = places.find(p => p.id === placeId);
+    const modal = document.getElementById('review-prompt-modal');
+    const textEl = document.getElementById('review-prompt-text');
+    if (!place || !modal || !textEl) return;
+
+    pendingReviewPromptPlaceId = placeId;
+    textEl.textContent = `You marked ${place.name} as visited. Want to review it now?`;
+    modal.style.display = 'flex';
+}
+
+function closeReviewPrompt() {
+    pendingReviewPromptPlaceId = null;
+    const modal = document.getElementById('review-prompt-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+async function dontAskReviewAgain(placeId) {
+    try {
+        const response = await fetch(`${API_URL}/api/places/${placeId}/review-reminder/dont-ask`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) {
+            throw new Error('Failed to update reminder preference');
+        }
+        showToast("Won't ask again for this place");
+    } catch (error) {
+        console.error('Failed to opt out of review reminder:', error);
+        showToast('Failed to save');
     }
 }
 
@@ -1814,6 +1856,34 @@ function setupNotesModal() {
     document.getElementById('notes-modal').addEventListener('click', (e) => {
         if (e.target.id === 'notes-modal') {
             closeNotesModal();
+        }
+    });
+}
+
+function setupReviewPromptModal() {
+    document.getElementById('review-prompt-close').addEventListener('click', closeReviewPrompt);
+    document.getElementById('review-prompt-later').addEventListener('click', () => {
+        closeReviewPrompt();
+        showToast('Okay, I’ll remind you later in Telegram');
+    });
+    document.getElementById('review-prompt-now').addEventListener('click', async () => {
+        const placeId = pendingReviewPromptPlaceId;
+        closeReviewPrompt();
+        if (placeId) {
+            await openReviewSheet(placeId);
+        }
+    });
+    document.getElementById('review-prompt-dont-ask').addEventListener('click', async () => {
+        const placeId = pendingReviewPromptPlaceId;
+        closeReviewPrompt();
+        if (placeId) {
+            await dontAskReviewAgain(placeId);
+        }
+    });
+
+    document.getElementById('review-prompt-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'review-prompt-modal') {
+            closeReviewPrompt();
         }
     });
 }
@@ -2678,6 +2748,7 @@ async function initApp() {
 
     // Setup notes modal
     setupNotesModal();
+    setupReviewPromptModal();
 
     // Setup review sheet
     setupReviewSheet();

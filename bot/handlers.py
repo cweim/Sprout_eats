@@ -1,8 +1,12 @@
 import logging
 import math
+import html
+import re
+import warnings
 from io import BytesIO
 from urllib.parse import quote
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.warnings import PTBUserWarning
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 
 import config
@@ -17,8 +21,18 @@ from services.place_pipeline import (
 )
 from services.maps import generate_map_image
 from database import supabase_repository as repository
+from database.supabase_client import (
+    upload_photo as storage_upload_photo,
+    upload_feedback_attachment as storage_upload_feedback_attachment,
+)
 
 logger = logging.getLogger(__name__)
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"If 'per_message=False', 'CallbackQueryHandler' will not be tracked for every message\..*",
+    category=PTBUserWarning,
+)
 
 # Review conversation states
 REVIEW_DISH_NAME = 100
@@ -27,6 +41,10 @@ REVIEW_DISH_REMARKS = 102
 REVIEW_OVERALL_RATING = 103
 REVIEW_PRICE_RATING = 104
 REVIEW_OVERALL_REMARKS = 105
+FEEDBACK_CATEGORY = 200
+FEEDBACK_COLLECT = 201
+MAX_TELEGRAM_REVIEW_PHOTOS = 3
+MAX_FEEDBACK_IMAGES = 5
 
 # Review context storage in user_data:
 # {
@@ -103,6 +121,106 @@ def get_saved_place_id(saved_place) -> int | None:
     if isinstance(saved_place, dict):
         return saved_place.get("id")
     return getattr(saved_place, "id", None)
+
+
+def get_place_value(place, key: str, default=None):
+    """Read place attributes from either dicts or PlaceResult-like objects."""
+    if isinstance(place, dict):
+        return place.get(key, default)
+    return getattr(place, key, default)
+
+
+GENERIC_PLACE_TYPES = {
+    "food",
+    "point_of_interest",
+    "establishment",
+    "store",
+}
+
+
+def format_place_types(types, limit: int = 2) -> str:
+    """Return concise, user-facing Google place types."""
+    if not types:
+        return ""
+    if isinstance(types, str):
+        raw_types = [t.strip() for t in types.split(",")]
+    else:
+        raw_types = list(types)
+
+    display_types = []
+    for place_type in raw_types:
+        place_type = str(place_type).strip()
+        if not place_type or place_type in GENERIC_PLACE_TYPES:
+            continue
+        display_types.append(place_type.replace("_", " ").title())
+        if len(display_types) >= limit:
+            break
+    return ", ".join(display_types)
+
+
+def format_rating_line(rating, rating_count=None) -> str:
+    """Format rating compactly without forcing noisy precision."""
+    if not rating:
+        return ""
+    try:
+        rating_float = float(rating)
+        rating_text = str(int(rating_float)) if rating_float.is_integer() else f"{rating_float:.1f}"
+    except (TypeError, ValueError):
+        rating_text = str(rating)
+
+    if rating_count:
+        try:
+            count_text = f"{int(rating_count):,}"
+        except (TypeError, ValueError):
+            count_text = str(rating_count)
+        return f"⭐ {rating_text}/5 ({count_text} reviews)"
+    return f"⭐ {rating_text}/5"
+
+
+def build_google_maps_url(place) -> str:
+    """Build a Google Maps link for either a Google place id or coordinates."""
+    name = str(get_place_value(place, "name", ""))
+    place_id = get_place_value(place, "place_id") or get_place_value(place, "google_place_id")
+    latitude = get_place_value(place, "latitude")
+    longitude = get_place_value(place, "longitude")
+
+    if place_id:
+        return f"https://www.google.com/maps/search/?api=1&query={quote(name)}&query_place_id={place_id}"
+    if latitude is not None and longitude is not None:
+        return f"https://www.google.com/maps/search/?api=1&query={latitude},{longitude}"
+    return f"https://www.google.com/maps/search/?api=1&query={quote(name)}"
+
+
+def build_saved_place_message(place, source_url: str | None = None) -> str:
+    """Build a concise saved-place confirmation with labeled links."""
+    name = html.escape(str(get_place_value(place, "name", "this place")))
+    address = get_place_value(place, "address")
+    rating = get_place_value(place, "rating") or get_place_value(place, "place_rating")
+    rating_count = get_place_value(place, "rating_count") or get_place_value(place, "place_rating_count")
+    types = get_place_value(place, "types") or get_place_value(place, "place_types")
+
+    lines = [f"✅ Saved <b>{name}</b>"]
+    if address:
+        lines.append(f"📍 {html.escape(str(address))}")
+
+    meta_parts = []
+    rating_text = format_rating_line(rating, rating_count)
+    if rating_text:
+        meta_parts.append(html.escape(rating_text))
+    type_text = format_place_types(types)
+    if type_text:
+        meta_parts.append(html.escape(type_text))
+    if meta_parts:
+        lines.append(" · ".join(meta_parts))
+
+    links = [
+        f'<a href="{html.escape(build_google_maps_url(place), quote=True)}">Google Maps</a>'
+    ]
+    if source_url:
+        links.append(f'<a href="{html.escape(source_url, quote=True)}">Original</a>')
+    lines.append("🔗 " + " · ".join(links))
+
+    return "\n".join(lines)
 
 
 async def safe_edit_status(status_msg, text: str):
@@ -447,8 +565,8 @@ def build_selection_message(places: list, selected_indices: set, video_meta: dic
     selected_count = len(selected_indices)
 
     lines = [
-        f"I found {len(places)} likely food places from this {source_label}.",
-        "High-confidence matches are already selected for you.",
+        f"Found {len(places)} likely food places from this {source_label}.",
+        "High-confidence matches are preselected.",
         "",
     ]
 
@@ -470,8 +588,8 @@ def build_selection_message(places: list, selected_indices: set, video_meta: dic
 
     lines.extend([
         "",
-        f"Selected now: {selected_count}",
-        "Use the buttons to adjust the list, save your chosen places, or reject all of them.",
+        f"Selected: {selected_count}",
+        "Tap places to adjust, then save.",
     ])
 
     return "\n".join(lines)
@@ -516,17 +634,86 @@ def build_unresolved_slot_message(unresolved_suggestions: list) -> str:
     if not unresolved_suggestions:
         return ""
 
-    lines = ["", "Needs review:"]
+    lines = ["", "Possible places:"]
     for suggestion in unresolved_suggestions[:6]:
         evidence = suggestion.evidence
         source = evidence.source.replace("_", " ")
-        reason = suggestion.reason or "Could not confidently match this to a food place."
-        lines.append(f"- {evidence.name_candidate} ({source}): {reason}")
+        lines.append(f"⬜ {evidence.name_candidate} ({source})")
 
     if len(unresolved_suggestions) > 6:
-        lines.append(f"- {len(unresolved_suggestions) - 6} more unresolved place names")
+        lines.append(f"⬜ {len(unresolved_suggestions) - 6} more possible place names")
 
     return "\n".join(lines)
+
+
+def build_unresolved_slot_keyboard(unresolved_suggestions: list) -> InlineKeyboardMarkup:
+    """Build buttons to try unresolved candidate names one by one."""
+    keyboard = []
+    for index, suggestion in enumerate(unresolved_suggestions[:6]):
+        name = suggestion.evidence.name_candidate
+        label = name[:28] + "..." if len(name) > 28 else name
+        keyboard.append([
+            InlineKeyboardButton(f"Try: {label}", callback_data=f"unresolved_pick_{index}")
+        ])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def collect_reviewable_unresolved_candidates(unresolved_suggestions: list) -> list[dict]:
+    """Flatten unresolved suggestions into real Google candidates worth showing."""
+    candidates = []
+    seen = set()
+
+    for suggestion in unresolved_suggestions:
+        for candidate in getattr(suggestion, "candidates", [])[:3]:
+            place_id = getattr(candidate, "place_id", None)
+            key = place_id or (
+                getattr(candidate, "name", ""),
+                getattr(candidate, "address", ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append({
+                "name": candidate.name,
+                "address": candidate.address,
+                "latitude": candidate.latitude,
+                "longitude": candidate.longitude,
+                "place_id": candidate.place_id,
+                "types": candidate.types,
+                "rating": candidate.rating,
+                "rating_count": candidate.rating_count,
+                "price_level": candidate.price_level,
+                "opening_hours": candidate.opening_hours,
+                "source": suggestion.evidence.source,
+                "slot_name": suggestion.evidence.name_candidate,
+            })
+
+    return candidates
+
+
+def build_reviewable_candidate_message(candidates: list[dict]) -> str:
+    """Format unresolved-but-real Google place suggestions."""
+    if not candidates:
+        return ""
+
+    lines = ["", "Possible places:"]
+    for candidate in candidates[:6]:
+        source = candidate.get("source", "").replace("_", " ")
+        lines.append(f"⬜ {candidate['name']} ({source})")
+    if len(candidates) > 6:
+        lines.append(f"⬜ {len(candidates) - 6} more possible places")
+    return "\n".join(lines)
+
+
+def build_reviewable_candidate_keyboard(candidates: list[dict]) -> InlineKeyboardMarkup:
+    """Buttons for real Google Place candidates pending user confirmation."""
+    keyboard = []
+    for index, candidate in enumerate(candidates[:6]):
+        label = candidate["name"][:28] + "..." if len(candidate["name"]) > 28 else candidate["name"]
+        keyboard.append([
+            InlineKeyboardButton(f"Try: {label}", callback_data=f"unresolved_pick_{index}")
+        ])
+    return InlineKeyboardMarkup(keyboard)
 
 
 async def toggle_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -630,15 +817,73 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     count = len(saved_names)
     if count == 1:
         await query.message.reply_text(
-            f"✨ Saved **{saved_names[0]}** to your map!",
-            parse_mode="Markdown"
+            f"✅ Saved <b>{html.escape(saved_names[0])}</b>",
+            parse_mode="HTML"
         )
     else:
-        names_text = "\n".join(f"• {name}" for name in saved_names)
+        names_text = "\n".join(f"• {html.escape(name)}" for name in saved_names)
         await query.message.reply_text(
-            f"✨ Saved {count} places to your map!\n\n{names_text}",
-            parse_mode="Markdown"
+            f"✅ Saved {count} places\n\n{names_text}",
+            parse_mode="HTML"
         )
+
+
+async def unresolved_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Save one unresolved-but-real Google candidate after user confirmation."""
+    query = update.callback_query
+    await query.answer()
+
+    unresolved_slots = context.user_data.get("pending_unresolved_slots")
+    if not unresolved_slots:
+        await query.edit_message_text("That suggestion expired. Send the link again.")
+        return
+
+    try:
+        index = int(query.data.replace("unresolved_pick_", ""))
+        suggestion = unresolved_slots[index]
+    except (ValueError, IndexError):
+        await query.answer("Invalid suggestion")
+        return
+
+    place = suggestion
+    await query.edit_message_text(f"Saving “{place['name']}”...")
+
+    user_id = update.effective_user.id
+    source_url = context.user_data.get("pending_url", "")
+    source_platform = context.user_data.get("pending_platform", "unknown")
+    video_meta = context.user_data.get("pending_video_meta", {})
+
+    repository.add_place(
+        user_id=user_id,
+        name=place["name"],
+        address=place["address"],
+        latitude=place["latitude"],
+        longitude=place["longitude"],
+        google_place_id=place.get("place_id"),
+        source_url=source_url,
+        source_platform=source_platform,
+        source_title=video_meta.get("source_title"),
+        source_uploader=video_meta.get("source_uploader"),
+        source_duration=video_meta.get("source_duration"),
+        source_hashtags=video_meta.get("source_hashtags"),
+        place_types=",".join(place.get("types", [])) if place.get("types") else None,
+        place_rating=place.get("rating"),
+        place_rating_count=place.get("rating_count"),
+        place_price_level=place.get("price_level"),
+        place_opening_hours=place.get("opening_hours"),
+        source_language=video_meta.get("source_language"),
+        source_transcript=video_meta.get("source_transcript"),
+        source_transcript_en=video_meta.get("source_transcript_en"),
+    )
+
+    context.user_data.pop("pending_unresolved_slots", None)
+
+    await query.message.reply_location(latitude=place["latitude"], longitude=place["longitude"])
+    await query.message.reply_text(
+        build_saved_place_message(place, source_url=source_url),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
 
 
 async def cancel_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -786,25 +1031,39 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             combined_text = f"{metadata_text} {ocr_text} {video_ocr_text} {transcript_text}".strip()
             if not combined_text:
                 await status_msg.edit_text(
-                    "Hmm, couldn't find any text or audio to work with. 🤔\n\n"
-                    "Reply with the place name and I'll search for it!"
+                    "I couldn't find enough text or audio to identify a place.\n\n"
+                    "Reply with the place name and I'll search for it."
                 )
             elif unresolved_suggestions:
-                await status_msg.edit_text(
-                    "I found possible place names, but couldn't safely match them to a specific food place. 🔍\n"
-                    f"{build_unresolved_slot_message(unresolved_suggestions)}\n\n"
-                    "Reply with the exact place or branch name and I'll search for it."
-                )
+                reviewable_candidates = collect_reviewable_unresolved_candidates(unresolved_suggestions)
+                if reviewable_candidates:
+                    context.user_data["pending_unresolved_slots"] = reviewable_candidates[:6]
+                    await status_msg.edit_text(
+                        "I found possible place matches, but couldn't verify them confidently enough to auto-save.\n"
+                        f"{build_reviewable_candidate_message(reviewable_candidates)}\n\n"
+                        "Tap a suggestion to save it, or reply with the exact place or branch name.",
+                        reply_markup=build_reviewable_candidate_keyboard(reviewable_candidates),
+                    )
+                else:
+                    await status_msg.edit_text(
+                        "I found some possible place names, but none could be verified against Google Places.\n\n"
+                        "Reply with the exact place or branch name and I'll search for it."
+                    )
             else:
-                # Show detected language if transcription was used
-                lang_hint = ""
-                if transcription_result and transcription_result.language != "en":
-                    lang_name = get_language_name(transcription_result.language)
-                    lang_hint = f" ({lang_name})"
+                checked_sources = []
+                if metadata_text:
+                    checked_sources.append("caption")
+                if ocr_text:
+                    checked_sources.append("image text")
+                if video_ocr_text:
+                    checked_sources.append("video text")
+                if transcript_text:
+                    checked_sources.append("audio")
+                checked_text = ", ".join(checked_sources) if checked_sources else "the post"
                 await status_msg.edit_text(
-                    f"Couldn't spot a specific place{lang_hint}. 🔍\n\n"
-                    f"I found: \"{combined_text[:180]}...\"\n\n"
-                    "Reply with the place name and I'll dig it up!"
+                    "I couldn't confidently identify a specific food place.\n\n"
+                    f"I checked the {checked_text}, but there wasn't a clear match.\n\n"
+                    "Reply with the place name and I'll search for it."
                 )
             context.user_data["pending_url"] = text
             context.user_data["pending_platform"] = result.platform
@@ -855,27 +1114,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 longitude=place.longitude,
             )
 
-            # Build rich confirmation message
-            confirmation = f"✅ Saved: {place.name}!\n📍 {place.address}"
-            if place.rating:
-                rating_text = f"⭐ {place.rating}/5"
-                if place.rating_count:
-                    rating_text += f" ({place.rating_count} reviews)"
-                confirmation += f"\n{rating_text}"
-            if place.types:
-                types_display = ", ".join(t.replace("_", " ").title() for t in place.types[:2])
-                confirmation += f"\n🏷️ {types_display}"
-            if source_uploader:
-                confirmation += f"\n📺 From @{source_uploader}"
-
-            # Add links
-            confirmation += "\n"
-            if place.place_id:
-                maps_url = f"https://www.google.com/maps/search/?api=1&query={quote(place.name)}&query_place_id={place.place_id}"
-            else:
-                maps_url = f"https://www.google.com/maps/search/?api=1&query={place.latitude},{place.longitude}"
-            confirmation += f"\n🗺️ Google Maps: {maps_url}"
-            confirmation += f"\n▶️ Original: {text}"
+            confirmation = build_saved_place_message(place, source_url=text)
 
             saved_place_id = get_saved_place_id(saved_place)
             correction_keyboard = None
@@ -895,6 +1134,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 confirmation,
                 reply_markup=correction_keyboard,
+                parse_mode="HTML",
                 disable_web_page_preview=True,
             )
         else:
@@ -975,7 +1215,16 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         logger.error(f"Error processing URL: {e}")
-        if "connect" in str(e).lower() or "network" in str(e).lower():
+        error_text = str(e).lower()
+        if "tiktok.com/" in error_text and "/photo/" in error_text and "unsupported url" in error_text:
+            context.user_data["pending_url"] = text
+            context.user_data["pending_platform"] = "tiktok"
+            await safe_edit_status(
+                status_msg,
+                "This looks like a TikTok photo post, and I can't parse those yet.\n\n"
+                "Reply with the place name and I'll search for it manually."
+            )
+        elif "connect" in error_text or "network" in error_text:
             await safe_edit_status(
                 status_msg,
                 "Hit a connection snag! 🌧️\n\nGive it a moment and try again."
@@ -1043,8 +1292,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await update.message.reply_text(
-            f"✅ Saved: {place.name}!\n"
-            f"📍 {place.address}"
+            build_saved_place_message(place, source_url=pending_url),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
         )
 
     except Exception as e:
@@ -1109,6 +1359,214 @@ async def nearby_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start feedback collection flow."""
+    clear_feedback_context(context)
+    await update.message.reply_text(
+        "What kind of feedback is this?",
+        reply_markup=build_feedback_category_keyboard(),
+    )
+    return FEEDBACK_CATEGORY
+
+
+async def handle_feedback_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Create a report thread after category selection."""
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data or ""
+    if not data.startswith("feedback_category:"):
+        return FEEDBACK_CATEGORY
+
+    category = data.split(":", 1)[1]
+    user_id = update.effective_user.id
+    try:
+        report = repository.create_feedback_report(
+            user_id=user_id,
+            category=category,
+            source="telegram_bot",
+        )
+    except Exception as e:
+        logger.error(f"Failed to create feedback report: {e}")
+        await query.edit_message_text(
+            "Feedback reporting isn't set up yet on the backend.\n\n"
+            "Please try again after the latest database schema is applied."
+        )
+        return ConversationHandler.END
+
+    if not report:
+        await query.edit_message_text("I couldn't start a feedback report right now. Please try again.")
+        return ConversationHandler.END
+
+    repository.create_app_event(
+        user_id=user_id,
+        event_name="feedback_report_created",
+        event_source="telegram_bot",
+        entity_type="feedback_report",
+        entity_id=str(report["id"]),
+        metadata={"category": category},
+    )
+
+    context.user_data["feedback_context"] = {
+        "report_id": report["id"],
+        "category": category,
+        "source_link": None,
+    }
+    await query.edit_message_text(
+        "Send your feedback, screenshot, or link."
+    )
+    return FEEDBACK_COLLECT
+
+
+async def _acknowledge_feedback_item(message, feedback_context: dict):
+    """Send the loop prompt after saving a feedback item."""
+    extra = ""
+    if (
+        feedback_context.get("category") == "places_not_found"
+        and not feedback_context.get("source_link")
+    ):
+        extra = "\n\nIf you have the Instagram or TikTok link, send it too."
+
+    await message.reply_text(
+        f"Thanks, got it. Anything else?{extra}",
+        reply_markup=build_feedback_done_keyboard(),
+    )
+
+
+async def handle_feedback_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Store one feedback text or link message."""
+    feedback_context = context.user_data.get("feedback_context")
+    if not feedback_context:
+        return ConversationHandler.END
+
+    text = (update.message.text or "").strip()
+    if not text:
+        await update.message.reply_text("Send text, a screenshot, or a link.", reply_markup=build_feedback_done_keyboard())
+        return FEEDBACK_COLLECT
+
+    report_id = feedback_context["report_id"]
+    report = repository.get_feedback_report(report_id)
+    if not report:
+        clear_feedback_context(context)
+        await update.message.reply_text("That feedback thread expired. Please send /feedback again.")
+        return ConversationHandler.END
+
+    urls = extract_urls(text)
+    if urls:
+        if not feedback_context.get("source_link"):
+            repository.update_feedback_report(report_id, source_link=urls[0])
+            feedback_context["source_link"] = urls[0]
+        else:
+            for url in urls:
+                repository.append_feedback_attachment(
+                    report_id=report_id,
+                    attachment_type="link",
+                    text_content=url,
+                )
+
+    if not (is_url_only_message(text) and urls):
+        if not report.get("body"):
+            repository.update_feedback_report(report_id, body=text)
+        else:
+            repository.append_feedback_text(report_id, text)
+
+    repository.create_app_event(
+        user_id=update.effective_user.id,
+        event_name="feedback_item_added",
+        event_source="telegram_bot",
+        entity_type="feedback_report",
+        entity_id=str(report_id),
+        metadata={"has_url": bool(urls), "message_type": "text"},
+    )
+    context.user_data["feedback_context"] = feedback_context
+    await _acknowledge_feedback_item(update.message, feedback_context)
+    return FEEDBACK_COLLECT
+
+
+async def handle_feedback_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Store one feedback screenshot/photo."""
+    feedback_context = context.user_data.get("feedback_context")
+    if not feedback_context:
+        return
+
+    report_id = feedback_context["report_id"]
+    report = repository.get_feedback_report(report_id)
+    if not report:
+        clear_feedback_context(context)
+        await update.message.reply_text("That feedback thread expired. Please send /feedback again.")
+        return
+
+    image_count = len([a for a in report.get("attachments", []) if a.get("attachment_type") == "image"])
+    if image_count >= MAX_FEEDBACK_IMAGES:
+        await update.message.reply_text(
+            f"This feedback report already has {MAX_FEEDBACK_IMAGES} images.\nTap Done or send text/link instead.",
+            reply_markup=build_feedback_done_keyboard(),
+        )
+        return FEEDBACK_COLLECT
+
+    try:
+        telegram_photo = update.message.photo[-1]
+        telegram_file = await telegram_photo.get_file()
+        photo_bytes = bytes(await telegram_file.download_as_bytearray())
+        file_url, storage_path = storage_upload_feedback_attachment(
+            update.effective_user.id,
+            report_id,
+            photo_bytes,
+            f"{telegram_photo.file_unique_id}.jpg",
+        )
+        repository.append_feedback_attachment(
+            report_id=report_id,
+            attachment_type="image",
+            file_url=file_url,
+            storage_path=storage_path,
+        )
+        repository.create_app_event(
+            user_id=update.effective_user.id,
+            event_name="feedback_item_added",
+            event_source="telegram_bot",
+            entity_type="feedback_report",
+            entity_id=str(report_id),
+            metadata={"message_type": "image"},
+        )
+    except Exception as e:
+        logger.error(f"Failed to upload feedback image: {e}")
+        await update.message.reply_text(
+            "I couldn't save that image. Try sending it again.",
+            reply_markup=build_feedback_done_keyboard(),
+        )
+        return FEEDBACK_COLLECT
+
+    await _acknowledge_feedback_item(update.message, feedback_context)
+    return FEEDBACK_COLLECT
+
+
+async def finish_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Close the feedback loop when user taps Done."""
+    query = update.callback_query
+    await query.answer()
+
+    feedback_context = context.user_data.get("feedback_context")
+    if feedback_context:
+        repository.create_app_event(
+            user_id=update.effective_user.id,
+            event_name="feedback_report_completed",
+            event_source="telegram_bot",
+            entity_type="feedback_report",
+            entity_id=str(feedback_context["report_id"]),
+            metadata={"category": feedback_context.get("category")},
+        )
+    clear_feedback_context(context)
+    await query.edit_message_text("Thanks for the feedback. I've saved it.")
+    return ConversationHandler.END
+
+
+async def cancel_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel feedback flow and keep any already-saved items."""
+    clear_feedback_context(context)
+    await update.message.reply_text("Feedback cancelled.")
+    return ConversationHandler.END
+
+
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle shared location and show top 5 nearest saved places."""
     user_id = update.effective_user.id
@@ -1148,17 +1606,13 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for place, dist in top_5:
         dist_str = f"{int(dist * 1000)}m" if dist < 1 else f"{dist:.1f}km"
 
-        # Build Google Maps URL
-        if place.get('google_place_id'):
-            maps_url = f"https://www.google.com/maps/search/?api=1&query={quote(place['name'])}&query_place_id={place['google_place_id']}"
-        else:
-            maps_url = f"https://www.google.com/maps/search/?api=1&query={place['latitude']},{place['longitude']}"
-
         # Build line with clickable links
-        text += f"<b>{place['name']}</b> ({dist_str})\n"
-        links = [f'<a href="{maps_url}">Google Maps</a>']
+        text += f"<b>{html.escape(place['name'])}</b> ({dist_str})\n"
+        links = [
+            f'<a href="{html.escape(build_google_maps_url(place), quote=True)}">Google Maps</a>'
+        ]
         if place.get('source_url'):
-            links.append(f'<a href="{place["source_url"]}">Visit Reel</a>')
+            links.append(f'<a href="{html.escape(place["source_url"], quote=True)}">Original</a>')
         text += " · ".join(links) + "\n\n"
 
     total = len(places_with_dist)
@@ -1198,6 +1652,71 @@ def clear_review_context(context: ContextTypes.DEFAULT_TYPE):
             'review_current_dish', 'review_overall', 'review_price', 'review_remarks']
     for key in keys:
         context.user_data.pop(key, None)
+
+
+def clear_review_photo_context(context: ContextTypes.DEFAULT_TYPE):
+    """Clear pending Telegram photo follow-up state."""
+    context.user_data.pop("review_photo_context", None)
+
+
+def clear_feedback_context(context: ContextTypes.DEFAULT_TYPE):
+    """Clear active Telegram feedback collection state."""
+    context.user_data.pop("feedback_context", None)
+
+
+def build_feedback_category_keyboard() -> InlineKeyboardMarkup:
+    """Buttons for the /feedback category picker."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Bug", callback_data="feedback_category:bug")],
+        [InlineKeyboardButton("Feature Request", callback_data="feedback_category:feature_request")],
+        [InlineKeyboardButton("Places Not Found", callback_data="feedback_category:places_not_found")],
+        [InlineKeyboardButton("General Feedback", callback_data="feedback_category:general_feedback")],
+    ])
+
+
+def build_feedback_done_keyboard() -> InlineKeyboardMarkup:
+    """Single-button keyboard for ending a feedback thread."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("Done", callback_data="feedback_done"),
+    ]])
+
+
+def extract_urls(text: str) -> list[str]:
+    """Extract URLs from freeform feedback text."""
+    return re.findall(r"https?://\S+", text)
+
+
+def is_url_only_message(text: str) -> bool:
+    """Return whether the message is just a single URL."""
+    urls = extract_urls(text)
+    if len(urls) != 1:
+        return False
+    return text.strip() == urls[0]
+
+
+def feedback_category_label(category: str) -> str:
+    """Friendly label for feedback categories."""
+    labels = {
+        "bug": "bug",
+        "feature_request": "feature request",
+        "places_not_found": "places not found",
+        "general_feedback": "feedback",
+    }
+    return labels.get(category, "feedback")
+
+
+def build_review_photo_keyboard(mode: str = "prompt") -> InlineKeyboardMarkup:
+    """Build inline buttons for the post-review photo flow."""
+    if mode == "upload":
+        return InlineKeyboardMarkup([[
+            InlineKeyboardButton("Done", callback_data="review_photo:done"),
+            InlineKeyboardButton("Skip", callback_data="review_photo:skip"),
+        ]])
+
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("Add Photos", callback_data="review_photo:add"),
+        InlineKeyboardButton("Skip", callback_data="review_photo:skip"),
+    ]])
 
 
 def build_review_summary(place_name: str, review_data: dict) -> str:
@@ -1348,7 +1867,7 @@ async def review_overall_remarks(update: Update, context: ContextTypes.DEFAULT_T
     try:
         # Get user_id from Telegram
         user_id = update.effective_user.id
-        repository.create_or_update_review(
+        saved_review = repository.create_or_update_review(
             place_id=place_id,
             user_id=user_id,
             overall_rating=review_data['overall_rating'],
@@ -1365,6 +1884,25 @@ async def review_overall_remarks(update: Update, context: ContextTypes.DEFAULT_T
             f"View & edit anytime in the Mini App! ✨",
             parse_mode='Markdown'
         )
+
+        if saved_review and saved_review.get("id"):
+            repository.create_app_event(
+                user_id=user_id,
+                event_name="telegram_review_completed",
+                event_source="telegram_bot",
+                entity_type="review",
+                entity_id=str(saved_review["id"]),
+                metadata={"place_id": place_id, "place_name": place_name},
+            )
+            context.user_data["review_photo_context"] = {
+                "review_id": saved_review["id"],
+                "place_name": place_name,
+                "mode": "prompt",
+            }
+            await update.message.reply_text(
+                f"Want to add photos for {place_name} too?",
+                reply_markup=build_review_photo_keyboard("prompt"),
+            )
     except Exception as e:
         logger.error(f"Failed to save review: {e}")
         await update.message.reply_text(
@@ -1425,6 +1963,14 @@ async def handle_review_callback(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data['review_place_name'] = place_name
     context.user_data['review_dishes'] = []
     context.user_data['review_current_dish'] = None
+    repository.create_app_event(
+        user_id=user_id,
+        event_name="telegram_review_started",
+        event_source="telegram_bot",
+        entity_type="place",
+        entity_id=str(place_id),
+        metadata={"place_name": place_name},
+    )
 
     # Return the first state to enter the conversation
     return REVIEW_DISH_NAME
@@ -1446,6 +1992,14 @@ async def handle_remind_later(update: Update, context: ContextTypes.DEFAULT_TYPE
     reminder = repository.reschedule_reminder(reminder_id)
 
     if reminder:
+        repository.create_app_event(
+            user_id=update.effective_user.id,
+            event_name="review_prompt_later_clicked",
+            event_source="telegram_bot",
+            entity_type="review_reminder",
+            entity_id=str(reminder_id),
+            metadata={},
+        )
         await query.edit_message_text(
             "No problem! I'll ask again later 😊"
         )
@@ -1468,7 +2022,7 @@ async def handle_remind_stop(update: Update, context: ContextTypes.DEFAULT_TYPE)
     place_id = int(parts[1])
     user_id = update.effective_user.id
 
-    repository.set_dont_ask_again(place_id, user_id)
+    repository.set_dont_ask_again(user_id, place_id)
 
     await query.edit_message_text(
         "Got it, I won't ask about this place again.\n"
@@ -1482,6 +2036,145 @@ async def handle_dismiss(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     # Just acknowledge, don't delete message
     # The reminder will still fire in 1 hour
+
+
+async def handle_review_photo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle post-review photo prompt actions."""
+    query = update.callback_query
+    await query.answer()
+
+    photo_context = context.user_data.get("review_photo_context")
+    if not photo_context:
+        await query.edit_message_text("That photo prompt expired. You can add photos in the Mini App.")
+        return
+
+    action = query.data.split(":", 1)[1] if ":" in query.data else ""
+    review_id = photo_context.get("review_id")
+    place_name = photo_context.get("place_name", "this place")
+
+    if action == "add":
+        current_count = repository.get_photo_count(review_id)
+        if current_count >= MAX_TELEGRAM_REVIEW_PHOTOS:
+            clear_review_photo_context(context)
+            await query.edit_message_text(
+                "This review already has the maximum number of photos.\n"
+                "You can manage them in the Mini App."
+            )
+            return
+
+        photo_context["mode"] = "upload"
+        context.user_data["review_photo_context"] = photo_context
+        await query.edit_message_text(
+            f"Send up to {MAX_TELEGRAM_REVIEW_PHOTOS - current_count} photo(s) for {place_name}.\n"
+            "When you're done, tap Done.",
+            reply_markup=build_review_photo_keyboard("upload"),
+        )
+        return
+
+    if action == "done":
+        clear_review_photo_context(context)
+        await query.edit_message_text(
+            "Done. Your review is saved, and you can still manage photos later in the Mini App."
+        )
+        return
+
+    if action == "skip":
+        clear_review_photo_context(context)
+        await query.edit_message_text(
+            "No problem. You can add photos later in the Mini App."
+        )
+        return
+
+
+async def handle_review_photo_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Upload Telegram photos for the pending post-review prompt."""
+    photo_context = context.user_data.get("review_photo_context")
+    if not photo_context or photo_context.get("mode") != "upload":
+        return
+
+    if not update.message or not update.message.photo:
+        return
+
+    user_id = update.effective_user.id
+    review_id = photo_context.get("review_id")
+    place_name = photo_context.get("place_name", "this place")
+
+    current_count = repository.get_photo_count(review_id)
+    if current_count >= MAX_TELEGRAM_REVIEW_PHOTOS:
+        clear_review_photo_context(context)
+        await update.message.reply_text(
+            "This review already has the maximum number of photos.\n"
+            "You can manage them in the Mini App."
+        )
+        return
+
+    try:
+        telegram_photo = update.message.photo[-1]
+        telegram_file = await telegram_photo.get_file()
+        photo_bytes = bytes(await telegram_file.download_as_bytearray())
+        filename = f"{telegram_photo.file_unique_id}.jpg"
+        file_url, storage_path = storage_upload_photo(user_id, review_id, photo_bytes, filename)
+        saved_photo = repository.add_photo(
+            review_id=review_id,
+            file_url=file_url,
+            storage_path=storage_path,
+        )
+        if not saved_photo:
+            clear_review_photo_context(context)
+            await update.message.reply_text(
+                "This review already has the maximum number of photos.\n"
+                "You can manage them in the Mini App."
+            )
+            return
+    except Exception as e:
+        logger.error(f"Failed to upload Telegram review photo: {e}")
+        await update.message.reply_text(
+            "I couldn't upload that photo. Try sending it again, or add it later in the Mini App."
+        )
+        return
+
+    new_count = repository.get_photo_count(review_id)
+    repository.create_app_event(
+        user_id=user_id,
+        event_name="telegram_review_photo_added",
+        event_source="telegram_bot",
+        entity_type="review",
+        entity_id=str(review_id),
+        metadata={"photo_count": new_count},
+    )
+    if new_count >= MAX_TELEGRAM_REVIEW_PHOTOS:
+        clear_review_photo_context(context)
+        await update.message.reply_text(
+            f"Added photo {new_count}/{MAX_TELEGRAM_REVIEW_PHOTOS} for {place_name}.\n"
+            "That's the max for Telegram review photos."
+        )
+        return
+
+    await update.message.reply_text(
+        f"Added photo {new_count}/{MAX_TELEGRAM_REVIEW_PHOTOS} for {place_name}.\n"
+        "Send another photo or tap Done.",
+        reply_markup=build_review_photo_keyboard("upload"),
+    )
+
+
+feedback_conversation_handler = ConversationHandler(
+    entry_points=[CommandHandler("feedback", feedback_command)],
+    states={
+        FEEDBACK_CATEGORY: [
+            CallbackQueryHandler(handle_feedback_category, pattern=r"^feedback_category:")
+        ],
+        FEEDBACK_COLLECT: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_feedback_text),
+            MessageHandler(filters.PHOTO, handle_feedback_photo),
+            CallbackQueryHandler(finish_feedback, pattern=r"^feedback_done$"),
+        ],
+    },
+    fallbacks=[CommandHandler("cancel", cancel_feedback)],
+    name="feedback_conversation",
+    persistent=False,
+    per_chat=True,
+    per_user=True,
+)
 
 
 # Review conversation handler
