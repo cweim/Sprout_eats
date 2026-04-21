@@ -18,7 +18,7 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 
     <!-- App styles - Playful & Warm theme -->
-    <link rel="stylesheet" href="styles.css?v=23">
+    <link rel="stylesheet" href="styles.css?v=24">
 </head>
 <body>
     <header class="app-header">
@@ -81,8 +81,7 @@
             </div>
             <div id="no-results" class="no-results" style="display: none;">
                 <p>Nothing here yet!</p>
-                <p class="hint">Try adjusting your filters or discover new places</p>
-                <button id="btn-search-google" class="search-google-btn">🔍 Discover Places</button>
+                <p class="hint">Try adjusting your filters or use the discover button to find new places</p>
             </div>
         </div>
 
@@ -123,8 +122,7 @@
         <!-- Empty State -->
         <div id="empty-state" class="empty-state" style="display: none;">
             <p>No places yet!</p>
-            <p class="hint">Send a video link to the bot to start discovering places 🗺️</p>
-            <button id="btn-search-empty" class="search-google-btn">🔍 Discover Places</button>
+            <p class="hint">Send a video link to the bot or use the discover button to start finding places 🗺️</p>
         </div>
 
         <!-- Error State -->
@@ -185,19 +183,31 @@
     </div>
 
     <div id="review-prompt-modal" class="modal" style="display: none;" role="dialog" aria-labelledby="review-prompt-title">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="review-prompt-title">Review this place?</h2>
+        <div class="modal-content review-prompt-content">
+            <div class="modal-header review-prompt-header">
+                <div class="review-prompt-heading">
+                    <span class="review-prompt-kicker">Visited just now</span>
+                    <h2 id="review-prompt-title">Add a quick review?</h2>
+                </div>
                 <button id="review-prompt-close" class="modal-close-btn" aria-label="Close">×</button>
             </div>
-            <div class="modal-body">
-                <p id="review-prompt-text">You marked this place as visited. Want to review it now?</p>
+            <div class="modal-body review-prompt-body">
+                <div class="review-prompt-hero">
+                    <div class="review-prompt-icon" aria-hidden="true">✦</div>
+                    <div class="review-prompt-copy">
+                        <div id="review-prompt-place-name" class="review-prompt-place-name">This place</div>
+                        <p id="review-prompt-text">You marked this place as visited. Want to review it now?</p>
+                    </div>
+                </div>
+                <div class="review-prompt-note">
+                    A quick review helps you remember what was worth coming back for.
+                </div>
             </div>
-            <div class="modal-footer">
-                <button id="review-prompt-dont-ask" class="modal-btn">Don't ask again</button>
-                <button id="review-prompt-later" class="modal-btn">Remind me later</button>
-                <button id="review-prompt-now" class="modal-btn primary">Review now</button>
+            <div class="modal-footer review-prompt-footer">
+                <button id="review-prompt-later" class="modal-btn review-prompt-secondary">Remind me later</button>
+                <button id="review-prompt-now" class="modal-btn primary review-prompt-primary">Write review</button>
             </div>
+            <button id="review-prompt-dont-ask" class="review-prompt-link-btn">Don't ask again for this place</button>
         </div>
     </div>
 
@@ -288,15 +298,16 @@
                 <div class="review-section">
                     <div class="section-header">Overall</div>
                     <div class="overall-ratings-row">
-                        <div class="rating-group">
+                        <div class="rating-group" id="overall-rating-group">
                             <label>Rating</label>
                             <div id="overall-stars" class="star-rating" data-rating="0"></div>
                         </div>
-                        <div class="rating-group">
+                        <div class="rating-group" id="price-rating-group">
                             <label>Price</label>
                             <div id="price-rating" class="price-rating" data-rating="0"></div>
                         </div>
                     </div>
+                    <div id="review-form-error" class="review-form-error" style="display: none;" role="alert"></div>
                     <div id="overall-photos" class="photo-grid"></div>
                     <div class="overall-remarks-row">
                         <textarea id="overall-remarks" placeholder="Overall thoughts" maxlength="500"></textarea>
@@ -340,6 +351,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=37"></script>
+    <script src="app.js?v=38"></script>
 </body>
 </html>

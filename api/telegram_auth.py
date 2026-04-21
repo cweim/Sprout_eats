@@ -29,6 +29,13 @@ class TelegramUser:
     language_code: Optional[str] = None
 
 
+# Avoid writing the same user record on every Mini App request.
+# A short in-process TTL keeps auth semantics intact while reducing
+# Supabase write latency on read-heavy screens like GET /api/places.
+USER_SYNC_TTL_SECONDS = 600
+_USER_SYNC_CACHE: dict[int, float] = {}
+
+
 def validate_init_data(init_data: str, bot_token: str = None) -> dict:
     """
     Validate Telegram initData hash.
@@ -140,6 +147,11 @@ def get_or_create_user(user: TelegramUser) -> TelegramUser:
     Returns:
         User (same object, database record created/updated)
     """
+    last_synced_at = _USER_SYNC_CACHE.get(user.id)
+    now = time.time()
+    if last_synced_at and now - last_synced_at < USER_SYNC_TTL_SECONDS:
+        return user
+
     supabase = get_supabase()
 
     # Upsert user
@@ -151,6 +163,8 @@ def get_or_create_user(user: TelegramUser) -> TelegramUser:
         "language_code": user.language_code,
         "updated_at": "now()",
     }).execute()
+
+    _USER_SYNC_CACHE[user.id] = now
 
     return user
 

@@ -1568,7 +1568,7 @@ async def cancel_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle shared location and show top 5 nearest saved places."""
+    """Handle shared location and show up to 5 nearest saved places."""
     user_id = update.effective_user.id
     location = update.message.location
     lat, lng = location.latitude, location.longitude
@@ -1602,7 +1602,13 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Format clean response with inline links
-    text = f"📍 Your 5 nearest places:\n\n"
+    result_count = len(top_5)
+    place_label = "place" if result_count == 1 else "places"
+    if result_count < 5:
+        text = f"📍 Here {'is' if result_count == 1 else 'are'} {result_count} {place_label} near you:\n\n"
+    else:
+        text = "📍 Here are your 5 nearest places:\n\n"
+
     for place, dist in top_5:
         dist_str = f"{int(dist * 1000)}m" if dist < 1 else f"{dist:.1f}km"
 
