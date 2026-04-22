@@ -18,6 +18,7 @@ import config
 logger = logging.getLogger(__name__)
 
 DEFAULT_PLACE_RESULT_LIMIT = 12
+DEFAULT_SEARCH_LOCATION_BIAS_RADIUS_METERS = 12000.0
 
 
 # Words to ignore when checking word overlap (common words that don't indicate a match)
@@ -534,6 +535,8 @@ async def search_place(
     query: str,
     region: Optional[str] = None,
     max_results: int = 1,
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
 ) -> Union[Optional[PlaceResult], list[PlaceResult]]:
     """
     Search for places using Google Places API.
@@ -542,6 +545,8 @@ async def search_place(
         query: Search query text
         region: Optional region code (e.g., "SG" for Singapore)
         max_results: Maximum number of results to return (default 1 for backward compat)
+        lat: Optional latitude for Google Places location bias
+        lng: Optional longitude for Google Places location bias
 
     Returns:
         - If max_results=1: Optional[PlaceResult] (None if no results)
@@ -562,6 +567,17 @@ async def search_place(
 
     if region:
         body["regionCode"] = region
+
+    if lat is not None and lng is not None:
+        body["locationBias"] = {
+            "circle": {
+                "center": {
+                    "latitude": lat,
+                    "longitude": lng,
+                },
+                "radius": DEFAULT_SEARCH_LOCATION_BIAS_RADIUS_METERS,
+            }
+        }
 
     timeout = aiohttp.ClientTimeout(total=API_TIMEOUT_SECONDS)
     async with aiohttp.ClientSession(timeout=timeout) as session:

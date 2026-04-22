@@ -10,7 +10,18 @@ from telegram.warnings import PTBUserWarning
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 
 import config
-from services.downloader import download_content, is_valid_url, cleanup_files, DownloadTimeoutError, VideoTooLongError
+from services.downloader import (
+    download_content,
+    is_valid_url,
+    cleanup_files,
+    detect_platform,
+    instagram_request_will_queue,
+    get_instagram_queue_status,
+    DownloadTimeoutError,
+    VideoTooLongError,
+    InstagramAccessError,
+    InstagramCooldownError,
+)
 from services.ocr import extract_text_from_images, extract_text_from_video
 from services.transcriber import transcribe_audio
 from services.places import search_place
@@ -944,11 +955,25 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_valid_url(text):
         return  # Not a valid Instagram/TikTok URL, ignore
 
+    platform = detect_platform(text)
+
     status_msg = await update.message.reply_text("Ooh, fresh content! Let me dig in... 🔍")
 
     try:
         # Step 1: Download
-        await status_msg.edit_text("Downloading video... 📥")
+        if platform == "instagram" and instagram_request_will_queue():
+            active_jobs, waiting_jobs = get_instagram_queue_status()
+            logger.info(
+                "Queueing Instagram request: active=%s waiting=%s url=%s",
+                active_jobs,
+                waiting_jobs,
+                text,
+            )
+            await status_msg.edit_text(
+                "Instagram processing is busy right now. I’ve queued your request and will process it shortly."
+            )
+        else:
+            await status_msg.edit_text("Downloading video... 📥")
         result = await download_content(text)
 
         # Step 2: Extract source-backed place slots, then resolve each slot.
@@ -1212,6 +1237,24 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit_status(
             status_msg,
             f"That video's too long! 📹\n\nMax {config.MAX_VIDEO_DURATION // 60} minutes allowed."
+        )
+    except InstagramCooldownError as e:
+        logger.warning("Instagram retrieval cooling down: %s", e)
+        context.user_data["pending_url"] = text
+        context.user_data["pending_platform"] = "instagram"
+        await safe_edit_status(
+            status_msg,
+            "Instagram processing is busy right now. I’ve queued your request and will process it shortly.\n\n"
+            "If you already know the place name, you can reply with it and I’ll search manually."
+        )
+    except InstagramAccessError as e:
+        logger.error("Instagram access error: %s", e)
+        context.user_data["pending_url"] = text
+        context.user_data["pending_platform"] = "instagram"
+        await safe_edit_status(
+            status_msg,
+            "Instagram is blocking access to this post right now.\n\n"
+            "Try again later, or reply with the place name and I’ll search for it manually."
         )
     except Exception as e:
         logger.error(f"Error processing URL: {e}")

@@ -42,3 +42,8 @@ MAX_VIDEO_DURATION = int(os.getenv("MAX_VIDEO_DURATION", "300"))  # 5 min defaul
 MAX_DOWNLOAD_SIZE_MB = int(os.getenv("MAX_DOWNLOAD_SIZE_MB", "100"))  # 100MB default
 MAX_OCR_IMAGES = int(os.getenv("MAX_OCR_IMAGES", "10"))  # Max carousel images to OCR
 DOWNLOAD_TIMEOUT = int(os.getenv("DOWNLOAD_TIMEOUT", "120"))  # 2 min default
+
+# Instagram retrieval
+INSTAGRAM_COOKIES_B64 = os.getenv("INSTAGRAM_COOKIES_B64", "")
+INSTAGRAM_MAX_CONCURRENT_FETCHES = int(os.getenv("INSTAGRAM_MAX_CONCURRENT_FETCHES", "3"))
+INSTAGRAM_COOLDOWN_SECONDS = int(os.getenv("INSTAGRAM_COOLDOWN_SECONDS", "300"))

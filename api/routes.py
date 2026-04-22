@@ -215,6 +215,8 @@ async def dont_ask_review_again(
 async def search_places_api(
     q: str,
     max_results: int = 5,
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
     user: TelegramUser = Depends(get_current_user)
 ):
     """Search Google Places API for places."""
@@ -222,7 +224,7 @@ async def search_places_api(
         raise HTTPException(status_code=400, detail="Query too short")
 
     try:
-        results = await search_place(q, max_results=max_results)
+        results = await search_place(q, max_results=max_results, lat=lat, lng=lng)
 
         if isinstance(results, list):
             places = results

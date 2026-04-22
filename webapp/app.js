@@ -15,6 +15,20 @@ function getAuthHeaders() {
     return headers;
 }
 
+function buildSearchUrl(query, maxResults = 10) {
+    const params = new URLSearchParams({
+        q: query,
+        max_results: String(maxResults),
+    });
+
+    if (userLocation?.lat != null && userLocation?.lng != null) {
+        params.set('lat', String(userLocation.lat));
+        params.set('lng', String(userLocation.lng));
+    }
+
+    return `${API_URL}/api/search?${params.toString()}`;
+}
+
 // State
 let places = [];
 let allReviews = [];
@@ -2115,11 +2129,7 @@ async function searchNearbyPlaces(type) {
     const loadingEl = document.getElementById('search-loading');
     const emptyEl = document.getElementById('search-empty');
 
-    // Build search query with location bias
-    let query = type;
-    if (userLocation) {
-        query = `${type} near me`;
-    }
+    const query = type;
 
     // Show loading
     resultsContainer.innerHTML = '';
@@ -2127,7 +2137,7 @@ async function searchNearbyPlaces(type) {
     emptyEl.style.display = 'none';
 
     try {
-        const response = await fetch(`${API_URL}/api/search?q=${encodeURIComponent(query)}&max_results=10`, {
+        const response = await fetch(buildSearchUrl(query, 10), {
             headers: getAuthHeaders()
         });
         if (!response.ok) throw new Error('Search failed');
@@ -2239,7 +2249,7 @@ async function searchGooglePlaces() {
     emptyEl.style.display = 'none';
 
     try {
-        const response = await fetch(`${API_URL}/api/search?q=${encodeURIComponent(query)}&max_results=10`, {
+        const response = await fetch(buildSearchUrl(query, 10), {
             headers: getAuthHeaders()
         });
         if (!response.ok) throw new Error('Search failed');

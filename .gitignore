@@ -20,6 +20,11 @@ temp/
 .idea/
 .vscode/
 *.swp
+.DS_Store
 
 # Local planning workspace
 .planning/
+
+# Local secret artifacts
+instagram_cookies.txt
+instagram_cookies.b64

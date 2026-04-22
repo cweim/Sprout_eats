@@ -1,5 +1,8 @@
 import asyncio
+import base64
+import binascii
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -7,11 +10,29 @@ from urllib.parse import urlparse
 
 import aiohttp
 import yt_dlp
+from yt_dlp.utils import DownloadError
 
 import config
 
 
 DOWNLOAD_TIMEOUT = config.DOWNLOAD_TIMEOUT
+INSTAGRAM_ACCESS_ERROR_MARKERS = (
+    "login required",
+    "requested content is not available",
+    "rate-limit reached",
+    "rate limit reached",
+    "please wait a few minutes",
+    "checkpoint required",
+    "challenge_required",
+)
+INSTAGRAM_COOKIEFILE_PATH = config.TEMP_DIR / "instagram_cookies.txt"
+INSTAGRAM_MAX_CONCURRENT_FETCHES = max(1, config.INSTAGRAM_MAX_CONCURRENT_FETCHES)
+_instagram_fetch_semaphore = asyncio.Semaphore(INSTAGRAM_MAX_CONCURRENT_FETCHES)
+_instagram_state_lock = asyncio.Lock()
+_instagram_active_jobs = 0
+_instagram_waiting_jobs = 0
+_instagram_failure_streak = 0
+_instagram_cooldown_until = 0.0
 
 
 class DownloadTimeoutError(Exception):
@@ -20,6 +41,14 @@ class DownloadTimeoutError(Exception):
 
 class VideoTooLongError(Exception):
     """Raised when video exceeds max duration."""
+
+
+class InstagramAccessError(Exception):
+    """Raised when Instagram blocks anonymous/authenticated retrieval."""
+
+
+class InstagramCooldownError(Exception):
+    """Raised when Instagram retrieval is temporarily paused after repeated failures."""
 
 
 @dataclass
@@ -46,6 +75,68 @@ def detect_platform(url: str) -> Optional[str]:
 
 def is_valid_url(url: str) -> bool:
     return detect_platform(url) is not None
+
+
+def instagram_request_will_queue() -> bool:
+    return _instagram_active_jobs >= INSTAGRAM_MAX_CONCURRENT_FETCHES or _instagram_waiting_jobs > 0
+
+
+def get_instagram_queue_status() -> tuple[int, int]:
+    return _instagram_active_jobs, _instagram_waiting_jobs
+
+
+def _is_instagram_access_error(error_text: str) -> bool:
+    lowered = error_text.lower()
+    return any(marker in lowered for marker in INSTAGRAM_ACCESS_ERROR_MARKERS)
+
+
+def _ensure_instagram_cookiefile() -> Optional[str]:
+    if not config.INSTAGRAM_COOKIES_B64:
+        return None
+
+    if INSTAGRAM_COOKIEFILE_PATH.exists() and INSTAGRAM_COOKIEFILE_PATH.stat().st_size > 0:
+        return str(INSTAGRAM_COOKIEFILE_PATH)
+
+    try:
+        cookie_bytes = base64.b64decode(config.INSTAGRAM_COOKIES_B64)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("INSTAGRAM_COOKIES_B64 is not valid base64") from exc
+
+    INSTAGRAM_COOKIEFILE_PATH.write_bytes(cookie_bytes)
+    return str(INSTAGRAM_COOKIEFILE_PATH)
+
+
+async def _enter_instagram_fetch_queue() -> None:
+    global _instagram_waiting_jobs, _instagram_active_jobs
+
+    async with _instagram_state_lock:
+        if _instagram_cooldown_until > time.time():
+            remaining = max(1, int(_instagram_cooldown_until - time.time()))
+            raise InstagramCooldownError(
+                f"Instagram retrieval is cooling down for {remaining} more seconds"
+            )
+        _instagram_waiting_jobs += 1
+
+    try:
+        await _instagram_fetch_semaphore.acquire()
+    finally:
+        async with _instagram_state_lock:
+            _instagram_waiting_jobs = max(0, _instagram_waiting_jobs - 1)
+            _instagram_active_jobs += 1
+
+
+async def _leave_instagram_fetch_queue(success: bool) -> None:
+    global _instagram_active_jobs, _instagram_failure_streak, _instagram_cooldown_until
+
+    async with _instagram_state_lock:
+        _instagram_active_jobs = max(0, _instagram_active_jobs - 1)
+        if success:
+            _instagram_failure_streak = 0
+        else:
+            _instagram_failure_streak += 1
+            if _instagram_failure_streak >= 3:
+                _instagram_cooldown_until = time.time() + config.INSTAGRAM_COOLDOWN_SECONDS
+        _instagram_fetch_semaphore.release()
 
 
 def _is_video_info(info: dict) -> bool:
@@ -167,6 +258,10 @@ async def download_content(url: str) -> DownloadResult:
     if not platform:
         raise ValueError("URL must be from Instagram or TikTok")
 
+    instagram_success = True
+    if platform == "instagram":
+        await _enter_instagram_fetch_queue()
+
     url_hash = str(abs(hash(url)))[:10]
     output_template = str(config.TEMP_DIR / f"{platform}_{url_hash}")
     loop = asyncio.get_event_loop()
@@ -178,89 +273,108 @@ async def download_content(url: str) -> DownloadResult:
         "extract_flat": False,
     }
 
+    if platform == "instagram":
+        cookiefile = _ensure_instagram_cookiefile()
+        if cookiefile:
+            base_opts["cookiefile"] = cookiefile
+
     def _extract_metadata():
         with yt_dlp.YoutubeDL(base_opts) as ydl:
             return ydl.extract_info(url, download=False)
 
     try:
-        async with asyncio.timeout(config.DOWNLOAD_TIMEOUT):
-            info = await loop.run_in_executor(None, _extract_metadata)
-    except asyncio.TimeoutError:
-        raise DownloadTimeoutError(f"Download timed out after {config.DOWNLOAD_TIMEOUT} seconds")
-
-    # Check video duration limit
-    duration = info.get("duration")
-    if duration and duration > config.MAX_VIDEO_DURATION:
-        raise VideoTooLongError(
-            f"Video is {duration}s, max allowed is {config.MAX_VIDEO_DURATION}s"
-        )
-
-    content_type = _detect_content_type(info, url)
-    video_path: Optional[Path] = None
-    audio_path: Optional[Path] = None
-    image_paths: list[Path] = []
-
-    if content_type == "video":
-        ydl_opts = {
-            **base_opts,
-            "format": "best",
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }
-            ],
-            "keepvideo": True,
-        }
-
-        def _download_video():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(url, download=True)
-
         try:
             async with asyncio.timeout(config.DOWNLOAD_TIMEOUT):
-                info = await loop.run_in_executor(None, _download_video)
+                info = await loop.run_in_executor(None, _extract_metadata)
         except asyncio.TimeoutError:
             raise DownloadTimeoutError(f"Download timed out after {config.DOWNLOAD_TIMEOUT} seconds")
+        except DownloadError as exc:
+            if platform == "instagram" and _is_instagram_access_error(str(exc)):
+                instagram_success = False
+                raise InstagramAccessError(str(exc)) from exc
+            raise
 
-        audio_path = Path(output_template + ".mp3")
+        # Check video duration limit
+        duration = info.get("duration")
+        if duration and duration > config.MAX_VIDEO_DURATION:
+            raise VideoTooLongError(
+                f"Video is {duration}s, max allowed is {config.MAX_VIDEO_DURATION}s"
+            )
 
-        for ext in ["mp4", "webm", "mkv"]:
-            potential_path = Path(output_template + f".{ext}")
-            if potential_path.exists():
-                video_path = potential_path
-                break
+        content_type = _detect_content_type(info, url)
+        video_path: Optional[Path] = None
+        audio_path: Optional[Path] = None
+        image_paths: list[Path] = []
 
-        if not video_path:
-            for file_path in config.TEMP_DIR.glob(f"{platform}_{url_hash}.*"):
-                if file_path.suffix not in [".mp3", ".m4a", ".wav"]:
-                    video_path = file_path
+        if content_type == "video":
+            ydl_opts = {
+                **base_opts,
+                "format": "best",
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }
+                ],
+                "keepvideo": True,
+            }
+
+            def _download_video():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    return ydl.extract_info(url, download=True)
+
+            try:
+                async with asyncio.timeout(config.DOWNLOAD_TIMEOUT):
+                    info = await loop.run_in_executor(None, _download_video)
+            except asyncio.TimeoutError:
+                raise DownloadTimeoutError(f"Download timed out after {config.DOWNLOAD_TIMEOUT} seconds")
+            except DownloadError as exc:
+                if platform == "instagram" and _is_instagram_access_error(str(exc)):
+                    instagram_success = False
+                    raise InstagramAccessError(str(exc)) from exc
+                raise
+
+            audio_path = Path(output_template + ".mp3")
+
+            for ext in ["mp4", "webm", "mkv"]:
+                potential_path = Path(output_template + f".{ext}")
+                if potential_path.exists():
+                    video_path = potential_path
                     break
-    else:
-        image_urls = _collect_image_urls_from_info(info)
-        if not image_urls and platform == "instagram":
-            image_urls = await _extract_instagram_image_urls_from_html(url)
-        image_paths = await _download_images(image_urls[:20], output_template)
 
-    title = info.get("title", "")
-    description = info.get("description", "") or ""
-    uploader = info.get("uploader") or info.get("uploader_id")
-    duration = info.get("duration")
-    hashtags = info.get("tags", []) or []
+            if not video_path:
+                for file_path in config.TEMP_DIR.glob(f"{platform}_{url_hash}.*"):
+                    if file_path.suffix not in [".mp3", ".m4a", ".wav"]:
+                        video_path = file_path
+                        break
+        else:
+            image_urls = _collect_image_urls_from_info(info)
+            if not image_urls and platform == "instagram":
+                image_urls = await _extract_instagram_image_urls_from_html(url)
+            image_paths = await _download_images(image_urls[:20], output_template)
 
-    return DownloadResult(
-        video_path=video_path,
-        audio_path=audio_path,
-        title=title,
-        description=description,
-        platform=platform,
-        content_type=content_type,
-        image_paths=image_paths,
-        uploader=uploader,
-        duration=duration,
-        hashtags=hashtags,
-    )
+        title = info.get("title", "")
+        description = info.get("description", "") or ""
+        uploader = info.get("uploader") or info.get("uploader_id")
+        duration = info.get("duration")
+        hashtags = info.get("tags", []) or []
+
+        return DownloadResult(
+            video_path=video_path,
+            audio_path=audio_path,
+            title=title,
+            description=description,
+            platform=platform,
+            content_type=content_type,
+            image_paths=image_paths,
+            uploader=uploader,
+            duration=duration,
+            hashtags=hashtags,
+        )
+    finally:
+        if platform == "instagram":
+            await _leave_instagram_fetch_queue(success=instagram_success)
 
 
 def cleanup_files(*paths: Path):
