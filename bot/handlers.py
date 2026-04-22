@@ -6,6 +6,7 @@ import warnings
 from io import BytesIO
 from urllib.parse import quote
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.error import BadRequest
 from telegram.warnings import PTBUserWarning
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 
@@ -44,6 +45,40 @@ warnings.filterwarnings(
     message=r"If 'per_message=False', 'CallbackQueryHandler' will not be tracked for every message\..*",
     category=PTBUserWarning,
 )
+
+
+def _is_stale_callback_error(error: BadRequest) -> bool:
+    message = str(error).lower()
+    return "query is too old" in message or "query id is invalid" in message
+
+
+def _is_noop_edit_error(error: BadRequest) -> bool:
+    return "message is not modified" in str(error).lower()
+
+
+async def _safe_answer_callback(query, text: str) -> bool:
+    try:
+        await query.answer(text)
+        return True
+    except BadRequest as exc:
+        if _is_stale_callback_error(exc):
+            logger.info("Ignoring stale callback answer for query %s: %s", query.id, exc)
+            return False
+        raise
+
+
+async def _safe_edit_callback_message(query, text: str, reply_markup=None) -> bool:
+    try:
+        await query.edit_message_text(text, reply_markup=reply_markup)
+        return True
+    except BadRequest as exc:
+        if _is_noop_edit_error(exc):
+            logger.info("Skipping no-op callback message edit for query %s", query.id)
+            return False
+        if _is_stale_callback_error(exc):
+            logger.info("Ignoring stale callback edit for query %s: %s", query.id, exc)
+            return False
+        raise
 
 # Review conversation states
 REVIEW_DISH_NAME = 100
@@ -733,8 +768,8 @@ async def toggle_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     pending_places = context.user_data.get("pending_places")
     if not pending_places:
-        await query.answer("Search expired!")
-        await query.edit_message_text("That search expired! Send the link again. 🔄")
+        await _safe_answer_callback(query, "Search expired!")
+        await _safe_edit_callback_message(query, "That search expired! Send the link again. 🔄")
         return
 
     # Get or initialize selected indices
@@ -745,12 +780,12 @@ async def toggle_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
         index = int(query.data.replace("toggle_place_", ""))
         if index in selected:
             selected.discard(index)
-            await query.answer("Removed")
+            await _safe_answer_callback(query, "Removed")
         else:
             selected.add(index)
-            await query.answer("Selected!")
+            await _safe_answer_callback(query, "Selected!")
     except (ValueError, IndexError):
-        await query.answer("Error!")
+        await _safe_answer_callback(query, "Error!")
         return
 
     context.user_data["selected_indices"] = selected
@@ -759,7 +794,7 @@ async def toggle_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
     video_meta = context.user_data.get("pending_video_meta", {})
     keyboard = build_selection_keyboard(pending_places, selected)
     message = build_selection_message(pending_places, selected, video_meta)
-    await query.edit_message_text(message, reply_markup=keyboard)
+    await _safe_edit_callback_message(query, message, reply_markup=keyboard)
 
 
 async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -771,12 +806,12 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     selected = context.user_data.get("selected_indices", set())
 
     if not pending_places:
-        await query.answer("Search expired!")
-        await query.edit_message_text("That search expired! Send the link again. 🔄")
+        await _safe_answer_callback(query, "Search expired!")
+        await _safe_edit_callback_message(query, "That search expired! Send the link again. 🔄")
         return
 
     if not selected:
-        await query.answer("Pick some places first!")
+        await _safe_answer_callback(query, "Pick some places first!")
         return
 
     await query.answer("Saving...")

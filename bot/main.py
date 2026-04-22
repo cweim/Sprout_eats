@@ -1,6 +1,7 @@
 import logging
 from datetime import timedelta
 from telegram import BotCommand, MenuButtonCommands, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -47,6 +48,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+async def handle_bot_error(update, context: ContextTypes.DEFAULT_TYPE):
+    """Log expected Telegram API issues compactly and preserve stack traces for real errors."""
+    error = context.error
+    if isinstance(error, BadRequest):
+        message = str(error).lower()
+        if "query is too old" in message or "query id is invalid" in message:
+            logger.info("Ignoring stale callback query error: %s", error)
+            return
+        if "message is not modified" in message:
+            logger.info("Ignoring no-op message edit error: %s", error)
+            return
+
+    logger.error(
+        "Unhandled bot error",
+        exc_info=(type(error), error, error.__traceback__) if error else True,
+    )
 
 
 async def check_review_reminders(context: ContextTypes.DEFAULT_TYPE):
@@ -196,6 +215,7 @@ def main():
 
     # Handle location messages (for /nearby command)
     app.add_handler(MessageHandler(filters.LOCATION, handle_location))
+    app.add_error_handler(handle_bot_error)
 
     logger.info("🗺️ Discovery Bot is ready!")
     app.run_polling(allowed_updates=["message", "callback_query"])

@@ -1,7 +1,9 @@
 import asyncio
 import base64
 import binascii
+import logging
 import re
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +16,7 @@ from yt_dlp.utils import DownloadError
 
 import config
 
+logger = logging.getLogger(__name__)
 
 DOWNLOAD_TIMEOUT = config.DOWNLOAD_TIMEOUT
 INSTAGRAM_ACCESS_ERROR_MARKERS = (
@@ -33,6 +36,7 @@ _instagram_active_jobs = 0
 _instagram_waiting_jobs = 0
 _instagram_failure_streak = 0
 _instagram_cooldown_until = 0.0
+_ffmpeg_resolution_logged = False
 
 
 class DownloadTimeoutError(Exception):
@@ -49,6 +53,19 @@ class InstagramAccessError(Exception):
 
 class InstagramCooldownError(Exception):
     """Raised when Instagram retrieval is temporarily paused after repeated failures."""
+
+
+def _log_media_tool_resolution_once() -> None:
+    global _ffmpeg_resolution_logged
+    if _ffmpeg_resolution_logged:
+        return
+
+    logger.info(
+        "Media tools resolved: ffmpeg=%s ffprobe=%s",
+        shutil.which("ffmpeg"),
+        shutil.which("ffprobe"),
+    )
+    _ffmpeg_resolution_logged = True
 
 
 @dataclass
@@ -104,6 +121,24 @@ def _ensure_instagram_cookiefile() -> Optional[str]:
 
     INSTAGRAM_COOKIEFILE_PATH.write_bytes(cookie_bytes)
     return str(INSTAGRAM_COOKIEFILE_PATH)
+
+
+def _find_downloaded_video_path(platform: str, url_hash: str) -> Optional[Path]:
+    for ext in ["mp4", "webm", "mkv", "mov"]:
+        potential_path = Path(config.TEMP_DIR / f"{platform}_{url_hash}.{ext}")
+        if potential_path.exists():
+            return potential_path
+
+    for file_path in config.TEMP_DIR.glob(f"{platform}_{url_hash}.*"):
+        if file_path.suffix.lower() not in {".mp3", ".m4a", ".wav", ".jpg", ".jpeg", ".png", ".webp"}:
+            return file_path
+
+    return None
+
+
+def _is_ffmpeg_postprocess_error(error_text: str) -> bool:
+    lowered = error_text.lower()
+    return "postprocessing:" in lowered and ("ffprobe" in lowered or "ffmpeg" in lowered)
 
 
 async def _enter_instagram_fetch_queue() -> None:
@@ -265,6 +300,7 @@ async def download_content(url: str) -> DownloadResult:
     url_hash = str(abs(hash(url)))[:10]
     output_template = str(config.TEMP_DIR / f"{platform}_{url_hash}")
     loop = asyncio.get_event_loop()
+    _log_media_tool_resolution_once()
 
     base_opts = {
         "outtmpl": output_template + ".%(ext)s",
@@ -333,21 +369,34 @@ async def download_content(url: str) -> DownloadResult:
                 if platform == "instagram" and _is_instagram_access_error(str(exc)):
                     instagram_success = False
                     raise InstagramAccessError(str(exc)) from exc
-                raise
-
-            audio_path = Path(output_template + ".mp3")
-
-            for ext in ["mp4", "webm", "mkv"]:
-                potential_path = Path(output_template + f".{ext}")
-                if potential_path.exists():
-                    video_path = potential_path
-                    break
+                if _is_ffmpeg_postprocess_error(str(exc)):
+                    video_path = _find_downloaded_video_path(platform, url_hash)
+                    if video_path:
+                        logger.warning(
+                            "Audio extraction failed after video download; continuing without audio. "
+                            "platform=%s url_hash=%s video_path=%s error=%s",
+                            platform,
+                            url_hash,
+                            video_path,
+                            exc,
+                        )
+                        audio_path = None
+                    else:
+                        logger.error(
+                            "Postprocessing failed and no downloaded video was recoverable. "
+                            "platform=%s url_hash=%s error=%s",
+                            platform,
+                            url_hash,
+                            exc,
+                        )
+                        raise
+                else:
+                    raise
+            else:
+                audio_path = Path(output_template + ".mp3")
 
             if not video_path:
-                for file_path in config.TEMP_DIR.glob(f"{platform}_{url_hash}.*"):
-                    if file_path.suffix not in [".mp3", ".m4a", ".wav"]:
-                        video_path = file_path
-                        break
+                video_path = _find_downloaded_video_path(platform, url_hash)
         else:
             image_urls = _collect_image_urls_from_info(info)
             if not image_urls and platform == "instagram":
