@@ -22,6 +22,30 @@ def _coerce_int(value: Any) -> Optional[int]:
         return None
 
 
+def ensure_user_exists(
+    user_id: int,
+    *,
+    username: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    language_code: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Ensure a Telegram user exists in the users table."""
+    supabase = get_supabase()
+
+    result = supabase.table("users").upsert(
+        {
+            "id": user_id,
+            "username": username,
+            "first_name": first_name,
+            "last_name": last_name,
+            "language_code": language_code,
+        }
+    ).execute()
+
+    return result.data[0] if result.data else None
+
+
 # =============================================================================
 # Place Operations
 # =============================================================================

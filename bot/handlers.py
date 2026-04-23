@@ -277,8 +277,24 @@ async def safe_edit_status(status_msg, text: str):
         logger.warning("Could not edit status message", exc_info=True)
 
 
+def ensure_bot_user(update: Update):
+    """Ensure the Telegram user exists in the users table before bot-side writes."""
+    telegram_user = update.effective_user
+    if not telegram_user:
+        return None
+
+    return repository.ensure_user_exists(
+        telegram_user.id,
+        username=telegram_user.username,
+        first_name=telegram_user.first_name,
+        last_name=telegram_user.last_name,
+        language_code=telegram_user.language_code,
+    )
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    ensure_bot_user(update)
     keyboard = []
 
     # Add viewer button if WEBAPP_URL is configured
@@ -801,6 +817,7 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     """Save all selected places."""
     user_id = update.effective_user.id
     query = update.callback_query
+    ensure_bot_user(update)
 
     pending_places = context.user_data.get("pending_places")
     selected = context.user_data.get("selected_indices", set())
@@ -895,6 +912,7 @@ async def unresolved_pick_callback(update: Update, context: ContextTypes.DEFAULT
     await query.edit_message_text(f"Saving “{place['name']}”...")
 
     user_id = update.effective_user.id
+    ensure_bot_user(update)
     source_url = context.user_data.get("pending_url", "")
     source_platform = context.user_data.get("pending_platform", "unknown")
     video_meta = context.user_data.get("pending_video_meta", {})
@@ -986,6 +1004,7 @@ async def incorrect_place_callback(update: Update, context: ContextTypes.DEFAULT
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
+    ensure_bot_user(update)
 
     if not is_valid_url(text):
         return  # Not a valid Instagram/TikTok URL, ignore
@@ -1333,6 +1352,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     pending_platform = context.user_data.get("pending_platform", "unknown")
+    ensure_bot_user(update)
 
     status_msg = await update.message.reply_text("Digging for that place... 🔍")
 
@@ -1458,6 +1478,7 @@ async def handle_feedback_category(update: Update, context: ContextTypes.DEFAULT
 
     category = data.split(":", 1)[1]
     user_id = update.effective_user.id
+    ensure_bot_user(update)
     try:
         report = repository.create_feedback_report(
             user_id=user_id,
@@ -1951,6 +1972,7 @@ async def review_overall_remarks(update: Update, context: ContextTypes.DEFAULT_T
     try:
         # Get user_id from Telegram
         user_id = update.effective_user.id
+        ensure_bot_user(update)
         saved_review = repository.create_or_update_review(
             place_id=place_id,
             user_id=user_id,
@@ -2011,6 +2033,7 @@ async def handle_review_callback(update: Update, context: ContextTypes.DEFAULT_T
     """Handle 'Write Review' button callback."""
     user_id = update.effective_user.id
     query = update.callback_query
+    ensure_bot_user(update)
     await query.answer()
 
     # Callback data format: "review:place_id:place_name"
