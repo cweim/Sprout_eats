@@ -4,6 +4,7 @@ import pytest
 
 from services.instagram_pipeline import (
     extract_instagram_metadata_no_cookie,
+    extract_instagram_metadata_no_cookie_direct,
     is_retryable_instagram_error,
     run_instagram_place_pipeline,
 )
@@ -116,3 +117,52 @@ def test_is_retryable_instagram_error():
     assert is_retryable_instagram_error("403 Forbidden")
     assert is_retryable_instagram_error("timed out after 15s")
     assert not is_retryable_instagram_error("No usable public Instagram metadata found")
+
+
+@pytest.mark.asyncio
+async def test_extract_instagram_metadata_no_cookie_prefers_instaloader_error(monkeypatch):
+    html_candidate = make_candidate(
+        success=False,
+        source="instagram_public_html",
+        description="",
+        error="No meaningful public metadata found in HTML",
+    )
+    instaloader_candidate = make_candidate(
+        success=False,
+        source="instagram_instaloader",
+        description="",
+        error="403 Forbidden",
+    )
+
+    async def fake_extract_with_timeout(url: str):
+        return [html_candidate, instaloader_candidate]
+
+    async def fake_noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("services.instagram_pipeline._extract_with_timeout", fake_extract_with_timeout)
+    monkeypatch.setattr("services.instagram_pipeline._enter_instagram_queue", fake_noop)
+    monkeypatch.setattr("services.instagram_pipeline._leave_instagram_queue", fake_noop)
+
+    result = await extract_instagram_metadata_no_cookie_direct("https://www.instagram.com/reel/ABC123/")
+
+    assert result["status"] == "failed"
+    assert result["error"] == "403 Forbidden"
+
+
+@pytest.mark.asyncio
+async def test_extract_instagram_metadata_no_cookie_uses_worker_backend(monkeypatch):
+    candidate = make_candidate(source="instagram_worker")
+
+    async def fake_worker(url: str):
+        return candidate
+
+    monkeypatch.setattr("services.instagram_pipeline.config.INSTAGRAM_EXTRACTION_BACKEND", "worker")
+    monkeypatch.setattr("services.instagram_pipeline.extract_instagram_via_worker", fake_worker)
+
+    result = await extract_instagram_metadata_no_cookie("https://www.instagram.com/reel/ABC123/")
+
+    assert result["status"] == "ok"
+    assert result["metadata_candidate"].source == "instagram_worker"
+
+    monkeypatch.setattr("services.instagram_pipeline.config.INSTAGRAM_EXTRACTION_BACKEND", "direct")

@@ -7,6 +7,7 @@ from typing import Any
 
 import config
 from services.instagram_public import extract_instagram_metadata
+from services.instagram_worker_client import extract_instagram_via_worker
 from services.metadata_normalizer import metadata_candidate_to_runtime_record
 from services.place_pipeline import extract_place_evidence_from_metadata, resolve_place_slots
 
@@ -74,6 +75,28 @@ async def _extract_with_timeout(url: str) -> list[Any]:
     return await asyncio.wait_for(extract_instagram_metadata(url), timeout=timeout)
 
 
+def _choose_best_error(candidates: list[Any]) -> str | None:
+    errored = [candidate for candidate in candidates if getattr(candidate, "error", None)]
+    if not errored:
+        return None
+
+    # Prefer the stronger extractor's error so logs reflect the real blocker rather
+    # than the lightweight HTML parser's expected miss.
+    source_priority = {
+        "instagram_worker": 3,
+        "instagram_instaloader": 2,
+        "instagram_public_html": 1,
+    }
+    errored.sort(
+        key=lambda candidate: (
+            source_priority.get(getattr(candidate, "source", ""), 0),
+            len((candidate.error or "").strip()),
+        ),
+        reverse=True,
+    )
+    return errored[0].error
+
+
 def _choose_best_candidate(candidates: list[Any]):
     successful = [candidate for candidate in candidates if getattr(candidate, "success", False)]
     if not successful:
@@ -90,6 +113,25 @@ def _choose_best_candidate(candidates: list[Any]):
 
 
 async def extract_instagram_metadata_no_cookie(url: str) -> dict[str, Any]:
+    if config.INSTAGRAM_EXTRACTION_BACKEND == "worker":
+        candidate = await extract_instagram_via_worker(url)
+        if candidate.success:
+            return {
+                "status": "ok",
+                "metadata_candidate": candidate,
+                "candidates": [candidate],
+                "error": None,
+            }
+        return {
+            "status": "failed",
+            "metadata_candidate": None,
+            "candidates": [candidate],
+            "error": candidate.error or "Instagram worker extraction failed",
+        }
+    return await extract_instagram_metadata_no_cookie_direct(url)
+
+
+async def extract_instagram_metadata_no_cookie_direct(url: str) -> dict[str, Any]:
     await _enter_instagram_queue()
     success = False
     try:
@@ -114,7 +156,7 @@ async def extract_instagram_metadata_no_cookie(url: str) -> dict[str, Any]:
                 "error": None,
             }
 
-        error = next((candidate.error for candidate in candidates if getattr(candidate, "error", None)), None)
+        error = _choose_best_error(candidates)
         return {
             "status": "failed",
             "metadata_candidate": None,
