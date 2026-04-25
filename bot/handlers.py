@@ -32,6 +32,10 @@ from services.place_pipeline import (
     resolve_place_slots,
 )
 from services.maps import generate_map_image
+from services.instagram_pipeline import (
+    InstagramNoCookieCooldownError,
+    run_instagram_place_pipeline,
+)
 from database import supabase_repository as repository
 from database.supabase_client import (
     upload_photo as storage_upload_photo,
@@ -560,6 +564,250 @@ def get_menu_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
+def _clear_manual_place_pending(context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.pop("pending_url", None)
+    context.user_data.pop("pending_platform", None)
+
+
+def _clear_instagram_fallback_pending(context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.pop("instagram_fallback_pending", None)
+
+
+def _set_instagram_fallback_pending(context: ContextTypes.DEFAULT_TYPE, source_url: str) -> None:
+    context.user_data["pending_url"] = source_url
+    context.user_data["pending_platform"] = "instagram"
+    context.user_data["instagram_fallback_pending"] = {
+        "source_url": source_url,
+        "platform": "instagram",
+    }
+
+
+async def prompt_instagram_manual_fallback(status_msg, context: ContextTypes.DEFAULT_TYPE, source_url: str, *, unresolved_candidates: list[dict] | None = None) -> None:
+    _set_instagram_fallback_pending(context, source_url)
+    if unresolved_candidates:
+        context.user_data["pending_unresolved_slots"] = unresolved_candidates[:6]
+        await status_msg.edit_text(
+            "I found possible place matches, but couldn't verify them confidently enough to auto-save.\n"
+            f"{build_reviewable_candidate_message(unresolved_candidates)}\n\n"
+            "Tap a suggestion to save it, or reply with the place name, or send a screenshot of the post.",
+            reply_markup=build_reviewable_candidate_keyboard(unresolved_candidates),
+        )
+        return
+
+    await status_msg.edit_text(
+        "I couldn't reliably extract the place from this Instagram post.\n\n"
+        "Reply with the place name, or send a screenshot of the post."
+    )
+
+
+async def _save_single_place_result(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int,
+    place,
+    source_url: str,
+    source_platform: str,
+    source_title: str | None = None,
+    source_uploader: str | None = None,
+    source_duration: int | None = None,
+    source_hashtags: str | None = None,
+    source_language: str | None = None,
+    source_transcript: str | None = None,
+    source_transcript_en: str | None = None,
+):
+    saved_place = repository.add_place(
+        user_id=user_id,
+        name=place.name,
+        address=place.address,
+        latitude=place.latitude,
+        longitude=place.longitude,
+        google_place_id=place.place_id,
+        source_url=source_url,
+        source_platform=source_platform,
+        source_title=source_title,
+        source_uploader=source_uploader,
+        source_duration=source_duration,
+        source_hashtags=source_hashtags,
+        place_types=",".join(place.types) if place.types else None,
+        place_rating=place.rating,
+        place_rating_count=place.rating_count,
+        place_price_level=place.price_level,
+        place_opening_hours=place.opening_hours,
+        source_language=source_language,
+        source_transcript=source_transcript,
+        source_transcript_en=source_transcript_en,
+    )
+
+    await update.message.reply_location(
+        latitude=place.latitude,
+        longitude=place.longitude,
+    )
+
+    confirmation = build_saved_place_message(place, source_url=source_url)
+
+    saved_place_id = get_saved_place_id(saved_place)
+    correction_keyboard = None
+    if saved_place_id:
+        correction_keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                "This is incorrect",
+                callback_data=f"incorrect_place_{saved_place_id}",
+            )
+        ]])
+        context.user_data["correction_place_context"] = {
+            "place_id": saved_place_id,
+            "source_url": source_url,
+            "source_platform": source_platform,
+        }
+
+    await update.message.reply_text(
+        confirmation,
+        reply_markup=correction_keyboard,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+
+
+async def _start_multi_place_selection(
+    context: ContextTypes.DEFAULT_TYPE,
+    status_msg,
+    *,
+    places: list,
+    source_url: str,
+    source_platform: str,
+    source_title: str | None = None,
+    source_uploader: str | None = None,
+    source_duration: int | None = None,
+    source_hashtags: str | None = None,
+    source_language: str | None = None,
+    source_transcript: str | None = None,
+    source_transcript_en: str | None = None,
+    match_source: str | None = None,
+    unresolved_message: str | None = None,
+):
+    context.user_data["pending_places"] = [
+        {
+            "name": p.name,
+            "address": p.address,
+            "latitude": p.latitude,
+            "longitude": p.longitude,
+            "place_id": p.place_id,
+            "types": p.types,
+            "rating": p.rating,
+            "rating_count": p.rating_count,
+            "price_level": p.price_level,
+            "opening_hours": p.opening_hours,
+            "confidence_score": p.confidence_score,
+            "confidence_label": p.confidence_label,
+            "confidence_reason": p.confidence_reason,
+            "matched_query": p.matched_query,
+            "matched_source_type": p.matched_source_type,
+        }
+        for p in places
+    ]
+    context.user_data["pending_url"] = source_url
+    context.user_data["pending_platform"] = source_platform
+    context.user_data["pending_video_meta"] = {
+        "source_title": source_title,
+        "source_uploader": source_uploader,
+        "source_duration": source_duration,
+        "source_hashtags": source_hashtags,
+        "source_language": source_language,
+        "source_transcript": source_transcript,
+        "source_transcript_en": source_transcript_en,
+        "match_source": match_source,
+        "unresolved_message": unresolved_message,
+    }
+
+    high_confidence_indices = {
+        i for i, place in enumerate(context.user_data["pending_places"])
+        if place.get("confidence_label") == "high"
+    }
+    context.user_data["selected_indices"] = high_confidence_indices or {0}
+
+    selected = context.user_data["selected_indices"]
+    keyboard = build_selection_keyboard(context.user_data["pending_places"], selected)
+    review_text = build_selection_message(
+        context.user_data["pending_places"],
+        selected,
+        context.user_data["pending_video_meta"],
+    )
+
+    await status_msg.edit_text(review_text, reply_markup=keyboard)
+
+
+async def _handle_instagram_no_cookie_url(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, status_msg) -> bool:
+    user_id = update.effective_user.id
+    await status_msg.edit_text("Reading the caption... 📝")
+    pipeline = await run_instagram_place_pipeline(text)
+
+    if pipeline["status"] == "failed":
+        logger.warning("Instagram no-cookie pipeline failed for %s: %s", text, pipeline.get("error"))
+        await prompt_instagram_manual_fallback(status_msg, context, text)
+        return True
+
+    candidate = pipeline.get("metadata_candidate")
+    source_title = getattr(candidate, "title", "") if candidate else ""
+    source_uploader = getattr(candidate, "uploader", None) if candidate else None
+    source_duration = getattr(candidate, "duration", None) if candidate else None
+    hashtags = getattr(candidate, "hashtags", []) if candidate else []
+    source_hashtags = ",".join(hashtags) if hashtags else None
+    slots = pipeline.get("slots") or []
+    suggestions = pipeline.get("suggestions") or []
+    places = pipeline.get("places") or []
+    unresolved_suggestions = pipeline.get("unresolved_suggestions") or []
+
+    if slots:
+        await status_msg.edit_text("Resolving place names... 🔎")
+
+    if not places:
+        reviewable_candidates = collect_reviewable_unresolved_candidates(unresolved_suggestions)
+        await prompt_instagram_manual_fallback(
+            status_msg,
+            context,
+            text,
+            unresolved_candidates=reviewable_candidates if reviewable_candidates else None,
+        )
+        return True
+
+    resolved_sources = [place.matched_source_type for place in places if place.matched_source_type]
+    match_source = resolved_sources[0] if resolved_sources else (slots[0].source if slots else None)
+
+    if len(places) == 1 and not unresolved_suggestions:
+        await status_msg.delete()
+        await _save_single_place_result(
+            update,
+            context,
+            user_id=user_id,
+            place=places[0],
+            source_url=text,
+            source_platform="instagram",
+            source_title=source_title,
+            source_uploader=source_uploader,
+            source_duration=source_duration,
+            source_hashtags=source_hashtags,
+        )
+        _clear_instagram_fallback_pending(context)
+        return True
+
+    await _start_multi_place_selection(
+        context,
+        status_msg,
+        places=places,
+        source_url=text,
+        source_platform="instagram",
+        source_title=source_title,
+        source_uploader=source_uploader,
+        source_duration=source_duration,
+        source_hashtags=source_hashtags,
+        match_source=match_source,
+        unresolved_message=build_unresolved_slot_message(unresolved_suggestions),
+    )
+    _clear_instagram_fallback_pending(context)
+    return True
+
+
 def get_match_source_label(video_meta: dict) -> str:
     """Return a short label describing where the matches came from."""
     source = video_meta.get("match_source")
@@ -1014,6 +1262,10 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_msg = await update.message.reply_text("Ooh, fresh content! Let me dig in... 🔍")
 
     try:
+        if platform == "instagram" and config.INSTAGRAM_NO_COOKIE_ENABLED:
+            await _handle_instagram_no_cookie_url(update, context, text, status_msg)
+            return
+
         # Step 1: Download
         if platform == "instagram" and instagram_request_will_queue():
             active_jobs, waiting_jobs = get_instagram_queue_status()
@@ -1301,6 +1553,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Instagram processing is busy right now. I’ve queued your request and will process it shortly.\n\n"
             "If you already know the place name, you can reply with it and I’ll search manually."
         )
+    except InstagramNoCookieCooldownError as e:
+        logger.warning("Instagram no-cookie pipeline cooling down: %s", e)
+        await prompt_instagram_manual_fallback(status_msg, context, text)
     except InstagramAccessError as e:
         logger.error("Instagram access error: %s", e)
         context.user_data["pending_url"] = text
@@ -1341,8 +1596,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Always treat valid URLs as new link submissions,
     # even if we were waiting for a manual place name.
     if is_valid_url(text):
-        context.user_data.pop("pending_url", None)
-        context.user_data.pop("pending_platform", None)
+        _clear_manual_place_pending(context)
+        _clear_instagram_fallback_pending(context)
         await handle_url(update, context)
         return
 
@@ -1378,8 +1633,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         # Clear pending state
-        context.user_data.pop("pending_url", None)
-        context.user_data.pop("pending_platform", None)
+        _clear_manual_place_pending(context)
+        _clear_instagram_fallback_pending(context)
 
         await status_msg.delete()
 
@@ -1400,6 +1655,88 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(
             "Hmm, couldn't find that one. Try a different name?"
         )
+
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Route Telegram photos to Instagram fallback OCR or review-photo upload."""
+    instagram_fallback = context.user_data.get("instagram_fallback_pending")
+    if instagram_fallback and update.message and update.message.photo:
+        status_msg = await update.message.reply_text("Reading the screenshot... 🖼️")
+        temp_path = None
+        try:
+            telegram_photo = update.message.photo[-1]
+            telegram_file = await telegram_photo.get_file()
+            temp_path = config.TEMP_DIR / f"instagram_fallback_{telegram_photo.file_unique_id}.jpg"
+            await telegram_file.download_to_drive(custom_path=str(temp_path))
+            ocr_text = extract_text_from_images([temp_path])
+            if not ocr_text.strip():
+                await status_msg.edit_text(
+                    "I couldn't read a place from that screenshot.\n\n"
+                    "Reply with the place name, or send another screenshot."
+                )
+                return
+
+            runtime_record = build_runtime_metadata_record(
+                source_url=instagram_fallback["source_url"],
+                platform="instagram",
+                ocr_text=ocr_text,
+            )
+            slots = extract_place_evidence_from_metadata(runtime_record)
+            suggestions = await resolve_place_slots(slots) if slots else []
+            places, unresolved_suggestions = collect_places_from_slot_suggestions(suggestions)
+
+            if not places:
+                reviewable_candidates = collect_reviewable_unresolved_candidates(unresolved_suggestions)
+                if reviewable_candidates:
+                    context.user_data["pending_unresolved_slots"] = reviewable_candidates[:6]
+                    await status_msg.edit_text(
+                        "I found possible place matches in the screenshot, but couldn't verify them confidently enough to auto-save.\n"
+                        f"{build_reviewable_candidate_message(reviewable_candidates)}\n\n"
+                        "Tap a suggestion to save it, or reply with the place name, or send another screenshot.",
+                        reply_markup=build_reviewable_candidate_keyboard(reviewable_candidates),
+                    )
+                else:
+                    await status_msg.edit_text(
+                        "I still couldn't verify a place from that screenshot.\n\n"
+                        "Reply with the place name, or send another screenshot."
+                    )
+                return
+
+            await status_msg.delete()
+            if len(places) == 1 and not unresolved_suggestions:
+                await _save_single_place_result(
+                    update,
+                    context,
+                    user_id=update.effective_user.id,
+                    place=places[0],
+                    source_url=instagram_fallback["source_url"],
+                    source_platform="instagram",
+                )
+            else:
+                resolved_sources = [place.matched_source_type for place in places if place.matched_source_type]
+                match_source = resolved_sources[0] if resolved_sources else (slots[0].source if slots else None)
+                await _start_multi_place_selection(
+                    context,
+                    status_msg=await update.message.reply_text("Choose the place(s) you want to save."),
+                    places=places,
+                    source_url=instagram_fallback["source_url"],
+                    source_platform="instagram",
+                    match_source=match_source,
+                    unresolved_message=build_unresolved_slot_message(unresolved_suggestions),
+                )
+            _clear_instagram_fallback_pending(context)
+            return
+        except Exception as exc:
+            logger.error("Instagram fallback screenshot processing failed: %s", exc)
+            await status_msg.edit_text(
+                "I couldn't process that screenshot.\n\n"
+                "Reply with the place name, or send another screenshot."
+            )
+            return
+        finally:
+            cleanup_files(temp_path)
+
+    await handle_review_photo_upload(update, context)
 
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

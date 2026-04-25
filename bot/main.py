@@ -31,6 +31,7 @@ from bot.handlers import (
     delete_place_callback,
     unresolved_pick_callback,
     handle_text,
+    handle_photo,
     handle_location,
     review_conversation_handler,
     handle_remind_later,
@@ -208,7 +209,7 @@ def main():
     app.add_handler(review_conversation_handler)
 
     # Review photo uploads (only active after Telegram review save)
-    app.add_handler(MessageHandler(filters.PHOTO, handle_review_photo_upload))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     # Handle text messages (URLs and place name responses)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
