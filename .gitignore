@@ -28,3 +28,9 @@ temp/
 # Local secret artifacts
 instagram_cookies.txt
 instagram_cookies.b64
+
+# Local evaluation artifacts
+place-extraction-pipeline/datasets/ig_random_10_links.txt
+place-extraction-pipeline/datasets/instagram_no_cookie_retry_simulation.json
+place-extraction-pipeline/datasets/public_extractor_evaluation*.json
+place-extraction-pipeline/datasets/public_extractor_evaluation*.md
