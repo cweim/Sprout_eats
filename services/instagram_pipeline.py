@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 import config
+from services.instagram_apify_client import extract_instagram_via_apify
 from services.instagram_public import extract_instagram_metadata
 from services.instagram_worker_client import extract_instagram_via_worker
 from services.metadata_normalizer import metadata_candidate_to_runtime_record
@@ -83,6 +84,7 @@ def _choose_best_error(candidates: list[Any]) -> str | None:
     # Prefer the stronger extractor's error so logs reflect the real blocker rather
     # than the lightweight HTML parser's expected miss.
     source_priority = {
+        "instagram_apify": 4,
         "instagram_worker": 3,
         "instagram_instaloader": 2,
         "instagram_public_html": 1,
@@ -113,6 +115,21 @@ def _choose_best_candidate(candidates: list[Any]):
 
 
 async def extract_instagram_metadata_no_cookie(url: str) -> dict[str, Any]:
+    if config.INSTAGRAM_EXTRACTION_BACKEND == "apify":
+        candidate = await extract_instagram_via_apify(url)
+        if candidate.success:
+            return {
+                "status": "ok",
+                "metadata_candidate": candidate,
+                "candidates": [candidate],
+                "error": None,
+            }
+        return {
+            "status": "failed",
+            "metadata_candidate": None,
+            "candidates": [candidate],
+            "error": candidate.error or "Instagram Apify extraction failed",
+        }
     if config.INSTAGRAM_EXTRACTION_BACKEND == "worker":
         candidate = await extract_instagram_via_worker(url)
         if candidate.success:

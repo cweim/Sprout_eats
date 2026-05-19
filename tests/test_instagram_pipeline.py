@@ -47,6 +47,7 @@ async def test_extract_instagram_metadata_no_cookie_retries_once(monkeypatch):
     async def fake_sleep(seconds: float):
         return None
 
+    monkeypatch.setattr("services.instagram_pipeline.config.INSTAGRAM_EXTRACTION_BACKEND", "direct")
     monkeypatch.setattr("services.instagram_pipeline._extract_with_timeout", fake_extract_with_timeout)
     monkeypatch.setattr("services.instagram_pipeline._enter_instagram_queue", lambda: fake_sleep(0))
     monkeypatch.setattr("services.instagram_pipeline._leave_instagram_queue", lambda success: fake_sleep(0))
@@ -140,6 +141,7 @@ async def test_extract_instagram_metadata_no_cookie_prefers_instaloader_error(mo
     async def fake_noop(*args, **kwargs):
         return None
 
+    monkeypatch.setattr("services.instagram_pipeline.config.INSTAGRAM_EXTRACTION_BACKEND", "direct")
     monkeypatch.setattr("services.instagram_pipeline._extract_with_timeout", fake_extract_with_timeout)
     monkeypatch.setattr("services.instagram_pipeline._enter_instagram_queue", fake_noop)
     monkeypatch.setattr("services.instagram_pipeline._leave_instagram_queue", fake_noop)
@@ -164,5 +166,23 @@ async def test_extract_instagram_metadata_no_cookie_uses_worker_backend(monkeypa
 
     assert result["status"] == "ok"
     assert result["metadata_candidate"].source == "instagram_worker"
+
+    monkeypatch.setattr("services.instagram_pipeline.config.INSTAGRAM_EXTRACTION_BACKEND", "direct")
+
+
+@pytest.mark.asyncio
+async def test_extract_instagram_metadata_no_cookie_uses_apify_backend(monkeypatch):
+    candidate = make_candidate(source="instagram_apify")
+
+    async def fake_apify(url: str):
+        return candidate
+
+    monkeypatch.setattr("services.instagram_pipeline.config.INSTAGRAM_EXTRACTION_BACKEND", "apify")
+    monkeypatch.setattr("services.instagram_pipeline.extract_instagram_via_apify", fake_apify)
+
+    result = await extract_instagram_metadata_no_cookie("https://www.instagram.com/reel/ABC123/")
+
+    assert result["status"] == "ok"
+    assert result["metadata_candidate"].source == "instagram_apify"
 
     monkeypatch.setattr("services.instagram_pipeline.config.INSTAGRAM_EXTRACTION_BACKEND", "direct")

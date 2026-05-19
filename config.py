@@ -57,3 +57,5 @@ INSTAGRAM_NO_COOKIE_COOLDOWN_SECONDS = int(os.getenv("INSTAGRAM_NO_COOKIE_COOLDO
 INSTAGRAM_EXTRACTION_BACKEND = os.getenv("INSTAGRAM_EXTRACTION_BACKEND", "direct").strip().lower()
 INSTAGRAM_WORKER_URL = os.getenv("INSTAGRAM_WORKER_URL", "").strip()
 INSTAGRAM_WORKER_TOKEN = os.getenv("INSTAGRAM_WORKER_TOKEN", "").strip()
+APIFY_API_TOKEN = os.getenv("APIFY_API_TOKEN", "").strip()
+APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID", "apify/instagram-reel-scraper").strip()
