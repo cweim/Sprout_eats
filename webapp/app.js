@@ -2826,8 +2826,10 @@ async function initApp() {
         return;
     }
 
-    // Render the saved places immediately.
-    displayPlacesOnMap(true);
+    // Prefer a zoomed-in user-centric map on first load when location is available.
+    // Fall back to the previous "fit all places" overview if geolocation is unavailable.
+    const initialLocation = await requestUserLocation(true);
+    displayPlacesOnMap(!initialLocation);
 
     ensurePlacesUiInitialized();
 
@@ -2836,7 +2838,6 @@ async function initApp() {
 
     // Load secondary data in the background so first paint is faster.
     loadReviews();
-    requestUserLocation(false);
 
     // Update all filter counts
     updateMapFilterCounts();

@@ -214,6 +214,7 @@ body {
     display: none;
     flex-direction: column;
     height: 100%;
+    overflow-x: hidden;
 }
 
 #list-view.active {
@@ -446,6 +447,7 @@ body {
 #places-list {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 0 16px 16px;
 }
 
@@ -461,6 +463,9 @@ body {
     transition: all 0.2s ease;
     min-height: 48px;
     position: relative;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
 }
 
 /* Swipe-to-delete indicator */
@@ -3234,6 +3239,7 @@ button:disabled,
     display: none;
     flex-direction: column;
     height: 100%;
+    overflow-x: hidden;
 }
 
 #reviews-view.active {
@@ -3316,6 +3322,7 @@ button:disabled,
 #reviews-list {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 0 16px 16px;
 }
 
@@ -3349,6 +3356,9 @@ button:disabled,
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
     cursor: pointer;
     transition: all 0.2s ease;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
 }
 
 .review-card:hover {
