@@ -44,12 +44,14 @@ CREATE TABLE IF NOT EXISTS places (
     is_visited BOOLEAN DEFAULT FALSE,
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ DEFAULT NULL  -- NULL = active; set to timestamp for soft delete
 );
 
 CREATE INDEX IF NOT EXISTS idx_places_user_id ON places(user_id);
 CREATE INDEX IF NOT EXISTS idx_places_user_id_created_at ON places(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_places_google_place_id ON places(google_place_id);
+CREATE INDEX IF NOT EXISTS idx_places_not_deleted ON places(user_id, deleted_at) WHERE deleted_at IS NULL;
 
 -- =============================================================================
 -- Reviews Table

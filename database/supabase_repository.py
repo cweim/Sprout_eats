@@ -76,13 +76,15 @@ def add_place(
     """Add a new place for a user."""
     supabase = get_supabase()
 
-    # Check for duplicate by google_place_id for this user
+    # Check for duplicate by google_place_id for this user (ignore soft-deleted rows so
+    # a user can re-save a place they previously deleted).
     if google_place_id:
         existing = (
             supabase.table("places")
             .select("*")
             .eq("user_id", user_id)
             .eq("google_place_id", google_place_id)
+            .is_("deleted_at", "null")
             .execute()
         )
         if existing.data:
@@ -122,6 +124,7 @@ def get_all_places(user_id: int, limit: Optional[int] = None, offset: int = 0) -
         supabase.table("places")
         .select("*")
         .eq("user_id", user_id)
+        .is_("deleted_at", "null")
         .order("created_at", desc=True)
     )
     if limit is not None:
@@ -139,6 +142,7 @@ def get_place_count(user_id: int) -> int:
         supabase.table("places")
         .select("id", count="exact")
         .eq("user_id", user_id)
+        .is_("deleted_at", "null")
         .execute()
     )
 
@@ -168,6 +172,7 @@ def get_place_by_id(user_id: int, place_id: int) -> Optional[Dict[str, Any]]:
         .select("*")
         .eq("user_id", user_id)
         .eq("id", place_id)
+        .is_("deleted_at", "null")
         .execute()
     )
 
@@ -197,14 +202,15 @@ def update_place(user_id: int, place_id: int, **kwargs) -> Optional[Dict[str, An
 
 
 def delete_place(user_id: int, place_id: int) -> bool:
-    """Delete a place by ID."""
+    """Soft-delete a place by ID (sets deleted_at; row is retained in DB)."""
     supabase = get_supabase()
 
     result = (
         supabase.table("places")
-        .delete()
+        .update({"deleted_at": datetime.utcnow().isoformat()})
         .eq("user_id", user_id)
         .eq("id", place_id)
+        .is_("deleted_at", "null")
         .execute()
     )
 
@@ -212,13 +218,16 @@ def delete_place(user_id: int, place_id: int) -> bool:
 
 
 def clear_all_places(user_id: int) -> int:
-    """Delete all places for a user. Returns count deleted."""
+    """Soft-delete all active places for a user. Returns count soft-deleted."""
     supabase = get_supabase()
 
-    # Get count first
-    count = get_place_count(user_id)
+    count = get_place_count(user_id)  # already filters deleted_at IS NULL
+    if count == 0:
+        return 0
 
-    supabase.table("places").delete().eq("user_id", user_id).execute()
+    supabase.table("places").update(
+        {"deleted_at": datetime.utcnow().isoformat()}
+    ).eq("user_id", user_id).is_("deleted_at", "null").execute()
 
     return count
 
@@ -946,9 +955,11 @@ def get_dashboard_overview() -> Dict[str, Any]:
     users_new_7d = (
         supabase.table("users").select("id", count="exact").gte("created_at", since_7d).execute().count or 0
     )
-    places_total = supabase.table("places").select("id", count="exact").execute().count or 0
+    places_total = (
+        supabase.table("places").select("id", count="exact").is_("deleted_at", "null").execute().count or 0
+    )
     places_visited_total = (
-        supabase.table("places").select("id", count="exact").eq("is_visited", True).execute().count or 0
+        supabase.table("places").select("id", count="exact").eq("is_visited", True).is_("deleted_at", "null").execute().count or 0
     )
     reviews_total = supabase.table("reviews").select("id", count="exact").execute().count or 0
     pending_reminders = (
