@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS places (
     longitude FLOAT NOT NULL,
     google_place_id TEXT,
     source_url TEXT,
-    source_platform TEXT,  -- 'instagram', 'tiktok', 'manual'
+    source_platform TEXT CHECK (source_platform IN ('instagram', 'tiktok', 'manual')),
     source_title TEXT,
     source_uploader TEXT,
     source_duration INT,
@@ -43,10 +43,12 @@ CREATE TABLE IF NOT EXISTS places (
     place_opening_hours TEXT,
     is_visited BOOLEAN DEFAULT FALSE,
     notes TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_places_user_id ON places(user_id);
+CREATE INDEX IF NOT EXISTS idx_places_user_id_created_at ON places(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_places_google_place_id ON places(google_place_id);
 
 -- =============================================================================
@@ -115,6 +117,7 @@ CREATE TABLE IF NOT EXISTS review_reminders (
 );
 
 CREATE INDEX IF NOT EXISTS idx_review_reminders_user_id ON review_reminders(user_id);
+CREATE INDEX IF NOT EXISTS idx_review_reminders_pending ON review_reminders(reminder_sent, dont_ask_again) WHERE reminder_sent = FALSE AND dont_ask_again = FALSE;
 
 -- =============================================================================
 -- Feedback Reports Table
@@ -186,6 +189,34 @@ CREATE TABLE IF NOT EXISTS app_events (
 CREATE INDEX IF NOT EXISTS idx_app_events_name ON app_events(event_name);
 CREATE INDEX IF NOT EXISTS idx_app_events_source ON app_events(event_source);
 CREATE INDEX IF NOT EXISTS idx_app_events_created_at ON app_events(created_at DESC);
+
+-- =============================================================================
+-- updated_at Auto-Update Trigger
+-- =============================================================================
+
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trg_places_updated_at
+    BEFORE UPDATE ON places
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_reviews_updated_at
+    BEFORE UPDATE ON reviews
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_review_dishes_updated_at
+    BEFORE UPDATE ON review_dishes
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE OR REPLACE TRIGGER trg_feedback_reports_updated_at
+    BEFORE UPDATE ON feedback_reports
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- =============================================================================
 -- Row Level Security (RLS)

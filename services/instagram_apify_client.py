@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -12,7 +13,7 @@ from services.public_metadata import MetadataCandidate
 logger = logging.getLogger(__name__)
 
 APIFY_API_BASE = "https://api.apify.com/v2"
-APIFY_FIELDS = ["caption", "hashtags", "ownerUsername", "locationName", "url"]
+APIFY_FIELDS = ["caption", "hashtags", "ownerUsername", "locationName", "url", "transcript"]
 
 
 def _actor_ref() -> str:
@@ -35,7 +36,7 @@ async def extract_instagram_via_apify(url: str) -> MetadataCandidate:
         "resultsLimit": 1,
         "includeDownloadedVideo": False,
         "includeSharesCount": False,
-        "includeTranscript": False,
+        "includeTranscript": True,
         "skipPinnedPosts": False,
     }
     params = {
@@ -47,13 +48,18 @@ async def extract_instagram_via_apify(url: str) -> MetadataCandidate:
     }
     timeout = httpx.Timeout(max(30, config.INSTAGRAM_NO_COOKIE_TIMEOUT_SECONDS))
 
+    t0 = time.monotonic()
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(endpoint, params=params, json=payload)
             response.raise_for_status()
             items = response.json()
     except Exception as exc:
-        logger.warning("Instagram Apify request failed for %s: %s", url, exc)
+        elapsed = time.monotonic() - t0
+        logger.warning(
+            "metric.apify.failure url=%s elapsed_s=%.2f error=%s",
+            url, elapsed, exc,
+        )
         return MetadataCandidate(
             source="instagram_apify",
             platform="instagram",
@@ -63,6 +69,11 @@ async def extract_instagram_via_apify(url: str) -> MetadataCandidate:
         )
 
     if not isinstance(items, list) or not items:
+        elapsed = time.monotonic() - t0
+        logger.warning(
+            "metric.apify.failure url=%s elapsed_s=%.2f error=no_results",
+            url, elapsed,
+        )
         return MetadataCandidate(
             source="instagram_apify",
             platform="instagram",
@@ -71,21 +82,29 @@ async def extract_instagram_via_apify(url: str) -> MetadataCandidate:
             error="Apify returned no Instagram reel results",
         )
 
+    elapsed = time.monotonic() - t0
     item = items[0] if isinstance(items[0], dict) else {}
     caption = (item.get("caption") or "").strip()
+    transcript = (item.get("transcript") or "").strip()
     hashtags = item.get("hashtags") or []
     uploader = item.get("ownerUsername")
     location_name = (item.get("locationName") or "").strip()
     output_url = (item.get("url") or url).strip()
 
-    success = bool(caption or location_name or hashtags)
+    # Combine caption + transcript; transcript supplements when caption is sparse
+    if transcript and transcript != caption:
+        description = f"{caption}\n\n{transcript}".strip() if caption else transcript
+    else:
+        description = caption
+
+    success = bool(caption or location_name)
     candidate = MetadataCandidate(
         source="instagram_apify",
         platform="instagram",
         url=output_url,
         success=success,
         title=location_name,
-        description=caption,
+        description=description,
         uploader=uploader,
         hashtags=hashtags if isinstance(hashtags, list) else [],
         raw_fields={
@@ -94,4 +113,10 @@ async def extract_instagram_via_apify(url: str) -> MetadataCandidate:
     )
     if not success:
         candidate.error = "Apify returned no useful Instagram metadata"
+        logger.warning("metric.apify.failure url=%s elapsed_s=%.2f error=no_useful_metadata", url, elapsed)
+    else:
+        logger.info(
+            "metric.apify.success url=%s elapsed_s=%.2f caption_len=%d has_transcript=%s",
+            url, elapsed, len(caption), bool(transcript),
+        )
     return candidate

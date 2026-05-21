@@ -93,8 +93,13 @@ def evaluate_transcript_quality(text: str) -> TranscriptQuality:
         sum(word.strip("'") in ENGLISH_HINT_WORDS for word in words) / len(words)
         if words else 0.0
     )
+    # Saturates at 1.0 when the transcript contains ~24+ words (enough to judge language).
     word_volume = min(len(words) / 24, 1.0)
 
+    # Weighted sum: latin script presence (45%) + common English words (40%) + word count
+    # volume (15%), minus a penalty for CJK/non-ASCII characters (up to -0.6).
+    # The english_hint_ratio is amplified (×3.5) before capping so even a small fraction
+    # of recognisable English function words pushes the score up significantly.
     score = (
         latin_ratio * 0.45
         + min(english_hint_ratio * 3.5, 1.0) * 0.4
@@ -103,6 +108,11 @@ def evaluate_transcript_quality(text: str) -> TranscriptQuality:
     )
     score = max(0.0, min(score, 1.0))
 
+    # Thresholds calibrated empirically on food-reel transcripts:
+    #   ≥0.72 → "good"  (reliable English, skip translation pass)
+    #   ≥0.52 → "weak"  (borderline; translation may help)
+    #    <0.52 → "poor"  (non-English or garbled; translation preferred)
+    # Special case: very low English-hint ratio overrides a middling score to "poor".
     if english_hint_ratio < 0.06 and score < 0.62:
         label = "poor"
     elif score >= 0.72:
@@ -112,6 +122,8 @@ def evaluate_transcript_quality(text: str) -> TranscriptQuality:
     else:
         label = "poor"
 
+    # All four conditions must hold for the text to be considered readable English.
+    # Minimum 5 words avoids false positives from very short captions.
     looks_english = (
         len(words) >= 5
         and score >= 0.58
@@ -145,6 +157,8 @@ def _build_result(
     translation_quality: Optional[TranscriptQuality],
 ) -> TranscriptionResult:
     if translation_quality and english_text:
+        # Prefer translation only when it scores at least 0.08 above the raw transcript
+        # AND meets a floor of 0.62. This avoids swapping in a barely-better translation.
         use_translation = translation_quality.score >= max(raw_quality.score + 0.08, 0.62)
     else:
         use_translation = False

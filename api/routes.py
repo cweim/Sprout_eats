@@ -2,12 +2,13 @@ import logging
 import math
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Request
 from pydantic import BaseModel, Field
 
 from api.telegram_auth import get_current_user, TelegramUser
+from api.limiter import limiter
 from database import supabase_repository as repository
-from database.supabase_client import upload_photo as storage_upload_photo
+from database.supabase_client import upload_photo as storage_upload_photo, delete_photo as storage_delete_photo
 from services.places import search_place
 
 logger = logging.getLogger(__name__)
@@ -92,10 +93,24 @@ def place_to_dict(place: dict) -> dict:
 
 
 @router.get("/places")
-async def get_places(user: TelegramUser = Depends(get_current_user)):
-    """Get all saved places for current user."""
-    places = repository.get_all_places(user.id)
-    return {"places": [place_to_dict(p) for p in places]}
+@limiter.limit("120/minute")
+async def get_places(
+    request: Request,
+    page: int = 1,
+    per_page: int = 100,
+    user: TelegramUser = Depends(get_current_user),
+):
+    """Get saved places for current user with pagination."""
+    total = repository.get_place_count(user.id)
+    offset = (page - 1) * per_page
+    places = repository.get_all_places(user.id, limit=per_page, offset=offset)
+    return {
+        "places": [place_to_dict(p) for p in places],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "has_more": (offset + len(places)) < total,
+    }
 
 
 @router.get("/places/nearby")
@@ -256,7 +271,9 @@ async def search_places_api(
 
 
 @router.post("/places")
+@limiter.limit("30/minute")
 async def create_place(
+    request: Request,
     place: PlaceCreate,
     user: TelegramUser = Depends(get_current_user)
 ):
@@ -449,9 +466,17 @@ async def delete_review(place_id: int, user: TelegramUser = Depends(get_current_
 
 
 @router.get("/reviews")
-async def get_all_reviews(user: TelegramUser = Depends(get_current_user)):
-    """Get all reviews for the user."""
-    reviews = repository.get_all_reviews(user.id)
+@limiter.limit("120/minute")
+async def get_all_reviews(
+    request: Request,
+    page: int = 1,
+    per_page: int = 50,
+    user: TelegramUser = Depends(get_current_user),
+):
+    """Get reviews for the user with pagination."""
+    total = repository.get_reviews_count(user.id)
+    offset = (page - 1) * per_page
+    reviews = repository.get_all_reviews(user.id, limit=per_page, offset=offset)
 
     result = []
     for review in reviews:
@@ -460,24 +485,29 @@ async def get_all_reviews(user: TelegramUser = Depends(get_current_user)):
             review_dict["place_name"] = review["place_name"]
         result.append(review_dict)
 
-    return {"reviews": result}
+    return {
+        "reviews": result,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "has_more": (offset + len(reviews)) < total,
+    }
 
 
 @router.post("/reviews/{review_id}/photos")
+@limiter.limit("30/minute")
 async def upload_photo(
+    request: Request,
     review_id: int,
     file: UploadFile = File(...),
     dish_id: Optional[int] = Form(None),
     user: TelegramUser = Depends(get_current_user)
 ):
     """Upload a photo to a review (Supabase Storage)."""
-    # Verify review exists and belongs to user
-    review = repository.get_review_by_id(review_id)
+    # Verify review exists and belongs to user (ownership enforced in query)
+    review = repository.get_review_by_id(review_id, user_id=user.id)
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
-
-    if review.get("user_id") != user.id:
-        raise HTTPException(status_code=403, detail="Not your review")
 
     # Check photo limits
     count = repository.get_photo_count(review_id, dish_id)
@@ -488,8 +518,11 @@ async def upload_photo(
             detail=f"Photo limit reached ({max_photos} max per {'dish' if dish_id else 'overall'})"
         )
 
-    # Read file content
+    # Read file content and enforce size limit
     content = await file.read()
+    max_size = 10 * 1024 * 1024  # 10MB
+    if len(content) > max_size:
+        raise HTTPException(status_code=413, detail="Photo too large (max 10MB)")
 
     # Upload to Supabase Storage
     try:
@@ -503,15 +536,21 @@ async def upload_photo(
         logger.error(f"Failed to upload photo: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload photo")
 
-    # Store in database
-    photo = repository.add_photo(
-        review_id=review_id,
-        file_url=file_url,
-        storage_path=storage_path,
-        dish_id=dish_id,
-    )
+    # Store in database — clean up storage file if this fails
+    try:
+        photo = repository.add_photo(
+            review_id=review_id,
+            file_url=file_url,
+            storage_path=storage_path,
+            dish_id=dish_id,
+        )
+    except Exception as e:
+        storage_delete_photo(storage_path)
+        logger.error(f"DB insert failed after photo upload, storage file cleaned up: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save photo")
 
     if not photo:
+        storage_delete_photo(storage_path)
         raise HTTPException(status_code=400, detail="Failed to add photo (limit reached?)")
 
     return {

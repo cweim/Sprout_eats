@@ -94,12 +94,14 @@ def is_valid_url(url: str) -> bool:
     return detect_platform(url) is not None
 
 
-def instagram_request_will_queue() -> bool:
-    return _instagram_active_jobs >= INSTAGRAM_MAX_CONCURRENT_FETCHES or _instagram_waiting_jobs > 0
+async def instagram_request_will_queue() -> bool:
+    async with _instagram_state_lock:
+        return _instagram_active_jobs >= INSTAGRAM_MAX_CONCURRENT_FETCHES or _instagram_waiting_jobs > 0
 
 
-def get_instagram_queue_status() -> tuple[int, int]:
-    return _instagram_active_jobs, _instagram_waiting_jobs
+async def get_instagram_queue_status() -> tuple[int, int]:
+    async with _instagram_state_lock:
+        return _instagram_active_jobs, _instagram_waiting_jobs
 
 
 def _is_instagram_access_error(error_text: str) -> bool:
@@ -260,7 +262,9 @@ async def _extract_instagram_image_urls_from_html(url: str) -> list[str]:
 
 
 async def _download_images(image_urls: list[str], output_prefix: str) -> list[Path]:
-    image_paths: list[Path] = []
+    if not image_urls:
+        return []
+
     timeout = aiohttp.ClientTimeout(total=30)
     headers = {
         "User-Agent": (
@@ -268,24 +272,30 @@ async def _download_images(image_urls: list[str], output_prefix: str) -> list[Pa
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         )
     }
-    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-        for index, image_url in enumerate(image_urls, start=1):
-            parsed = urlparse(image_url)
-            suffix = Path(parsed.path).suffix.lower() or ".jpg"
-            if suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
-                suffix = ".jpg"
+    semaphore = asyncio.Semaphore(5)
 
-            image_path = Path(f"{output_prefix}_img_{index}{suffix}")
+    async def _download_one(session: aiohttp.ClientSession, index: int, image_url: str) -> Optional[Path]:
+        parsed = urlparse(image_url)
+        suffix = Path(parsed.path).suffix.lower() or ".jpg"
+        if suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
+            suffix = ".jpg"
+        image_path = Path(f"{output_prefix}_img_{index}{suffix}")
+        async with semaphore:
             try:
                 async with session.get(image_url) as response:
                     if response.status != 200:
-                        continue
+                        return None
                     image_path.write_bytes(await response.read())
-                    image_paths.append(image_path)
+                    return image_path
             except Exception:
-                continue
+                return None
 
-    return image_paths
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        results = await asyncio.gather(
+            *[_download_one(session, i, url) for i, url in enumerate(image_urls, start=1)]
+        )
+
+    return [p for p in results if p is not None]
 
 
 async def download_content(url: str) -> DownloadResult:
@@ -294,6 +304,7 @@ async def download_content(url: str) -> DownloadResult:
         raise ValueError("URL must be from Instagram or TikTok")
 
     instagram_success = True
+    _timed_out = False
     if platform == "instagram":
         await _enter_instagram_fetch_queue()
 
@@ -323,6 +334,7 @@ async def download_content(url: str) -> DownloadResult:
             async with asyncio.timeout(config.DOWNLOAD_TIMEOUT):
                 info = await loop.run_in_executor(None, _extract_metadata)
         except asyncio.TimeoutError:
+            _timed_out = True
             raise DownloadTimeoutError(f"Download timed out after {config.DOWNLOAD_TIMEOUT} seconds")
         except DownloadError as exc:
             if platform == "instagram" and _is_instagram_access_error(str(exc)):
@@ -364,6 +376,7 @@ async def download_content(url: str) -> DownloadResult:
                 async with asyncio.timeout(config.DOWNLOAD_TIMEOUT):
                     info = await loop.run_in_executor(None, _download_video)
             except asyncio.TimeoutError:
+                _timed_out = True
                 raise DownloadTimeoutError(f"Download timed out after {config.DOWNLOAD_TIMEOUT} seconds")
             except DownloadError as exc:
                 if platform == "instagram" and _is_instagram_access_error(str(exc)):
@@ -424,6 +437,9 @@ async def download_content(url: str) -> DownloadResult:
     finally:
         if platform == "instagram":
             await _leave_instagram_fetch_queue(success=instagram_success)
+        if _timed_out:
+            for f in config.TEMP_DIR.glob(f"{platform}_{url_hash}.*"):
+                f.unlink(missing_ok=True)
 
 
 def cleanup_files(*paths: Path):

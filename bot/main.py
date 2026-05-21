@@ -74,7 +74,7 @@ async def check_review_reminders(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Checking for pending review reminders...")
 
     # Get reminders that are at least 1 hour old and not sent
-    pending = repository.get_pending_reminders(since_hours=1)
+    pending = repository.get_pending_reminders(since_hours=config.REMINDER_CHECK_HOURS)
 
     for reminder in pending:
         try:
@@ -94,7 +94,7 @@ async def check_review_reminders(context: ContextTypes.DEFAULT_TYPE):
                 continue
 
             # Send reminder message
-            place_name = place['name'][:50]
+            place_name = place['name'][:config.REMINDER_PLACE_NAME_MAX_LENGTH]
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton(
                     "📝 Write Review",
@@ -124,7 +124,7 @@ async def check_review_reminders(context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"Sent review reminder for place {place_id} to user {user_id}")
 
         except Exception as e:
-            logger.error(f"Failed to send reminder {reminder.id}: {e}")
+            logger.error(f"Failed to send reminder {reminder['id']}: {e}")
 
     logger.info(f"Processed {len(pending)} reminders")
 
@@ -142,8 +142,8 @@ def setup_reminder_job(application):
     # Run every 5 minutes
     job_queue.run_repeating(
         check_review_reminders,
-        interval=timedelta(minutes=5),
-        first=timedelta(seconds=30),  # Start 30 seconds after bot starts
+        interval=timedelta(minutes=config.REMINDER_JOB_INTERVAL_MINUTES),
+        first=timedelta(seconds=config.REMINDER_JOB_STARTUP_DELAY_SECONDS),
         name='review_reminders'
     )
     logger.info("Review reminder job scheduled")
@@ -163,15 +163,30 @@ async def post_init(application):
     logger.info("Bot commands menu configured")
 
 
+def _validate_config() -> bool:
+    """Fail fast if required environment variables are missing."""
+    required = {
+        "TELEGRAM_BOT_TOKEN": config.TELEGRAM_BOT_TOKEN,
+        "GOOGLE_API_KEY": config.GOOGLE_API_KEY,
+        "SUPABASE_URL": config.SUPABASE_URL,
+        "SUPABASE_SERVICE_KEY": config.SUPABASE_SERVICE_KEY,
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        for name in missing:
+            logger.error("Required config missing: %s", name)
+        return False
+    return True
+
+
 def main():
+    if not _validate_config():
+        return
+
     # Pre-load Whisper model (takes a few seconds)
     logger.info("Loading Whisper model...")
     preload_model()
     logger.info("Whisper model ready")
-
-    if not config.TELEGRAM_BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN not set. Please check your .env file.")
-        return
 
     # Create application
     app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).post_init(post_init).build()

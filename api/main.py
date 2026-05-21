@@ -1,13 +1,27 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from api.routes import router
 from api.admin_routes import router as admin_router
+from api.limiter import limiter
 import config
 
+logger = logging.getLogger(__name__)
+
+if config.LOCAL_DEV_AUTH and config.SUPABASE_URL and "supabase.co" in config.SUPABASE_URL:
+    logger.warning(
+        "WARNING: LOCAL_DEV_AUTH is enabled against a production Supabase instance. "
+        "This bypasses authentication — disable it before deploying."
+    )
+
 app = FastAPI(title="Discovery Bot API", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Build allowed origins - NEVER fall back to wildcard
 allowed_origins = []

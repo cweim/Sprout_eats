@@ -8,6 +8,7 @@ from pydantic import BaseModel
 import config
 from api.admin_auth import get_current_admin, AdminUser
 from database import supabase_repository as repository
+from database.supabase_client import get_supabase
 
 
 router = APIRouter(prefix="/admin/api")
@@ -20,12 +21,39 @@ class FeedbackUpdateRequest(BaseModel):
     admin_notes: Optional[str] = None
 
 
+class TokenRefreshRequest(BaseModel):
+    refresh_token: str
+
+
 @router.get("/config")
 async def get_admin_public_config():
     """Public config needed for the admin login page."""
     return {
         "supabase_url": config.SUPABASE_URL,
-        "supabase_anon_key": config.SUPABASE_ANON_KEY,
+    }
+
+
+@router.post("/refresh")
+async def refresh_admin_token(request: TokenRefreshRequest):
+    """Exchange a Supabase refresh token for a new access token."""
+    supabase = get_supabase()
+    try:
+        session = supabase.auth.refresh_session(request.refresh_token)
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"Token refresh failed: {exc}") from exc
+
+    session_data = getattr(session, "session", None)
+    if not session_data:
+        raise HTTPException(status_code=401, detail="Token refresh returned no session")
+
+    access_token = getattr(session_data, "access_token", None)
+    new_refresh_token = getattr(session_data, "refresh_token", None)
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Token refresh returned no access token")
+
+    return {
+        "access_token": access_token,
+        "refresh_token": new_refresh_token,
     }
 
 

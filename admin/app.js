@@ -19,7 +19,9 @@ async function loadPublicConfig() {
 
 async function initSupabase() {
     const config = await loadPublicConfig();
-    supabaseClient = window.supabase.createClient(config.supabase_url, config.supabase_anon_key);
+    // anon key is the Supabase publishable key — safe to bundle in frontend
+    const anonKey = 'sb_publishable_efCy9RWQu8POHpBtXZ7c1g_imylroHj';
+    supabaseClient = window.supabase.createClient(config.supabase_url, anonKey);
 }
 
 async function getAccessToken() {

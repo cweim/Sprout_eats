@@ -114,18 +114,20 @@ def add_place(
     return result.data[0] if result.data else None
 
 
-def get_all_places(user_id: int) -> List[Dict[str, Any]]:
+def get_all_places(user_id: int, limit: Optional[int] = None, offset: int = 0) -> List[Dict[str, Any]]:
     """Get all places for a user, ordered by created_at desc."""
     supabase = get_supabase()
 
-    result = (
+    query = (
         supabase.table("places")
         .select("*")
         .eq("user_id", user_id)
         .order("created_at", desc=True)
-        .execute()
     )
+    if limit is not None:
+        query = query.range(offset, offset + limit - 1)
 
+    result = query.execute()
     return result.data or []
 
 
@@ -135,6 +137,20 @@ def get_place_count(user_id: int) -> int:
 
     result = (
         supabase.table("places")
+        .select("id", count="exact")
+        .eq("user_id", user_id)
+        .execute()
+    )
+
+    return result.count or 0
+
+
+def get_reviews_count(user_id: int) -> int:
+    """Get count of reviews for a user."""
+    supabase = get_supabase()
+
+    result = (
+        supabase.table("reviews")
         .select("id", count="exact")
         .eq("user_id", user_id)
         .execute()
@@ -373,54 +389,62 @@ def delete_review(user_id: int, place_id: int) -> bool:
     return len(result.data) > 0 if result.data else False
 
 
-def get_all_reviews(user_id: int) -> List[Dict[str, Any]]:
+def get_all_reviews(user_id: int, limit: Optional[int] = None, offset: int = 0) -> List[Dict[str, Any]]:
     """Get all reviews for a user with place info."""
     supabase = get_supabase()
 
-    # Get reviews with place names
-    result = (
+    # Get reviews with place names (1 query)
+    query = (
         supabase.table("reviews")
         .select("*, places(name)")
         .eq("user_id", user_id)
         .order("updated_at", desc=True)
+    )
+    if limit is not None:
+        query = query.range(offset, offset + limit - 1)
+    result = query.execute()
+    reviews = result.data or []
+    if not reviews:
+        return []
+
+    review_ids = [r["id"] for r in reviews]
+
+    # Batch-fetch all dishes for all review IDs (1 query)
+    dishes_result = (
+        supabase.table("review_dishes")
+        .select("*")
+        .in_("review_id", review_ids)
+        .order("id")
         .execute()
     )
+    dishes_by_review: Dict[int, List] = {}
+    for dish in (dishes_result.data or []):
+        dishes_by_review.setdefault(dish["review_id"], []).append(dish)
 
-    reviews = result.data or []
+    # Batch-fetch all photos for all review IDs (1 query)
+    photos_result = (
+        supabase.table("review_photos")
+        .select("*")
+        .in_("review_id", review_ids)
+        .order("sort_order")
+        .execute()
+    )
+    photos_by_review: Dict[int, List] = {}
+    for photo in (photos_result.data or []):
+        photos_by_review.setdefault(photo["review_id"], []).append(photo)
 
-    # Load dishes and photos for each review
+    # Join in Python
     for review in reviews:
         review_id = review["id"]
-
-        # Dishes
-        dishes_result = (
-            supabase.table("review_dishes")
-            .select("*")
-            .eq("review_id", review_id)
-            .order("id")
-            .execute()
-        )
-        review["dishes"] = dishes_result.data or []
-
-        # Photos
-        photos_result = (
-            supabase.table("review_photos")
-            .select("*")
-            .eq("review_id", review_id)
-            .order("sort_order")
-            .execute()
-        )
-        review["photos"] = photos_result.data or []
+        review["dishes"] = dishes_by_review.get(review_id, [])
+        review["photos"] = photos_by_review.get(review_id, [])
 
         # Attach photos to dishes
-        dish_photos = {}
+        dish_photos: Dict[int, List] = {}
         for photo in review["photos"]:
             dish_id = photo.get("dish_id")
             if dish_id:
-                if dish_id not in dish_photos:
-                    dish_photos[dish_id] = []
-                dish_photos[dish_id].append(photo)
-
+                dish_photos.setdefault(dish_id, []).append(photo)
         for dish in review["dishes"]:
             dish["photos"] = dish_photos.get(dish["id"], [])
 
@@ -694,11 +718,14 @@ def reschedule_reminder(reminder_id: int) -> Optional[Dict[str, Any]]:
 # =============================================================================
 
 
-def get_review_by_id(review_id: int) -> Optional[Dict[str, Any]]:
-    """Get review by ID (no user check - for internal use)."""
+def get_review_by_id(review_id: int, user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """Get review by ID. Pass user_id to enforce ownership check."""
     supabase = get_supabase()
 
-    result = supabase.table("reviews").select("*").eq("id", review_id).execute()
+    query = supabase.table("reviews").select("*").eq("id", review_id)
+    if user_id is not None:
+        query = query.eq("user_id", user_id)
+    result = query.execute()
     return result.data[0] if result.data else None
 
 

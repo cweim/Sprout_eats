@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import math
 import html
@@ -36,6 +37,7 @@ from services.instagram_pipeline import (
     InstagramNoCookieCooldownError,
     run_instagram_place_pipeline,
 )
+from services.tiktok_pipeline import run_tiktok_place_pipeline
 from database import supabase_repository as repository
 from database.supabase_client import (
     upload_photo as storage_upload_photo,
@@ -573,6 +575,33 @@ def _clear_instagram_fallback_pending(context: ContextTypes.DEFAULT_TYPE) -> Non
     context.user_data.pop("instagram_fallback_pending", None)
 
 
+def _set_tiktok_fallback_pending(context: ContextTypes.DEFAULT_TYPE, source_url: str) -> None:
+    context.user_data["pending_url"] = source_url
+    context.user_data["pending_platform"] = "tiktok"
+
+
+async def prompt_tiktok_manual_fallback(
+    status_msg,
+    context: ContextTypes.DEFAULT_TYPE,
+    source_url: str,
+    *,
+    unresolved_candidates: list[dict] | None = None,
+) -> None:
+    _set_tiktok_fallback_pending(context, source_url)
+    if unresolved_candidates:
+        context.user_data["pending_unresolved_slots"] = unresolved_candidates[:6]
+        await status_msg.edit_text(
+            "I found possible place matches, but couldn't verify them confidently enough to auto-save.\n"
+            f"{build_reviewable_candidate_message(unresolved_candidates)}\n\n"
+            "Reply with a number to pick one, or type the place name to search manually."
+        )
+    else:
+        await status_msg.edit_text(
+            "I couldn't find a place in this TikTok.\n\n"
+            "Reply with the place name and I'll search for it."
+        )
+
+
 def _set_instagram_fallback_pending(context: ContextTypes.DEFAULT_TYPE, source_url: str) -> None:
     context.user_data["pending_url"] = source_url
     context.user_data["pending_platform"] = "instagram"
@@ -743,7 +772,7 @@ async def _handle_instagram_no_cookie_url(update: Update, context: ContextTypes.
     pipeline = await run_instagram_place_pipeline(text)
 
     if pipeline["status"] == "failed":
-        logger.warning("Instagram no-cookie pipeline failed for %s: %s", text, pipeline.get("error"))
+        logger.warning("Instagram no-cookie pipeline failed: user_id=%s url=%s error=%s", user_id, text, pipeline.get("error"))
         await prompt_instagram_manual_fallback(status_msg, context, text)
         return True
 
@@ -806,6 +835,75 @@ async def _handle_instagram_no_cookie_url(update: Update, context: ContextTypes.
     )
     _clear_instagram_fallback_pending(context)
     return True
+
+
+async def _handle_tiktok_url(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, status_msg) -> None:
+    user_id = update.effective_user.id
+    await status_msg.edit_text("Reading the caption... 📝")
+    pipeline = await run_tiktok_place_pipeline(text)
+
+    if pipeline["status"] == "failed":
+        logger.warning("TikTok pipeline failed: user_id=%s url=%s error=%s", user_id, text, pipeline.get("error"))
+        await prompt_tiktok_manual_fallback(status_msg, context, text)
+        return
+
+    candidate = pipeline.get("metadata_candidate")
+    source_title = getattr(candidate, "title", "") if candidate else ""
+    source_uploader = getattr(candidate, "uploader", None) if candidate else None
+    source_duration = getattr(candidate, "duration", None) if candidate else None
+    hashtags = getattr(candidate, "hashtags", []) if candidate else []
+    source_hashtags = ",".join(hashtags) if hashtags else None
+    slots = pipeline.get("slots") or []
+    places = pipeline.get("places") or []
+    unresolved_suggestions = pipeline.get("unresolved_suggestions") or []
+
+    if slots:
+        await status_msg.edit_text("Resolving place names... 🔎")
+
+    if not places:
+        reviewable_candidates = collect_reviewable_unresolved_candidates(unresolved_suggestions)
+        await prompt_tiktok_manual_fallback(
+            status_msg,
+            context,
+            text,
+            unresolved_candidates=reviewable_candidates if reviewable_candidates else None,
+        )
+        return
+
+    resolved_sources = [place.matched_source_type for place in places if place.matched_source_type]
+    match_source = resolved_sources[0] if resolved_sources else (slots[0].source if slots else None)
+
+    if len(places) == 1 and not unresolved_suggestions:
+        await status_msg.delete()
+        await _save_single_place_result(
+            update,
+            context,
+            user_id=user_id,
+            place=places[0],
+            source_url=text,
+            source_platform="tiktok",
+            source_title=source_title,
+            source_uploader=source_uploader,
+            source_duration=source_duration,
+            source_hashtags=source_hashtags,
+        )
+        _clear_manual_place_pending(context)
+        return
+
+    await _start_multi_place_selection(
+        context,
+        status_msg,
+        places=places,
+        source_url=text,
+        source_platform="tiktok",
+        source_title=source_title,
+        source_uploader=source_uploader,
+        source_duration=source_duration,
+        source_hashtags=source_hashtags,
+        match_source=match_source,
+        unresolved_message=build_unresolved_slot_message(unresolved_suggestions),
+    )
+    _clear_manual_place_pending(context)
 
 
 def get_match_source_label(video_meta: dict) -> str:
@@ -1258,6 +1356,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return  # Not a valid Instagram/TikTok URL, ignore
 
     platform = detect_platform(text)
+    logger.info("URL received: user_id=%s platform=%s url=%s", user_id, platform, text)
 
     status_msg = await update.message.reply_text("Ooh, fresh content! Let me dig in... 🔍")
 
@@ -1266,9 +1365,13 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _handle_instagram_no_cookie_url(update, context, text, status_msg)
             return
 
+        if platform == "tiktok":
+            await _handle_tiktok_url(update, context, text, status_msg)
+            return
+
         # Step 1: Download
-        if platform == "instagram" and instagram_request_will_queue():
-            active_jobs, waiting_jobs = get_instagram_queue_status()
+        if platform == "instagram" and await instagram_request_will_queue():
+            active_jobs, waiting_jobs = await get_instagram_queue_status()
             logger.info(
                 "Queueing Instagram request: active=%s waiting=%s url=%s",
                 active_jobs,
@@ -1315,7 +1418,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not slots and result.image_paths:
             await status_msg.edit_text("Scanning images for text... 🖼️")
             try:
-                ocr_text = extract_text_from_images(result.image_paths)
+                ocr_text = await asyncio.to_thread(extract_text_from_images, result.image_paths)
             except Exception as e:
                 logger.warning(f"OCR failed: {e}")
 
@@ -1326,7 +1429,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not slots and result.video_path and result.video_path.exists():
             await status_msg.edit_text("Scanning video text... 🖼️")
             try:
-                video_ocr_payload = extract_text_from_video(result.video_path)
+                video_ocr_payload = await asyncio.to_thread(extract_text_from_video, result.video_path)
             except Exception as e:
                 logger.warning(f"Video OCR failed: {e}")
                 video_ocr_payload = {}
@@ -1568,15 +1671,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error processing URL: {e}")
         error_text = str(e).lower()
-        if "tiktok.com/" in error_text and "/photo/" in error_text and "unsupported url" in error_text:
-            context.user_data["pending_url"] = text
-            context.user_data["pending_platform"] = "tiktok"
-            await safe_edit_status(
-                status_msg,
-                "This looks like a TikTok photo post, and I can't parse those yet.\n\n"
-                "Reply with the place name and I'll search for it manually."
-            )
-        elif "connect" in error_text or "network" in error_text:
+        if "connect" in error_text or "network" in error_text:
             await safe_edit_status(
                 status_msg,
                 "Hit a connection snag! 🌧️\n\nGive it a moment and try again."
@@ -1668,7 +1763,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             telegram_file = await telegram_photo.get_file()
             temp_path = config.TEMP_DIR / f"instagram_fallback_{telegram_photo.file_unique_id}.jpg"
             await telegram_file.download_to_drive(custom_path=str(temp_path))
-            ocr_text = extract_text_from_images([temp_path])
+            ocr_text = await asyncio.to_thread(extract_text_from_images, [temp_path])
             if not ocr_text.strip():
                 await status_msg.edit_text(
                     "I couldn't read a place from that screenshot.\n\n"

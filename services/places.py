@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+import time
 
 import aiohttp
 from dataclasses import dataclass, field
@@ -579,12 +580,26 @@ async def search_place(
             }
         }
 
+    t0 = time.monotonic()
     timeout = aiohttp.ClientTimeout(total=API_TIMEOUT_SECONDS)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(PLACES_TEXT_SEARCH_URL, headers=headers, json=body) as response:
+            if response.status == 429:
+                retry_after = int(response.headers.get("Retry-After", 5))
+                logger.warning("Google Places rate limited (429). Waiting %s s.", retry_after)
+                await asyncio.sleep(retry_after)
+                response.raise_for_status()  # raises ClientResponseError → tenacity retries
+            elif response.status == 403:
+                logger.error("Google Places quota exhausted (403). Not retrying.")
+                raise ValueError("Google Places API quota exhausted")
+            elif response.status >= 400:
+                response.raise_for_status()
+
             data = await response.json()
+            elapsed = time.monotonic() - t0
 
             if "places" not in data or not data["places"]:
+                logger.info("metric.places.miss query=%r elapsed_s=%.2f", query[:80], elapsed)
                 return [] if max_results > 1 else None
 
             results = []
@@ -628,6 +643,10 @@ async def search_place(
                 if len(results) >= max_results:
                     break
 
+            logger.info(
+                "metric.places.hit query=%r elapsed_s=%.2f results=%d",
+                query[:80], elapsed, len(results),
+            )
             # Backward compatibility: return single result or None when max_results=1
             if max_results == 1:
                 return results[0] if results else None

@@ -1,6 +1,23 @@
 // Configuration
 const API_URL = ''; // Set to your API URL, e.g., 'http://localhost:8000'
 
+// Escape user-controlled strings before injecting into innerHTML
+function escapeHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Allow only http/https URLs in href attributes to prevent javascript: XSS
+function safeUrl(url) {
+    if (!url) return '';
+    const trimmed = String(url).trim();
+    return /^https?:\/\//i.test(trimmed) ? trimmed : '';
+}
+
 // Get auth headers for API requests
 function getAuthHeaders() {
     const headers = {
@@ -45,6 +62,13 @@ let visitedFilter = localStorage.getItem('visitedFilter') || 'all';  // 'all', '
 let countryFilter = '';  // Country filter (empty = all)
 let mapCuisineFilter = '';  // Cuisine filter for map view
 let searchDebounceTimer = null;
+
+// Pagination state
+let totalPlaces = 0;
+let currentPlacesPage = 1;
+let hasMorePlaces = false;
+let isLoadingMorePlaces = false;
+const PLACES_PER_PAGE = 100;
 
 // Notes modal state
 let currentEditingPlaceId = null;
@@ -180,16 +204,17 @@ function applyTheme() {
 // Fetch places from API with timeout and retry
 async function fetchPlaces(retries = 3) {
     const TIMEOUT_MS = 10000; // 10 second timeout
+    const url = `${API_URL}/api/places?page=1&per_page=${PLACES_PER_PAGE}`;
 
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-            console.log(`Fetching places (attempt ${attempt}/${retries}) from:`, `${API_URL}/api/places`);
+            console.log(`Fetching places (attempt ${attempt}/${retries}) from:`, url);
 
             // Create abort controller for timeout
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-            const response = await fetch(`${API_URL}/api/places`, {
+            const response = await fetch(url, {
                 signal: controller.signal,
                 headers: getAuthHeaders()
             });
@@ -217,8 +242,13 @@ async function fetchPlaces(retries = 3) {
                 throw new Error(`HTTP error: ${response.status}`);
             }
             const data = await response.json();
-            console.log('Fetched places:', data.places?.length || 0);
-            return { success: true, places: data.places || [] };
+            console.log('Fetched places:', data.places?.length || 0, 'of', data.total || 0);
+            return {
+                success: true,
+                places: data.places || [],
+                total: data.total || 0,
+                has_more: data.has_more || false,
+            };
         } catch (error) {
             console.error(`Fetch attempt ${attempt} failed:`, error);
 
@@ -235,6 +265,34 @@ async function fetchPlaces(retries = 3) {
             // Wait before retry (exponential backoff: 1s, 2s, 4s...)
             await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
         }
+    }
+}
+
+async function loadMorePlaces() {
+    if (isLoadingMorePlaces || !hasMorePlaces) return;
+    isLoadingMorePlaces = true;
+
+    const btn = document.getElementById('load-more-places-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
+
+    const nextPage = currentPlacesPage + 1;
+    try {
+        const response = await fetch(`${API_URL}/api/places?page=${nextPage}&per_page=${PLACES_PER_PAGE}`, {
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to load more');
+        const data = await response.json();
+        places = [...places, ...(data.places || [])];
+        currentPlacesPage = nextPage;
+        hasMorePlaces = data.has_more || false;
+        totalPlaces = data.total || totalPlaces;
+        applyFilters();
+        displayPlacesOnMap();
+    } catch (error) {
+        console.error('Failed to load more places:', error);
+        showToast('Failed to load more places');
+    } finally {
+        isLoadingMorePlaces = false;
     }
 }
 
@@ -362,6 +420,9 @@ async function retryFetchPlaces() {
     }
 
     places = fetchResult.places;
+    totalPlaces = fetchResult.total || 0;
+    hasMorePlaces = fetchResult.has_more || false;
+    currentPlacesPage = 1;
 
     if (places.length === 0) {
         showEmptyState();
@@ -451,11 +512,11 @@ function createPopupContent(place) {
     let html = `<div class="place-popup" data-place-id="${place.id}">`;
 
     // Name
-    html += `<div class="place-popup-name">${place.name}</div>`;
+    html += `<div class="place-popup-name">${escapeHtml(place.name)}</div>`;
 
     // Address
     if (place.address) {
-        html += `<div class="place-popup-address">${place.address}</div>`;
+        html += `<div class="place-popup-address">${escapeHtml(place.address)}</div>`;
     }
 
     // Review indicator
@@ -492,7 +553,7 @@ function createPopupContent(place) {
     // Notes section (inline editing like list view)
     if (place.notes) {
         html += `<div class="popup-notes has-notes" onclick="event.stopPropagation(); startPopupNoteEdit(${place.id}, this)">
-            <span class="notes-text">${place.notes}</span>
+            <span class="notes-text">${escapeHtml(place.notes)}</span>
         </div>`;
     } else {
         html += `<div class="popup-notes empty" onclick="event.stopPropagation(); startPopupNoteEdit(${place.id}, this)">
@@ -506,14 +567,14 @@ function createPopupContent(place) {
 
     // Review button
     if (place.is_visited) {
-        const reviewAriaLabel = `Write review for ${place.name}`;
+        const reviewAriaLabel = `Write review for ${escapeHtml(place.name)}`;
         html += `<button class="card-action-btn review-btn" onclick="openReviewSheet(${place.id})" title="Write Review" aria-label="${reviewAriaLabel}">Review</button>`;
     } else {
         html += `<button class="card-action-btn review-btn disabled" title="Mark as visited first" aria-label="Mark as visited first to review" disabled>Review</button>`;
     }
 
     // Google Maps link
-    const mapsAriaLabel = `Open ${place.name} in Google Maps`;
+    const mapsAriaLabel = `Open ${escapeHtml(place.name)} in Google Maps`;
     if (place.google_place_id) {
         const encodedName = encodeURIComponent(place.name);
         html += `<a href="https://www.google.com/maps/search/?api=1&query=${encodedName}&query_place_id=${place.google_place_id}"
@@ -525,12 +586,12 @@ function createPopupContent(place) {
 
     // Original reel link
     if (place.source_url) {
-        html += `<a href="${place.source_url}" target="_blank" class="card-action-btn" title="View Original Reel" aria-label="View original reel">Reel</a>`;
+        html += `<a href="${safeUrl(place.source_url)}" target="_blank" class="card-action-btn" title="View Original Reel" aria-label="View original reel">Reel</a>`;
     }
 
     // Delete button
     const escapedName = place.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
-    const deleteAriaLabel = `Delete ${place.name}`;
+    const deleteAriaLabel = `Delete ${escapeHtml(place.name)}`;
     html += `<button class="card-action-btn delete-btn" onclick="confirmDeletePlace(${place.id}, '${escapedName}')" title="Delete Place" aria-label="${deleteAriaLabel}">Delete</button>`;
 
     html += '</div></div>';
@@ -624,8 +685,13 @@ function savePopupNote(placeId) {
     const textarea = popup.querySelector('.inline-notes-input');
     if (!textarea) return;
 
+    const saveBtn = popup.querySelector('.inline-notes-save');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+
     const notes = textarea.value.trim();
-    updatePlaceNotes(placeId, notes);
+    updatePlaceNotes(placeId, notes).finally(() => {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    });
 }
 
 // Open notes modal from popup (legacy, kept for compatibility)
@@ -1066,14 +1132,14 @@ function createPlaceCard(place) {
     const reviewBadge = review
         ? `<span class="place-review-badge">✍️ ${'⭐'.repeat(review.overall_rating)}</span>`
         : '';
-    headerHtml += `<span class="place-card-name">${place.name} ${reviewBadge}</span>`;
-    headerHtml += `<button class="more-btn" onclick="event.stopPropagation(); openPlaceMenu(${place.id}, '${place.name.replace(/'/g, "\\'")}')" aria-label="More options">···</button>`;
+    headerHtml += `<span class="place-card-name">${escapeHtml(place.name)} ${reviewBadge}</span>`;
+    headerHtml += `<button class="more-btn" onclick="event.stopPropagation(); openPlaceMenu(${place.id}, '${place.name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" aria-label="More options">···</button>`;
     headerHtml += `</div>`;
 
     // Address
     let addressHtml = '';
     if (place.address) {
-        addressHtml = `<div class="place-card-address">${place.address}</div>`;
+        addressHtml = `<div class="place-card-address">${escapeHtml(place.address)}</div>`;
     }
 
     // Meta row: rating and types
@@ -1099,7 +1165,7 @@ function createPlaceCard(place) {
     let notesHtml = '';
     if (place.notes) {
         notesHtml = `<div class="place-card-notes has-notes" onclick="event.stopPropagation(); startInlineNoteEdit(${place.id}, this)">
-            <span class="notes-text">${place.notes}</span>
+            <span class="notes-text">${escapeHtml(place.notes)}</span>
         </div>`;
     } else {
         notesHtml = `<div class="place-card-notes empty" onclick="event.stopPropagation(); startInlineNoteEdit(${place.id}, this)">
@@ -1130,7 +1196,7 @@ function createPlaceCard(place) {
 
     // Original reel link
     if (place.source_url) {
-        actionsHtml += `<a href="${place.source_url}" target="_blank" class="card-action-btn" onclick="event.stopPropagation()" aria-label="View original reel">▶️ Reel</a>`;
+        actionsHtml += `<a href="${safeUrl(place.source_url)}" target="_blank" class="card-action-btn" onclick="event.stopPropagation()" aria-label="View original reel">▶️ Reel</a>`;
     }
 
     actionsHtml += '</div>';
@@ -1236,6 +1302,10 @@ function renderPlacesList(placesToRender) {
     // Clear existing cards
     listContainer.innerHTML = '';
 
+    // Remove any stale load-more button
+    const existingLoadMore = document.getElementById('load-more-places-btn');
+    if (existingLoadMore) existingLoadMore.remove();
+
     // Check for empty results
     if (placesToRender.length === 0) {
         listContainer.style.display = 'none';
@@ -1254,7 +1324,18 @@ function renderPlacesList(placesToRender) {
         listContainer.appendChild(card);
     });
 
-    updateResultsCount(placesToRender.length, places.length);
+    updateResultsCount(placesToRender.length, totalPlaces || places.length);
+
+    // Show "Load more" button when more pages exist and no active filters
+    const noFiltersActive = !searchQuery && !activeCategory && visitedFilter === 'all' && !countryFilter;
+    if (hasMorePlaces && noFiltersActive) {
+        const btn = document.createElement('button');
+        btn.id = 'load-more-places-btn';
+        btn.className = 'load-more-btn';
+        btn.textContent = `Load more (${places.length} of ${totalPlaces})`;
+        btn.onclick = loadMorePlaces;
+        listContainer.after(btn);
+    }
 }
 
 // Update the results count display
@@ -1657,9 +1738,14 @@ function saveInlineNote(placeId) {
     const textarea = card.querySelector('.inline-notes-input');
     if (!textarea) return;
 
+    const saveBtn = card.querySelector('.inline-notes-save');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+
     // Send empty string to clear notes (not null, which API ignores)
     const notes = textarea.value.trim();
-    updatePlaceNotes(placeId, notes);
+    updatePlaceNotes(placeId, notes).finally(() => {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    });
 }
 
 // Confirm delete place
@@ -1674,6 +1760,11 @@ async function confirmDeletePlace(placeId, placeName) {
     if (!confirm(`Delete "${placeName}"?\n\nThis can't be undone! 🥺`)) {
         return false;
     }
+
+    // Disable the delete button to prevent double-submit
+    const card = document.querySelector(`.place-card[data-place-id="${normalizedPlaceId}"]`);
+    const deleteBtn = card?.querySelector('.delete-btn');
+    if (deleteBtn) { deleteBtn.disabled = true; deleteBtn.textContent = 'Deleting...'; }
 
     return deletePlace(normalizedPlaceId);
 }
@@ -1702,6 +1793,10 @@ async function deletePlace(placeId) {
     } catch (error) {
         console.error('Failed to delete place:', error);
         showToast('Oops! Failed to delete 😅');
+        // Re-enable button on failure
+        const card = document.querySelector(`.place-card[data-place-id="${normalizedPlaceId}"]`);
+        const deleteBtn = card?.querySelector('.delete-btn');
+        if (deleteBtn) { deleteBtn.disabled = false; deleteBtn.textContent = 'Delete'; }
         return false;
     }
 
@@ -2198,8 +2293,8 @@ function renderSearchResults(results) {
             <div class="search-result-card">
                 <div class="search-result-header">
                     <div class="search-result-info">
-                        <div class="search-result-name">${place.name}</div>
-                        <div class="search-result-address">${place.address || ''}</div>
+                        <div class="search-result-name">${escapeHtml(place.name)}</div>
+                        <div class="search-result-address">${escapeHtml(place.address || '')}</div>
                     </div>
                     <div class="search-result-actions">
                         ${mapsUrl ? `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="search-result-maps" onclick="event.stopPropagation()">Maps</a>` : ''}
@@ -2748,6 +2843,9 @@ async function initApp() {
     }
 
     places = fetchResult.places;
+    totalPlaces = fetchResult.total || 0;
+    hasMorePlaces = fetchResult.has_more || false;
+    currentPlacesPage = 1;
 
     // Check if empty
     if (places.length === 0) {
