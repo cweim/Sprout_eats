@@ -24,9 +24,9 @@
     <header class="app-header">
         <h1>🌱 My Places</h1>
         <div class="view-toggle">
-            <button id="btn-map" class="toggle-btn active">Map</button>
-            <button id="btn-list" class="toggle-btn">List</button>
-            <button id="btn-reviews" class="toggle-btn">Reviews</button>
+            <button id="btn-map" class="toggle-btn active" aria-pressed="true">Map</button>
+            <button id="btn-list" class="toggle-btn" aria-pressed="false">List</button>
+            <button id="btn-reviews" class="toggle-btn" aria-pressed="false">Reviews</button>
         </div>
     </header>
 
@@ -37,9 +37,9 @@
             <!-- Map filter panel -->
             <div class="map-filter-panel">
                 <div class="map-filter-row">
-                    <button class="map-filter-chip active" data-filter="all">All</button>
-                    <button class="map-filter-chip" data-filter="unvisited">To Visit</button>
-                    <button class="map-filter-chip" data-filter="visited">Visited ✓</button>
+                    <button class="map-filter-chip active" data-filter="all" aria-pressed="true">All</button>
+                    <button class="map-filter-chip" data-filter="unvisited" aria-pressed="false">To Visit</button>
+                    <button class="map-filter-chip" data-filter="visited" aria-pressed="false">Visited ✓</button>
                 </div>
                 <select id="map-cuisine-filter" class="map-cuisine-select">
                     <option value="">All cuisines</option>
@@ -56,18 +56,18 @@
             <div class="list-controls">
                 <div class="search-row">
                     <div class="search-bar">
-                        <input type="text" id="search-input" placeholder="Search by name...">
+                        <input type="text" id="search-input" placeholder="Search by name..." aria-label="Search places by name">
                         <button id="search-clear" class="search-clear-btn" style="display: none;" aria-label="Clear search">×</button>
                     </div>
-                    <button id="filter-btn" class="filter-btn" aria-label="Open filters">
+                    <button id="filter-btn" class="filter-btn" aria-label="Open filters" aria-expanded="false">
                         <span class="filter-icon">⚙️</span>
                         <span class="filter-count" style="display: none;">0</span>
                     </button>
                 </div>
                 <div id="visited-filter" class="visited-filter">
-                    <button class="visited-chip active" data-filter="all">All <span class="chip-count"></span></button>
-                    <button class="visited-chip" data-filter="unvisited">To Visit <span class="chip-count"></span></button>
-                    <button class="visited-chip" data-filter="visited">Visited <span class="chip-count"></span></button>
+                    <button class="visited-chip active" data-filter="all" aria-pressed="true">All <span class="chip-count"></span></button>
+                    <button class="visited-chip" data-filter="unvisited" aria-pressed="false">To Visit <span class="chip-count"></span></button>
+                    <button class="visited-chip" data-filter="visited" aria-pressed="false">Visited <span class="chip-count"></span></button>
                 </div>
                 <div id="active-filters" class="active-filters">
                     <!-- Active filter pills will be inserted here -->
@@ -98,10 +98,10 @@
                     </select>
                 </div>
                 <div class="reviews-filters">
-                    <button class="review-filter-chip active" data-filter="all">All</button>
-                    <button class="review-filter-chip" data-filter="photos">With Photos</button>
-                    <button class="review-filter-chip" data-filter="5star">5 ⭐</button>
-                    <button class="review-filter-chip" data-filter="4star">4 ⭐</button>
+                    <button class="review-filter-chip active" data-filter="all" aria-pressed="true">All</button>
+                    <button class="review-filter-chip" data-filter="photos" aria-pressed="false">With Photos</button>
+                    <button class="review-filter-chip" data-filter="5star" aria-pressed="false">5 ⭐</button>
+                    <button class="review-filter-chip" data-filter="4star" aria-pressed="false">4 ⭐</button>
                 </div>
             </div>
             <div id="reviews-list">
@@ -137,7 +137,7 @@
     </main>
 
     <!-- Search Google Modal -->
-    <div id="search-modal" class="modal" style="display: none;" role="dialog" aria-labelledby="search-modal-title">
+    <div id="search-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="search-modal-title">
         <div class="modal-content search-modal-content">
             <div class="modal-header">
                 <h2 id="search-modal-title">🔍 Discover Places</h2>
@@ -165,7 +165,7 @@
     </div>
 
     <!-- Notes Editor Modal -->
-    <div id="notes-modal" class="modal" style="display: none;" role="dialog" aria-labelledby="notes-modal-title">
+    <div id="notes-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="notes-modal-title">
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="notes-modal-title">Notes</h2>
@@ -182,7 +182,7 @@
         </div>
     </div>
 
-    <div id="review-prompt-modal" class="modal" style="display: none;" role="dialog" aria-labelledby="review-prompt-title">
+    <div id="review-prompt-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="review-prompt-title">
         <div class="modal-content review-prompt-content">
             <div class="modal-header review-prompt-header">
                 <div class="review-prompt-heading">
@@ -212,7 +212,7 @@
     </div>
 
     <!-- Filter Drawer -->
-    <div id="filter-drawer" class="drawer" style="display: none;" role="dialog" aria-labelledby="filter-drawer-title">
+    <div id="filter-drawer" class="drawer" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="filter-drawer-title">
         <div class="drawer-content">
             <div class="drawer-header">
                 <h2 id="filter-drawer-title">Filters</h2>
@@ -249,7 +249,7 @@
     </div>
 
     <!-- Place Overflow Menu -->
-    <div id="place-menu" class="place-menu" style="display: none;">
+    <div id="place-menu" class="place-menu" style="display: none;" role="dialog" aria-modal="true" aria-label="Place options">
         <div class="place-menu-content">
             <button class="place-menu-item" id="menu-edit">✏️ Edit name & type</button>
             <button class="place-menu-item danger" id="menu-delete" aria-label="Delete this place">🗑️ Delete place</button>
@@ -258,7 +258,7 @@
     </div>
 
     <!-- Review Sheet (Bottom Sheet) -->
-    <div id="review-sheet" class="sheet" style="display: none;" role="dialog" aria-labelledby="review-sheet-title">
+    <div id="review-sheet" class="sheet" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="review-sheet-title">
         <div class="sheet-content">
             <div class="sheet-header">
                 <div class="sheet-handle"></div>
@@ -336,9 +336,9 @@
     </div>
 
     <!-- Photo Fullscreen Viewer -->
-    <div id="photo-viewer" class="photo-viewer" style="display: none;">
+    <div id="photo-viewer" class="photo-viewer" style="display: none;" role="dialog" aria-modal="true" aria-label="Photo viewer">
         <div class="photo-viewer-header">
-            <span id="photo-viewer-counter" class="photo-counter">1 / 3</span>
+            <span id="photo-viewer-counter" class="photo-counter" aria-live="polite">1 / 3</span>
             <button id="photo-viewer-close" class="photo-viewer-close" aria-label="Close">×</button>
         </div>
         <div class="photo-viewer-body">
@@ -351,6 +351,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=38"></script>
+    <script src="app.min.js?v=39"></script>
 </body>
 </html>

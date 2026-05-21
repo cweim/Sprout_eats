@@ -18,6 +18,31 @@ function safeUrl(url) {
     return /^https?:\/\//i.test(trimmed) ? trimmed : '';
 }
 
+// Track focus before opening overlays so we can restore it on close
+let _prevFocusEl = null;
+
+// Focus trap: constrain Tab/Shift+Tab within container. Returns cleanup function.
+function trapFocus(container) {
+    const selector = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+    function getFocusable() {
+        return Array.from(container.querySelectorAll(selector))
+            .filter(el => getComputedStyle(el).display !== 'none' && !el.hidden);
+    }
+    function onKeydown(e) {
+        if (e.key !== 'Tab') return;
+        const els = getFocusable();
+        if (!els.length) return;
+        const first = els[0], last = els[els.length - 1];
+        if (e.shiftKey) {
+            if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+        } else {
+            if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+    }
+    container.addEventListener('keydown', onKeydown);
+    return () => container.removeEventListener('keydown', onKeydown);
+}
+
 // Get auth headers for API requests
 function getAuthHeaders() {
     const headers = {
@@ -1073,13 +1098,16 @@ function setupMapControls() {
     const mapFilterChips = document.querySelectorAll('.map-filter-chip');
     mapFilterChips.forEach(chip => {
         chip.addEventListener('click', () => {
-            mapFilterChips.forEach(c => c.classList.remove('active'));
+            mapFilterChips.forEach(c => { c.classList.remove('active'); c.setAttribute('aria-pressed', 'false'); });
             chip.classList.add('active');
+            chip.setAttribute('aria-pressed', 'true');
             visitedFilter = chip.dataset.filter;
             localStorage.setItem('visitedFilter', visitedFilter);
             // Sync with list view filter
             document.querySelectorAll('.visited-chip').forEach(c => {
-                c.classList.toggle('active', c.dataset.filter === visitedFilter);
+                const isActive = c.dataset.filter === visitedFilter;
+                c.classList.toggle('active', isActive);
+                c.setAttribute('aria-pressed', String(isActive));
             });
             applyFilters();
             displayPlacesOnMap(false);
@@ -1231,14 +1259,22 @@ let currentMenuPlaceName = null;
 function openPlaceMenu(placeId, placeName) {
     currentMenuPlaceId = placeId;
     currentMenuPlaceName = placeName;
-    document.getElementById('place-menu').style.display = 'flex';
+    const menu = document.getElementById('place-menu');
+    _prevFocusEl = document.activeElement;
+    menu.style.display = 'flex';
+    menu._trapFocusCleanup = trapFocus(menu);
+    menu.querySelector('button')?.focus();
     hapticFeedback('light');
 }
 
 function closePlaceMenu() {
-    document.getElementById('place-menu').style.display = 'none';
+    const menu = document.getElementById('place-menu');
+    menu._trapFocusCleanup?.();
+    menu.style.display = 'none';
     currentMenuPlaceId = null;
     currentMenuPlaceName = null;
+    _prevFocusEl?.focus();
+    _prevFocusEl = null;
 }
 
 function setupPlaceMenu() {
@@ -1540,16 +1576,23 @@ function setupVisitedFilter() {
     const chips = document.querySelectorAll('.visited-chip');
 
     // Apply saved visited filter to UI
-    chips.forEach(c => c.classList.toggle('active', c.dataset.filter === visitedFilter));
+    chips.forEach(c => {
+        const isActive = c.dataset.filter === visitedFilter;
+        c.classList.toggle('active', isActive);
+        c.setAttribute('aria-pressed', String(isActive));
+    });
     document.querySelectorAll('.map-filter-chip').forEach(c => {
-        c.classList.toggle('active', c.dataset.filter === visitedFilter);
+        const isActive = c.dataset.filter === visitedFilter;
+        c.classList.toggle('active', isActive);
+        c.setAttribute('aria-pressed', String(isActive));
     });
 
     chips.forEach(chip => {
         chip.addEventListener('click', () => {
             // Update active state
-            chips.forEach(c => c.classList.remove('active'));
+            chips.forEach(c => { c.classList.remove('active'); c.setAttribute('aria-pressed', 'false'); });
             chip.classList.add('active');
+            chip.setAttribute('aria-pressed', 'true');
 
             // Update filter and persist
             visitedFilter = chip.dataset.filter;
@@ -1630,15 +1673,21 @@ function openReviewPrompt(placeId) {
     pendingReviewPromptPlaceId = placeId;
     placeNameEl.textContent = place.name;
     textEl.textContent = 'You just marked this spot as visited. Add a quick review while the details are still fresh.';
+    _prevFocusEl = document.activeElement;
     modal.style.display = 'flex';
+    modal._trapFocusCleanup = trapFocus(modal);
+    modal.querySelector('button')?.focus();
 }
 
 function closeReviewPrompt() {
     pendingReviewPromptPlaceId = null;
     const modal = document.getElementById('review-prompt-modal');
     if (modal) {
+        modal._trapFocusCleanup?.();
         modal.style.display = 'none';
     }
+    _prevFocusEl?.focus();
+    _prevFocusEl = null;
 }
 
 async function dontAskReviewAgain(placeId) {
@@ -2019,7 +2068,9 @@ function openNotesModal(place) {
     textarea.value = place.notes || '';
     charCount.textContent = textarea.value.length;
 
+    _prevFocusEl = document.activeElement;
     modal.style.display = 'flex';
+    modal._trapFocusCleanup = trapFocus(modal);
     textarea.focus();
 
     // Update character count on input
@@ -2031,8 +2082,11 @@ function openNotesModal(place) {
 // Close notes modal
 function closeNotesModal() {
     const modal = document.getElementById('notes-modal');
+    modal._trapFocusCleanup?.();
     modal.style.display = 'none';
     currentEditingPlaceId = null;
+    _prevFocusEl?.focus();
+    _prevFocusEl = null;
 }
 
 // Save notes from modal
@@ -2202,7 +2256,9 @@ function openSearchModal() {
     renderSearchTypeChips();
     document.querySelectorAll('.search-type-chip').forEach(c => c.classList.remove('active'));
 
+    _prevFocusEl = document.activeElement;
     modal.style.display = 'flex';
+    modal._trapFocusCleanup = trapFocus(modal);
     input.focus();
 
     // Auto-load nearby restaurants if location available
@@ -2313,7 +2369,11 @@ function renderSearchResults(results) {
 
 // Close search modal
 function closeSearchModal() {
-    document.getElementById('search-modal').style.display = 'none';
+    const modal = document.getElementById('search-modal');
+    modal._trapFocusCleanup?.();
+    modal.style.display = 'none';
+    _prevFocusEl?.focus();
+    _prevFocusEl = null;
 }
 
 // Search Google Places API
@@ -2503,12 +2563,22 @@ function openFilterDrawer() {
     populateFilterDrawerOptions();
 
     // Show drawer
-    document.getElementById('filter-drawer').style.display = 'flex';
+    const drawer = document.getElementById('filter-drawer');
+    _prevFocusEl = document.activeElement;
+    document.getElementById('filter-btn').setAttribute('aria-expanded', 'true');
+    drawer.style.display = 'flex';
+    drawer._trapFocusCleanup = trapFocus(drawer);
+    drawer.querySelector('button')?.focus();
     hapticFeedback('light');
 }
 
 function closeFilterDrawer() {
-    document.getElementById('filter-drawer').style.display = 'none';
+    const drawer = document.getElementById('filter-drawer');
+    drawer._trapFocusCleanup?.();
+    drawer.style.display = 'none';
+    document.getElementById('filter-btn').setAttribute('aria-expanded', 'false');
+    _prevFocusEl?.focus();
+    _prevFocusEl = null;
 }
 
 function populateFilterDrawerOptions() {
@@ -2786,6 +2856,9 @@ function switchView(view) {
     document.getElementById('btn-map').classList.toggle('active', view === 'map');
     document.getElementById('btn-list').classList.toggle('active', view === 'list');
     document.getElementById('btn-reviews').classList.toggle('active', view === 'reviews');
+    document.getElementById('btn-map').setAttribute('aria-pressed', String(view === 'map'));
+    document.getElementById('btn-list').setAttribute('aria-pressed', String(view === 'list'));
+    document.getElementById('btn-reviews').setAttribute('aria-pressed', String(view === 'reviews'));
 
     // Update view visibility
     document.getElementById('map-view').classList.toggle('active', view === 'map');
@@ -2815,6 +2888,18 @@ async function initApp() {
 
     // Setup view toggle
     setupViewToggle();
+
+    // Global Escape key handler — close whichever overlay is open
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        if (document.getElementById('photo-viewer')?.style.display === 'flex') { closePhotoViewer(); return; }
+        if (document.getElementById('review-sheet')?.style.display === 'flex') { closeReviewSheet(); return; }
+        if (document.getElementById('search-modal')?.style.display === 'flex') { closeSearchModal(); return; }
+        if (document.getElementById('filter-drawer')?.style.display === 'flex') { closeFilterDrawer(); return; }
+        if (document.getElementById('notes-modal')?.style.display === 'flex') { closeNotesModal(); return; }
+        if (document.getElementById('review-prompt-modal')?.style.display === 'flex') { closeReviewPrompt(); return; }
+        if (document.getElementById('place-menu')?.style.display === 'flex') { closePlaceMenu(); return; }
+    });
 
     // Initialize map
     initMap();
@@ -3356,7 +3441,9 @@ async function openReviewSheet(placeId) {
 
     // Show sheet immediately
     const sheet = document.getElementById('review-sheet');
+    _prevFocusEl = document.activeElement;
     sheet.style.display = 'flex';
+    sheet._trapFocusCleanup = trapFocus(sheet);
     sheet.classList.add('loading');
 
     // Hide both modes while loading
@@ -3613,11 +3700,15 @@ function cancelEditMode() {
 
 // Close review sheet
 function closeReviewSheet() {
-    document.getElementById('review-sheet').style.display = 'none';
+    const sheet = document.getElementById('review-sheet');
+    sheet._trapFocusCleanup?.();
+    sheet.style.display = 'none';
     currentReviewPlaceId = null;
     currentReview = null;
     reviewMode = 'view';
     resetPendingReviewPhotos();
+    _prevFocusEl?.focus();
+    _prevFocusEl = null;
 }
 
 // ========== PHOTO VIEWER ==========
@@ -3634,17 +3725,24 @@ function openPhotoViewer(photos, startIndex = 0, allowDelete = false) {
     photoViewerEditMode = allowDelete;
 
     const viewer = document.getElementById('photo-viewer');
+    _prevFocusEl = document.activeElement;
     viewer.style.display = 'flex';
+    viewer._trapFocusCleanup = trapFocus(viewer);
     viewer.classList.toggle('view-mode', !allowDelete);
 
     updatePhotoViewer();
+    document.getElementById('photo-viewer-close').focus();
     hapticFeedback('light');
 }
 
 function closePhotoViewer() {
-    document.getElementById('photo-viewer').style.display = 'none';
+    const viewer = document.getElementById('photo-viewer');
+    viewer._trapFocusCleanup?.();
+    viewer.style.display = 'none';
     photoViewerPhotos = [];
     photoViewerIndex = 0;
+    _prevFocusEl?.focus();
+    _prevFocusEl = null;
 }
 
 function updatePhotoViewer() {
@@ -4447,8 +4545,12 @@ function setupReviewsView() {
     // Filter chips click handlers
     document.querySelectorAll('.review-filter-chip').forEach(chip => {
         chip.addEventListener('click', () => {
-            document.querySelectorAll('.review-filter-chip').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.review-filter-chip').forEach(c => {
+                c.classList.remove('active');
+                c.setAttribute('aria-pressed', 'false');
+            });
             chip.classList.add('active');
+            chip.setAttribute('aria-pressed', 'true');
             renderReviews();
             hapticFeedback('light');
         });
