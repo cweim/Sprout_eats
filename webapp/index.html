@@ -12,13 +12,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- Leaflet.markercluster for clustering dense markers -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css">
-    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 
     <!-- App styles - Playful & Warm theme -->
-    <link rel="stylesheet" href="styles.css?v=24">
+    <link rel="stylesheet" href="styles.css?v=46">
 </head>
 <body>
     <header class="app-header">
@@ -41,9 +37,11 @@
                     <button class="map-filter-chip" data-filter="unvisited" aria-pressed="false">To Visit</button>
                     <button class="map-filter-chip" data-filter="visited" aria-pressed="false">Visited ✓</button>
                 </div>
-                <select id="map-cuisine-filter" class="map-cuisine-select">
-                    <option value="">All cuisines</option>
-                </select>
+                <div id="map-cuisine-wrap" class="map-cuisine-select-wrap" style="display:none">
+                    <select id="map-cuisine-filter" class="map-cuisine-select">
+                        <option value="">All types</option>
+                    </select>
+                </div>
             </div>
             <div class="map-controls">
                 <button id="btn-my-location" class="map-control-btn" title="My Location" aria-label="Center on my location">📍</button>
@@ -56,11 +54,26 @@
             <div class="list-controls">
                 <div class="search-row">
                     <div class="search-bar">
+                        <span class="search-icon" aria-hidden="true">
+                            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+                                <line x1="10.5" y1="10.5" x2="13.5" y2="13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                            </svg>
+                        </span>
                         <input type="text" id="search-input" placeholder="Search by name..." aria-label="Search places by name">
                         <button id="search-clear" class="search-clear-btn" style="display: none;" aria-label="Clear search">×</button>
                     </div>
                     <button id="filter-btn" class="filter-btn" aria-label="Open filters" aria-expanded="false">
-                        <span class="filter-icon">⚙️</span>
+                        <span class="filter-icon">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                <line x1="2" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                <circle cx="5" cy="4" r="1.5" fill="currentColor"/>
+                                <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                <circle cx="11" cy="8" r="1.5" fill="currentColor"/>
+                                <line x1="2" y1="12" x2="14" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                <circle cx="7" cy="12" r="1.5" fill="currentColor"/>
+                            </svg>
+                        </span>
                         <span class="filter-count" style="display: none;">0</span>
                     </button>
                 </div>
@@ -87,21 +100,35 @@
 
         <!-- Reviews View -->
         <div id="reviews-view" class="view">
-            <div class="reviews-controls">
-                <div class="reviews-header-row">
-                    <h3 class="reviews-count">0 reviews</h3>
-                    <select id="reviews-sort" class="reviews-sort-select">
-                        <option value="newest">Newest first</option>
-                        <option value="oldest">Oldest first</option>
-                        <option value="highest">Highest rated</option>
-                        <option value="lowest">Lowest rated</option>
-                    </select>
+            <div class="list-controls">
+                <div class="search-row">
+                    <div class="search-bar">
+                        <span class="search-icon" aria-hidden="true">
+                            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+                                <line x1="10.5" y1="10.5" x2="13.5" y2="13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                            </svg>
+                        </span>
+                        <input type="text" id="reviews-search-input" placeholder="Search by place..." aria-label="Search reviews by place name">
+                        <button id="reviews-search-clear" class="search-clear-btn" style="display:none" aria-label="Clear search">×</button>
+                    </div>
+                    <button id="reviews-filter-btn" class="filter-btn" aria-label="Open filters" aria-expanded="false">
+                        <span class="filter-icon">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                <line x1="2" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                <circle cx="5" cy="4" r="1.5" fill="currentColor"/>
+                                <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                <circle cx="11" cy="8" r="1.5" fill="currentColor"/>
+                                <line x1="2" y1="12" x2="14" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                <circle cx="7" cy="12" r="1.5" fill="currentColor"/>
+                            </svg>
+                        </span>
+                        <span class="filter-count" id="reviews-filter-count" style="display:none">0</span>
+                    </button>
                 </div>
-                <div class="reviews-filters">
-                    <button class="review-filter-chip active" data-filter="all" aria-pressed="true">All</button>
-                    <button class="review-filter-chip" data-filter="photos" aria-pressed="false">With Photos</button>
-                    <button class="review-filter-chip" data-filter="5star" aria-pressed="false">5 ⭐</button>
-                    <button class="review-filter-chip" data-filter="4star" aria-pressed="false">4 ⭐</button>
+                <div id="reviews-active-filters" class="active-filters"></div>
+                <div class="sort-controls">
+                    <span class="results-count" id="reviews-results-count"></span>
                 </div>
             </div>
             <div id="reviews-list">
@@ -184,30 +211,14 @@
 
     <div id="review-prompt-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="review-prompt-title">
         <div class="modal-content review-prompt-content">
-            <div class="modal-header review-prompt-header">
-                <div class="review-prompt-heading">
-                    <span class="review-prompt-kicker">Visited just now</span>
-                    <h2 id="review-prompt-title">Add a quick review?</h2>
-                </div>
-                <button id="review-prompt-close" class="modal-close-btn" aria-label="Close">×</button>
-            </div>
-            <div class="modal-body review-prompt-body">
-                <div class="review-prompt-hero">
-                    <div class="review-prompt-icon" aria-hidden="true">✦</div>
-                    <div class="review-prompt-copy">
-                        <div id="review-prompt-place-name" class="review-prompt-place-name">This place</div>
-                        <p id="review-prompt-text">You marked this place as visited. Want to review it now?</p>
-                    </div>
-                </div>
-                <div class="review-prompt-note">
-                    A quick review helps you remember what was worth coming back for.
-                </div>
-            </div>
+            <div id="review-prompt-place-name" class="review-prompt-place-name"></div>
+            <h2 id="review-prompt-title" class="review-prompt-question">How was it? ⭐</h2>
             <div class="modal-footer review-prompt-footer">
-                <button id="review-prompt-later" class="modal-btn review-prompt-secondary">Remind me later</button>
-                <button id="review-prompt-now" class="modal-btn primary review-prompt-primary">Write review</button>
+                <button id="review-prompt-later" class="modal-btn review-prompt-secondary">Later</button>
+                <button id="review-prompt-now" class="modal-btn primary">Write review</button>
             </div>
             <button id="review-prompt-dont-ask" class="review-prompt-link-btn">Don't ask again for this place</button>
+            <button id="review-prompt-close" style="display:none;" aria-label="Close">×</button>
         </div>
     </div>
 
@@ -248,6 +259,31 @@
         </div>
     </div>
 
+    <!-- Reviews Filter Drawer -->
+    <div id="reviews-filter-drawer" class="drawer" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="reviews-filter-drawer-title">
+        <div class="drawer-content">
+            <div class="drawer-header">
+                <h2 id="reviews-filter-drawer-title">Filters</h2>
+                <button id="reviews-filter-drawer-close" class="drawer-close-btn" aria-label="Close">×</button>
+            </div>
+            <div class="drawer-body">
+                <div class="filter-section">
+                    <label class="filter-label">Sort by</label>
+                    <div class="filter-options" id="reviews-sort-options">
+                        <button class="filter-option active" data-sort="newest">Newest</button>
+                        <button class="filter-option" data-sort="oldest">Oldest</button>
+                        <button class="filter-option" data-sort="highest">Top Rated</button>
+                        <button class="filter-option" data-sort="lowest">Lowest Rated</button>
+                    </div>
+                </div>
+            </div>
+            <div class="drawer-footer">
+                <button id="reviews-filter-clear-all" class="drawer-btn secondary">Clear All</button>
+                <button id="reviews-filter-apply" class="drawer-btn primary">Apply</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Place Overflow Menu -->
     <div id="place-menu" class="place-menu" style="display: none;" role="dialog" aria-modal="true" aria-label="Place options">
         <div class="place-menu-content">
@@ -269,66 +305,50 @@
                 <button id="review-sheet-close" class="sheet-close-btn" aria-label="Close">×</button>
             </div>
 
-            <!-- VIEW MODE (read-only) -->
-            <div class="sheet-body" id="review-view-mode">
-                <div class="review-section">
-                    <div class="review-view-ratings">
-                        <div class="view-rating-item">
-                            <span class="view-rating-label">Rating</span>
-                            <span id="view-overall-stars" class="view-stars"></span>
-                        </div>
-                        <div class="view-rating-item">
-                            <span class="view-rating-label">Price</span>
-                            <span id="view-price-rating" class="view-price"></span>
-                        </div>
+            <div class="sheet-body" id="review-form">
+                <!-- Rating + Price on same row -->
+                <div class="review-ratings-row">
+                    <div class="rating-group" id="overall-rating-group">
+                        <span class="review-label">Rating</span>
+                        <div id="overall-stars" class="star-rating" data-rating="0"></div>
                     </div>
-                    <div id="view-overall-photos" class="photo-grid view-photos"></div>
-                    <div id="view-overall-remarks" class="view-remarks"></div>
-                    <div id="view-edited" class="view-edited"></div>
+                    <div class="rating-group" id="price-rating-group">
+                        <span class="review-label">Price</span>
+                        <div id="price-rating" class="price-rating" data-rating="0"></div>
+                    </div>
                 </div>
 
+                <!-- Dish chips -->
                 <div class="review-section">
-                    <div class="section-header">Dishes</div>
-                    <div id="view-dishes"></div>
-                </div>
-            </div>
-
-            <!-- EDIT MODE (interactive) -->
-            <div class="sheet-body" id="review-edit-mode" style="display: none;">
-                <div class="review-section">
-                    <div class="section-header">Overall</div>
-                    <div class="overall-ratings-row">
-                        <div class="rating-group" id="overall-rating-group">
-                            <label>Rating</label>
-                            <div id="overall-stars" class="star-rating" data-rating="0"></div>
-                        </div>
-                        <div class="rating-group" id="price-rating-group">
-                            <label>Price</label>
-                            <div id="price-rating" class="price-rating" data-rating="0"></div>
+                    <span class="review-label">What did you have?</span>
+                    <div id="dish-chips-container" class="dish-chips-container">
+                        <!-- chips injected by JS before this trigger -->
+                        <div id="dish-add-trigger" class="dish-add-trigger">
+                            <span id="dish-add-label" class="dish-add-label">+ Add a dish</span>
+                            <span id="dish-add-input-wrap" class="dish-add-input-wrap" style="display:none">
+                                <input type="text" id="dish-chip-input" class="dish-chip-input" placeholder="Dish name..." maxlength="100" autocomplete="off" enterkeyhint="done">
+                                <button type="button" id="dish-chip-confirm-btn" class="dish-chip-confirm-btn">✓</button>
+                            </span>
                         </div>
                     </div>
-                    <div id="review-form-error" class="review-form-error" style="display: none;" role="alert"></div>
+                </div>
+
+                <!-- Notes -->
+                <div class="review-section">
+                    <span class="review-label">Anything to remember?</span>
+                    <textarea id="overall-remarks" class="review-remarks" placeholder="What was great? What to skip next time?" maxlength="1000"></textarea>
+                </div>
+
+                <!-- Photos -->
+                <div class="review-section">
+                    <span class="review-label">Photos</span>
                     <div id="overall-photos" class="photo-grid"></div>
-                    <div class="overall-remarks-row">
-                        <textarea id="overall-remarks" placeholder="Overall thoughts" maxlength="500"></textarea>
-                    </div>
                 </div>
 
-                <div class="review-section">
-                    <div class="section-header">Dishes</div>
-                    <div id="review-dishes"></div>
-                    <button id="add-dish-btn" class="add-dish-btn">+ Add another dish</button>
-                </div>
+                <div id="review-form-error" class="review-form-error" style="display: none;" role="alert"></div>
             </div>
 
-            <!-- VIEW MODE footer -->
-            <div class="sheet-footer" id="review-view-footer">
-                <button id="edit-review-btn" class="sheet-btn primary">Edit Review</button>
-            </div>
-
-            <!-- EDIT MODE footer -->
-            <div class="sheet-footer" id="review-edit-footer" style="display: none;">
-                <button id="cancel-edit-btn" class="sheet-btn secondary">Cancel</button>
+            <div class="sheet-footer">
                 <button id="delete-review-btn" class="sheet-btn danger" style="display: none;">Delete</button>
                 <button id="save-review-btn" class="sheet-btn primary">Save</button>
             </div>
@@ -351,6 +371,6 @@
         </div>
     </div>
 
-    <script src="app.min.js?v=39"></script>
+    <script src="app.js?v=65"></script>
 </body>
 </html>

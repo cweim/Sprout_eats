@@ -175,6 +175,10 @@ async def update_place(
     if not place:
         raise HTTPException(status_code=404, detail="Place not found")
 
+    # Delete review if place just unmarked as visited
+    if update.is_visited is False and old_place.get("is_visited"):
+        repository.delete_review(user.id, place_id)
+
     # Create reminder if place just marked visited and no review exists
     if update.is_visited and not old_place.get("is_visited"):
         existing_review = repository.get_review(user.id, place_id)
@@ -321,14 +325,14 @@ class DishRequest(BaseModel):
     """Request model for a dish in a review."""
     id: Optional[int] = None
     name: str = Field(..., min_length=1)
-    rating: int = Field(..., ge=1, le=5)
+    rating: Optional[int] = Field(None, ge=1, le=5)
     remarks: Optional[str] = None
 
 
 class ReviewRequest(BaseModel):
     """Request model for creating/updating a review."""
     overall_rating: int = Field(..., ge=1, le=5)
-    price_rating: int = Field(..., ge=1, le=5)
+    price_rating: int = Field(0, ge=0, le=5)
     overall_remarks: Optional[str] = None
     dishes: List[DishRequest] = []
 
@@ -511,11 +515,11 @@ async def upload_photo(
 
     # Check photo limits
     count = repository.get_photo_count(review_id, dish_id)
-    max_photos = 2 if dish_id else 3
+    max_photos = 10
     if count >= max_photos:
         raise HTTPException(
             status_code=400,
-            detail=f"Photo limit reached ({max_photos} max per {'dish' if dish_id else 'overall'})"
+            detail=f"Photo limit reached ({max_photos} max per review)"
         )
 
     # Read file content and enforce size limit

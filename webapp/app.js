@@ -82,7 +82,9 @@ let userLocationMarker = null;
 // Filter state (sortBy and visitedFilter loaded from localStorage)
 let searchQuery = '';
 let activeCategory = '';  // Single category filter (empty = all)
-let sortBy = localStorage.getItem('sortBy') || 'newest';
+// 'newest' was the old silent default — treat it as no preference → reset to 'distance'
+if (localStorage.getItem('sortBy') === 'newest') localStorage.removeItem('sortBy');
+let sortBy = localStorage.getItem('sortBy') || 'distance';
 let visitedFilter = localStorage.getItem('visitedFilter') || 'all';  // 'all', 'visited', 'unvisited'
 let countryFilter = '';  // Country filter (empty = all)
 let mapCuisineFilter = '';  // Cuisine filter for map view
@@ -479,15 +481,13 @@ function initMap() {
         maxZoom: 20
     }).addTo(map);
 
-    // Create marker cluster group for markers (groups nearby markers at low zoom)
-    markersLayer = L.markerClusterGroup({
-        showCoverageOnHover: false,
-        maxClusterRadius: 50,
-        spiderfyOnMaxZoom: true,
-        disableClusteringAtZoom: 16
-    }).addTo(map);
+    // Plain layer group — no clustering, markers always visible
+    markersLayer = L.layerGroup().addTo(map);
 
-    map.on('zoomend', updatePlacePreviewVisibility);
+    map.on('zoomend', () => {
+        updatePlacePreviewVisibility();
+        updateMarkerIconSizes();
+    });
     updatePlacePreviewVisibility();
 
     return map;
@@ -595,7 +595,7 @@ function createPopupContent(place) {
         const reviewAriaLabel = `Write review for ${escapeHtml(place.name)}`;
         html += `<button class="card-action-btn review-btn" onclick="openReviewSheet(${place.id})" title="Write Review" aria-label="${reviewAriaLabel}">Review</button>`;
     } else {
-        html += `<button class="card-action-btn review-btn disabled" title="Mark as visited first" aria-label="Mark as visited first to review" disabled>Review</button>`;
+        html += `<button class="card-action-btn review-btn disabled" onclick="showVisitFirstNudge()" aria-label="Mark as visited first to review">Review</button>`;
     }
 
     // Google Maps link
@@ -603,15 +603,15 @@ function createPopupContent(place) {
     if (place.google_place_id) {
         const encodedName = encodeURIComponent(place.name);
         html += `<a href="https://www.google.com/maps/search/?api=1&query=${encodedName}&query_place_id=${place.google_place_id}"
-                    target="_blank" class="card-action-btn" title="Open in Google Maps" aria-label="${mapsAriaLabel}">Maps</a>`;
+                    target="_blank" class="card-action-btn external-btn" title="Open in Google Maps" aria-label="${mapsAriaLabel}">Maps</a>`;
     } else if (place.latitude && place.longitude) {
         html += `<a href="https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}"
-                    target="_blank" class="card-action-btn" title="Open in Google Maps" aria-label="${mapsAriaLabel}">Maps</a>`;
+                    target="_blank" class="card-action-btn external-btn" title="Open in Google Maps" aria-label="${mapsAriaLabel}">Maps</a>`;
     }
 
     // Original reel link
     if (place.source_url) {
-        html += `<a href="${safeUrl(place.source_url)}" target="_blank" class="card-action-btn" title="View Original Reel" aria-label="View original reel">Reel</a>`;
+        html += `<a href="${safeUrl(place.source_url)}" target="_blank" class="card-action-btn external-btn" title="View Original Reel" aria-label="View original reel">Reel</a>`;
     }
 
     // Delete button
@@ -625,11 +625,16 @@ function createPopupContent(place) {
 }
 
 // Toggle visited status from popup
-function toggleVisited(placeId) {
+async function toggleVisited(placeId) {
     const place = places.find(p => p.id === placeId);
-    if (place) {
-        updatePlaceVisited(placeId, !place.is_visited, true);  // true = from popup, don't close it
+    if (!place) return;
+    const newVisited = !place.is_visited;
+    if (!newVisited && getPlaceReview(placeId)) {
+        const ok = confirm(`Unmark "${place.name}" as visited?\n\nYour review will also be deleted. To edit your review instead, tap ✍️ on the card.`);
+        if (!ok) return;
+        await deleteReviewForPlace(placeId);
     }
+    updatePlaceVisited(placeId, newVisited, true);
 }
 
 // Update a marker's popup content in-place without closing it
@@ -764,6 +769,42 @@ function syncMarkerPreviewTooltip(marker, place) {
     }
 }
 
+// Return marker icon sized for current zoom level
+// zoom < 10  → small colored dot
+// zoom 10-14 → medium sprout (26px)
+// zoom >= 15 → full sprout (40px)
+function getMarkerIconForZoom(zoom, isVisited) {
+    if (zoom < 10) {
+        const color = isVisited ? '#4caf50' : '#7c4dff';
+        return L.divIcon({
+            className: '',
+            html: `<div class="marker-dot" style="background:${color}"></div>`,
+            iconSize: [12, 12],
+            iconAnchor: [6, 6],
+            popupAnchor: [0, -6]
+        });
+    }
+    const size = zoom < 15 ? 26 : 40;
+    const half = size / 2;
+    return L.icon({
+        iconUrl: isVisited ? '/images/sprout_mascot_green.png' : '/images/sprout_mascot_purple.png',
+        iconSize: [size, size],
+        iconAnchor: [half, size],
+        popupAnchor: [0, -size]
+    });
+}
+
+// Update all existing marker icons to match current zoom
+function updateMarkerIconSizes() {
+    if (!map || !markersLayer) return;
+    const zoom = map.getZoom();
+    markersLayer.getLayers().forEach(marker => {
+        if (marker.placeData) {
+            marker.setIcon(getMarkerIconForZoom(zoom, marker.placeData.is_visited));
+        }
+    });
+}
+
 // Add markers for all places
 function displayPlacesOnMap(fitBounds = true) {
     if (!map || !markersLayer) return;
@@ -793,26 +834,12 @@ function displayPlacesOnMap(fitBounds = true) {
         return;
     }
 
-    // Create custom icons for visited/unvisited
-    const visitedIcon = L.icon({
-        iconUrl: '/images/sprout_mascot_green.png',
-        iconSize: [40, 40],
-        iconAnchor: [20, 40],
-        popupAnchor: [0, -40]
-    });
+    const zoom = map.getZoom();
 
-    const unvisitedIcon = L.icon({
-        iconUrl: '/images/sprout_mascot_purple.png',
-        iconSize: [40, 40],
-        iconAnchor: [20, 40],
-        popupAnchor: [0, -40]
-    });
-
-    // Add marker for each place with mascot icons
+    // Add marker for each place, sized for current zoom
     filteredPlaces.forEach(place => {
         if (place.latitude && place.longitude) {
-            // Use different mascot for visited vs unvisited
-            const icon = place.is_visited ? visitedIcon : unvisitedIcon;
+            const icon = getMarkerIconForZoom(zoom, place.is_visited);
             const marker = L.marker([place.latitude, place.longitude], { icon });
             marker.placeData = place;
 
@@ -835,17 +862,22 @@ function displayPlacesOnMap(fitBounds = true) {
 
     // Fit map to show all markers only if requested
     if (fitBounds && markersLayer.getLayers().length > 0) {
-        const bounds = markersLayer.getBounds();
+        const bounds = L.latLngBounds(
+            markersLayer.getLayers()
+                .filter(m => m.getLatLng)
+                .map(m => m.getLatLng())
+        );
         map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
     }
 
     updatePlacePreviewVisibility();
 }
 
-// Populate cuisine dropdown from available places
+// Populate cuisine select from available places
 function populateCuisineDropdown() {
     const select = document.getElementById('map-cuisine-filter');
-    if (!select) return;
+    const wrap = document.getElementById('map-cuisine-wrap');
+    if (!select || !wrap) return;
 
     const cuisines = new Set();
     places.forEach(p => {
@@ -853,10 +885,15 @@ function populateCuisineDropdown() {
         if (category) cuisines.add(category);
     });
 
-    // Remember current value
-    const currentValue = select.value;
+    // Hide if no cuisine data
+    if (cuisines.size === 0) {
+        wrap.style.display = 'none';
+        return;
+    }
 
-    // Clear and rebuild options
+    wrap.style.display = '';
+
+    const currentValue = select.value;
     select.innerHTML = '<option value="">All types</option>';
     Array.from(cuisines).sort().forEach(cuisine => {
         const option = document.createElement('option');
@@ -865,8 +902,10 @@ function populateCuisineDropdown() {
         select.appendChild(option);
     });
 
-    // Restore value if still valid
-    select.value = currentValue;
+    // Restore selection if still valid
+    if (currentValue && cuisines.has(currentValue)) {
+        select.value = currentValue;
+    }
 }
 
 // Extract country from address
@@ -959,8 +998,19 @@ function filterPlacesByVisited(placesToFilter) {
     }
 }
 
+// Nudge when user taps Review on unvisited place
+function showVisitFirstNudge() {
+    const messages = [
+        "sprout says: visit first, review later! 🌱",
+        "haven't been yet? go go go! 🌿",
+        "mark it visited and spill the tea ☕",
+    ];
+    const msg = messages[Math.floor(Math.random() * messages.length)];
+    showToast(msg, null, 2000);
+}
+
 // Show toast message (optionally with retry button)
-function showToast(message, retryFn = null) {
+function showToast(message, retryFn = null, duration = null) {
     // Remove existing toast
     const existing = document.querySelector('.toast');
     if (existing) existing.remove();
@@ -987,12 +1037,12 @@ function showToast(message, retryFn = null) {
     // Animate in
     setTimeout(() => toast.classList.add('show'), 10);
 
-    // Remove after 3 seconds (5 seconds if has retry)
-    const duration = retryFn ? 5000 : 3000;
+    // Remove after 3 seconds (5 seconds if has retry, or custom duration)
+    const toastDuration = duration ?? (retryFn ? 5000 : 3000);
     setTimeout(() => {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 300);
-    }, duration);
+    }, toastDuration);
 }
 
 // Show success animation overlay
@@ -1114,12 +1164,14 @@ function setupMapControls() {
         });
     });
 
-    // Map cuisine filter
+    // Cuisine type filter
     const cuisineSelect = document.getElementById('map-cuisine-filter');
-    cuisineSelect.addEventListener('change', (e) => {
-        mapCuisineFilter = e.target.value;
-        displayPlacesOnMap(false);
-    });
+    if (cuisineSelect) {
+        cuisineSelect.addEventListener('change', (e) => {
+            mapCuisineFilter = e.target.value;
+            displayPlacesOnMap(false);
+        });
+    }
 }
 
 // Get platform icon/emoji
@@ -1145,16 +1197,12 @@ function createPlaceCard(place) {
     card.className = 'place-card' + (place.is_visited ? ' visited' : '');
     card.dataset.placeId = place.id;
 
-    // Sprout icon based on visited status
+    // Sprout icon (visual only — visited=green, unvisited=purple)
     const sproutImg = place.is_visited ? '/images/sprout_mascot_green.png' : '/images/sprout_mascot_purple.png';
-    const sproutTitle = place.is_visited ? 'Visited! Click to unmark' : 'Click to mark as visited';
-    const sproutAriaLabel = place.is_visited ? 'Mark as unvisited' : 'Mark as visited';
 
-    // Header with sprout toggle, name, and more button
+    // Header with sprout icon, name, and more button
     let headerHtml = `<div class="place-card-header">`;
-    headerHtml += `<button class="sprout-toggle" onclick="event.stopPropagation(); toggleVisitedFromCard(${place.id})" title="${sproutTitle}" aria-label="${sproutAriaLabel}">
-        <img src="${sproutImg}" alt="${place.is_visited ? 'Visited' : 'To visit'}">
-    </button>`;
+    headerHtml += `<span class="sprout-icon"><img src="${sproutImg}" alt="${place.is_visited ? 'Visited' : 'To visit'}"></span>`;
     // Add review badge if exists
     const review = getPlaceReview(place.id);
     const reviewBadge = review
@@ -1182,12 +1230,13 @@ function createPlaceCard(place) {
     }
     metaHtml += '</div>';
 
-    // Distance display (if user location available)
-    let distanceHtml = '';
+    // Distance + visited toggle row (same line)
+    const visitedClass = place.is_visited ? ' active' : '';
+    const visitedText = place.is_visited ? '✓ Visited' : 'Mark as visited';
+    const visitedToggleBtn = `<button class="visited-toggle-btn card-visited-toggle${visitedClass}" onclick="event.stopPropagation(); toggleVisitedFromCard(${place.id})" aria-label="${place.is_visited ? 'Mark as unvisited' : 'Mark as visited'}">${visitedText}</button>`;
     const distance = getPlaceDistance(place);
-    if (distance !== null) {
-        distanceHtml = `<div class="place-card-distance">📍 ${formatDistance(distance)} away</div>`;
-    }
+    const distanceText = distance !== null ? `<span class="place-card-distance">📍 ${formatDistance(distance)} away</span>` : '';
+    const distanceHtml = `<div class="place-card-distance-row">${distanceText}${visitedToggleBtn}</div>`;
 
     // Notes section - inline editable
     let notesHtml = '';
@@ -1209,22 +1258,22 @@ function createPlaceCard(place) {
     if (place.is_visited) {
         actionsHtml += `<button class="card-action-btn review-btn" onclick="event.stopPropagation(); openReviewSheet(${place.id})" aria-label="Write review">⭐ Review</button>`;
     } else {
-        actionsHtml += `<button class="card-action-btn review-btn disabled" title="Mark as visited first" aria-label="Mark as visited first to review" disabled>⭐ Review</button>`;
+        actionsHtml += `<button class="card-action-btn review-btn disabled" onclick="event.stopPropagation(); showVisitFirstNudge()" aria-label="Mark as visited first to review">⭐ Review</button>`;
     }
 
     // Google Maps link
     if (place.google_place_id) {
         const encodedName = encodeURIComponent(place.name);
         actionsHtml += `<a href="https://www.google.com/maps/search/?api=1&query=${encodedName}&query_place_id=${place.google_place_id}"
-                          target="_blank" class="card-action-btn" onclick="event.stopPropagation()" aria-label="Open in Google Maps">📍 Maps</a>`;
+                          target="_blank" class="card-action-btn external-btn" onclick="event.stopPropagation()" aria-label="Open in Google Maps">📍 Maps</a>`;
     } else if (place.latitude && place.longitude) {
         actionsHtml += `<a href="https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}"
-                          target="_blank" class="card-action-btn" onclick="event.stopPropagation()" aria-label="Open in Google Maps">📍 Maps</a>`;
+                          target="_blank" class="card-action-btn external-btn" onclick="event.stopPropagation()" aria-label="Open in Google Maps">📍 Maps</a>`;
     }
 
     // Original reel link
     if (place.source_url) {
-        actionsHtml += `<a href="${safeUrl(place.source_url)}" target="_blank" class="card-action-btn" onclick="event.stopPropagation()" aria-label="View original reel">▶️ Reel</a>`;
+        actionsHtml += `<a href="${safeUrl(place.source_url)}" target="_blank" class="card-action-btn external-btn" onclick="event.stopPropagation()" aria-label="View original reel">▶️ Reel</a>`;
     }
 
     actionsHtml += '</div>';
@@ -1244,11 +1293,16 @@ function createPlaceCard(place) {
 }
 
 // Toggle visited from card sprout button
-function toggleVisitedFromCard(placeId) {
+async function toggleVisitedFromCard(placeId) {
     const place = places.find(p => p.id === placeId);
-    if (place) {
-        updatePlaceVisited(placeId, !place.is_visited, false);
+    if (!place) return;
+    const newVisited = !place.is_visited;
+    if (!newVisited && getPlaceReview(placeId)) {
+        const ok = confirm(`Unmark "${place.name}" as visited?\n\nYour review will also be deleted. To edit your review instead, tap ✍️ on the card.`);
+        if (!ok) return;
+        await deleteReviewForPlace(placeId);
     }
+    updatePlaceVisited(placeId, newVisited, false);
 }
 
 // ========== PLACE OVERFLOW MENU ==========
@@ -1474,8 +1528,9 @@ function sortPlaces(placesToSort) {
             break;
         case 'distance':
             if (!userLocation) {
-                showToast("Enable location to sort by distance");
-                return sorted; // Return unsorted if no location
+                // No location yet — silently fall back to newest
+                sorted.sort((a, b) => (b.id || 0) - (a.id || 0));
+                return sorted;
             }
             sorted.sort((a, b) => {
                 const distA = getPlaceDistance(a) ?? Infinity;
@@ -1666,13 +1721,11 @@ async function updatePlaceVisited(placeId, isVisited, fromPopup = false) {
 function openReviewPrompt(placeId) {
     const place = places.find(p => p.id === placeId);
     const modal = document.getElementById('review-prompt-modal');
-    const textEl = document.getElementById('review-prompt-text');
     const placeNameEl = document.getElementById('review-prompt-place-name');
-    if (!place || !modal || !textEl || !placeNameEl) return;
+    if (!place || !modal || !placeNameEl) return;
 
     pendingReviewPromptPlaceId = placeId;
     placeNameEl.textContent = place.name;
-    textEl.textContent = 'You just marked this spot as visited. Add a quick review while the details are still fresh.';
     _prevFocusEl = document.activeElement;
     modal.style.display = 'flex';
     modal._trapFocusCleanup = trapFocus(modal);
@@ -1744,6 +1797,7 @@ async function updatePlaceNotes(placeId, notes) {
 }
 
 // Start inline note editing in list view
+
 function startInlineNoteEdit(placeId, container) {
     const place = places.find(p => p.id === placeId);
     if (!place) return;
@@ -2549,7 +2603,7 @@ function setupSearchModal() {
 // ========== FILTER DRAWER ==========
 
 // Temporary filter state for drawer
-let drawerSort = 'newest';
+let drawerSort = 'distance';
 let drawerCountry = '';
 let drawerType = '';
 
@@ -2667,7 +2721,7 @@ function applyFilterDrawer() {
 }
 
 function clearAllFilters() {
-    drawerSort = 'newest';
+    drawerSort = 'distance';
     drawerCountry = '';
     drawerType = '';
     populateFilterDrawerOptions();
@@ -2691,9 +2745,9 @@ function updateFilterButton() {
     const btn = document.getElementById('filter-btn');
     const countEl = btn.querySelector('.filter-count');
 
-    // Count active filters (excluding default sort)
+    // Count active filters (distance is silent default, not counted)
     let count = 0;
-    if (sortBy !== 'newest') count++;
+    if (sortBy !== 'distance') count++;
     if (countryFilter) count++;
     if (activeCategory) count++;
 
@@ -2726,8 +2780,8 @@ function renderActiveFilterPills() {
         </span>`;
     }
 
-    if (sortBy !== 'newest') {
-        const sortLabels = { name: 'A-Z', rating: 'Top Rated', distance: 'Nearest' };
+    if (sortBy !== 'distance') {
+        const sortLabels = { newest: 'Newest', name: 'A-Z', rating: 'Top Rated' };
         html += `<span class="filter-pill">
             ${sortLabels[sortBy] || sortBy}
             <button class="filter-pill-remove" onclick="removeFilter('sort')">×</button>
@@ -2740,7 +2794,7 @@ function renderActiveFilterPills() {
 function removeFilter(type) {
     if (type === 'country') countryFilter = '';
     if (type === 'type') activeCategory = '';
-    if (type === 'sort') sortBy = 'newest';
+    if (type === 'sort') sortBy = 'distance';
 
     applyFilters();
     displayPlacesOnMap(false);
@@ -2796,48 +2850,14 @@ function updateMapFilterCounts() {
         }
 
         // Update chip text with count
-        const baseText = filter === 'all' ? 'All' : filter === 'visited' ? 'Visited ✓' : 'To Visit';
+        const baseText = filter === 'all' ? 'All' : filter === 'visited' ? 'Visited' : 'To Visit';
         chip.textContent = count > 0 ? `${baseText} (${count})` : baseText;
     });
 }
 
 // Update review filter chip counts
 function updateReviewFilterCounts() {
-    const totalCount = allReviews.length;
-    const withPhotosCount = allReviews.filter(r => {
-        const dishPhotos = r.dishes?.reduce((sum, d) => sum + (d.photos?.length || 0), 0) || 0;
-        const overallPhotos = r.overall_photos?.length || 0;
-        return (dishPhotos + overallPhotos) > 0;
-    }).length;
-    const fiveStarCount = allReviews.filter(r => r.overall_rating === 5).length;
-    const fourStarCount = allReviews.filter(r => r.overall_rating === 4).length;
-
-    document.querySelectorAll('.review-filter-chip').forEach(chip => {
-        const filter = chip.dataset.filter;
-        let count = 0;
-        let baseText = '';
-
-        switch (filter) {
-            case 'all':
-                count = totalCount;
-                baseText = 'All';
-                break;
-            case 'photos':
-                count = withPhotosCount;
-                baseText = 'With Photos';
-                break;
-            case '5star':
-                count = fiveStarCount;
-                baseText = '5 ⭐';
-                break;
-            case '4star':
-                count = fourStarCount;
-                baseText = '4 ⭐';
-                break;
-        }
-
-        chip.textContent = count > 0 ? `${baseText} (${count})` : baseText;
-    });
+    // Filter chips removed — no-op
 }
 
 // Update all filter counts
@@ -2896,6 +2916,7 @@ async function initApp() {
         if (document.getElementById('review-sheet')?.style.display === 'flex') { closeReviewSheet(); return; }
         if (document.getElementById('search-modal')?.style.display === 'flex') { closeSearchModal(); return; }
         if (document.getElementById('filter-drawer')?.style.display === 'flex') { closeFilterDrawer(); return; }
+        if (document.getElementById('reviews-filter-drawer')?.style.display === 'flex') { closeReviewsFilterDrawer(); return; }
         if (document.getElementById('notes-modal')?.style.display === 'flex') { closeNotesModal(); return; }
         if (document.getElementById('review-prompt-modal')?.style.display === 'flex') { closeReviewPrompt(); return; }
         if (document.getElementById('place-menu')?.style.display === 'flex') { closePlaceMenu(); return; }
@@ -2966,8 +2987,8 @@ async function initApp() {
 // Review state
 let currentReviewPlaceId = null;
 let currentReview = null;
-let reviewDishes = [];
-let dishIdCounter = 0;
+let dishChips = [];       // [{localId, persistedId, name}]
+let chipIdCounter = 0;
 
 const PRICE_LABELS = ['', 'Cheap', 'Affordable', 'Moderate', 'Pricey', 'Expensive'];
 
@@ -3071,124 +3092,128 @@ function initPriceRating(container, onChange) {
     updatePrice(parseInt(container.dataset.rating) || 0);
 }
 
-// Create dish card HTML
-function createDishCard(dish = {}) {
-    const id = dish.id || `new-${++dishIdCounter}`;
-    const name = dish.name || '';
-    const rating = dish.rating || 0;
-    const remarks = dish.remarks || '';
-    const photos = dish.photos || [];
+// ========== DISH CHIPS ==========
 
-    // Start expanded if new (no id) or has content (photos/remarks)
-    const hasContent = photos.length > 0 || remarks;
-    const isNew = !dish.id;
-    const startExpanded = isNew || hasContent;
+function addDishChip(name, persistedId = null) {
+    if (!name.trim()) return;
+    const localId = `chip-${++chipIdCounter}`;
+    dishChips.push({ localId, persistedId, name: name.trim() });
+    renderDishChips();
+}
 
-    const card = document.createElement('div');
-    card.className = 'dish-card' + (startExpanded ? ' expanded' : '');
-    card.dataset.dishId = id;
-    card.draggable = true;
+function removeDishChip(localId) {
+    dishChips = dishChips.filter(c => c.localId !== localId);
+    renderDishChips();
+}
 
-    card.innerHTML = `
-        <div class="dish-card-header">
-            <span class="dish-drag-handle" aria-label="Drag to reorder">⠿</span>
-            <input type="text" class="dish-card-name" placeholder="Dish name" value="${name.replace(/"/g, '&quot;')}" maxlength="100">
-            <div class="dish-card-stars star-rating" data-rating="${rating}"></div>
-            <button type="button" class="dish-expand-btn" aria-label="Expand details">${startExpanded ? '▲' : '▼'}</button>
-            <button type="button" class="dish-remove-btn" onclick="removeDishCard('${id}')" aria-label="Remove dish">×</button>
-        </div>
-        <div class="dish-card-details">
-            <div class="dish-photos photo-grid small" data-dish-id="${id}"></div>
-            <div class="dish-remarks">
-                <textarea placeholder="Notes" maxlength="300">${remarks}</textarea>
-            </div>
-        </div>
-    `;
-
-    // Initialize star rating for this dish
-    const starsContainer = card.querySelector('.dish-card-stars');
-    initStarRating(starsContainer, () => {
-        card.classList.remove('invalid');
+function renderDishChips() {
+    const container = document.getElementById('dish-chips-container');
+    if (!container) return;
+    container.querySelectorAll('.dish-chip').forEach(el => el.remove());
+    const trigger = container.querySelector('#dish-add-trigger');
+    dishChips.forEach(chip => {
+        const el = document.createElement('span');
+        el.className = 'dish-chip';
+        el.innerHTML = `<span class="dish-chip-name">${escapeHtml(chip.name)}</span><button type="button" class="dish-chip-remove" aria-label="Remove ${escapeHtml(chip.name)}">×</button>`;
+        el.querySelector('.dish-chip-remove').addEventListener('click', () => removeDishChip(chip.localId));
+        container.insertBefore(el, trigger);
     });
+}
 
-    // Initialize photo grid (max 2 photos per dish)
-    const photoGrid = card.querySelector('.dish-photos');
-    updatePhotoGrid(photoGrid, [...photos, ...getPendingPhotos(id)], 2, id);
+function setupDishChipInput() {
+    const input = document.getElementById('dish-chip-input');
+    const label = document.getElementById('dish-add-label');
+    const inputWrap = document.getElementById('dish-add-input-wrap');
+    const confirmBtn = document.getElementById('dish-chip-confirm-btn');
+    if (!input || !label || !inputWrap) return;
 
-    // Setup expand/collapse toggle
-    const expandBtn = card.querySelector('.dish-expand-btn');
-    expandBtn.addEventListener('click', () => {
-        card.classList.toggle('expanded');
-        expandBtn.textContent = card.classList.contains('expanded') ? '▲' : '▼';
-        hapticFeedback('light');
-    });
+    function openInput() {
+        label.style.display = 'none';
+        inputWrap.style.display = 'flex';
+        input.focus();
+    }
 
-    // Auto-expand on name input focus
-    const nameInput = card.querySelector('.dish-card-name');
-    nameInput.addEventListener('focus', () => {
-        if (!card.classList.contains('expanded')) {
-            card.classList.add('expanded');
-            expandBtn.textContent = '▲';
+    function commitAndClose() {
+        const name = input.value.trim().replace(/,$/, '');
+        if (name) addDishChip(name);
+        input.value = '';
+        inputWrap.style.display = 'none';
+        label.style.display = '';
+    }
+
+    label.addEventListener('click', openInput);
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            commitAndClose();
+        }
+        if (e.key === 'Escape') {
+            input.value = '';
+            commitAndClose();
         }
     });
-    nameInput.addEventListener('input', () => {
-        card.classList.remove('invalid');
+
+    input.addEventListener('change', () => commitAndClose());
+
+    input.addEventListener('blur', (e) => {
+        // Delay so confirmBtn click fires first
+        setTimeout(() => commitAndClose(), 150);
     });
 
-    const remarksTextarea = card.querySelector('.dish-remarks textarea');
-    remarksTextarea.addEventListener('input', () => {
-        card.classList.remove('invalid');
-    });
-
-    return card;
-}
-
-// Add a new dish card
-function addDishCard(dish = {}) {
-    const container = document.getElementById('review-dishes');
-    const card = createDishCard(dish);
-    container.appendChild(card);
-
-    // Focus the name input
-    card.querySelector('.dish-card-name').focus();
-    hapticFeedback('light');
-}
-
-// Remove a dish card
-function removeDishCard(id) {
-    const card = document.querySelector(`.dish-card[data-dish-id="${id}"]`);
-    if (card) {
-        getPendingPhotos(id).forEach(photo => {
-            if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl);
-        });
-        delete pendingDishPhotos[String(id)];
-        card.style.opacity = '0';
-        card.style.transform = 'translateX(-20px)';
-        setTimeout(() => card.remove(), 150);
-        hapticFeedback('light');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('mousedown', (e) => e.preventDefault()); // prevent blur
+        confirmBtn.addEventListener('click', () => commitAndClose());
     }
 }
 
-// Collect all dish data from the form
-function collectDishData() {
-    const dishes = [];
-    document.querySelectorAll('.dish-card').forEach(card => {
-        const id = card.dataset.dishId;
-        const name = card.querySelector('.dish-card-name').value.trim();
-        const rating = parseInt(card.querySelector('.star-rating').dataset.rating) || 0;
-        const remarks = card.querySelector('.dish-remarks textarea').value.trim();
+// ========== REVIEW FORM HELPERS ==========
 
-        // Only include dishes with a name
-        if (name) {
-            dishes.push({
-                id: id.startsWith('new-') ? null : parseInt(id),
-                name,
-                rating,
-                remarks: remarks || null
-            });
-        }
-    });
-    return dishes;
+function getReviewFormValidation() {
+    const rating = parseInt(document.getElementById('overall-stars').dataset.rating) || 0;
+    if (rating === 0) {
+        return { valid: false, message: 'Add a rating to save your review ⭐', element: document.getElementById('overall-rating-group') };
+    }
+    return { valid: true };
+}
+
+function getReviewFormPayload() {
+    return {
+        overall_rating: parseInt(document.getElementById('overall-stars').dataset.rating) || 0,
+        price_rating: parseInt(document.getElementById('price-rating').dataset.rating) || 0,
+        overall_remarks: document.getElementById('overall-remarks').value.trim(),
+        dishes: dishChips.map(c => c.persistedId ? { id: c.persistedId, name: c.name } : { name: c.name }),
+    };
+}
+
+// Populate review form from currentReview (or blank for new)
+function populateReviewForm() {
+    // Ratings
+    const starsEl = document.getElementById('overall-stars');
+    const priceEl = document.getElementById('price-rating');
+    starsEl.dataset.rating = currentReview?.overall_rating || 0;
+    priceEl.dataset.rating = currentReview?.price_rating || 0;
+    initStarRating(starsEl);
+    initPriceRating(priceEl);
+
+    // Remarks
+    document.getElementById('overall-remarks').value = currentReview?.overall_remarks || '';
+
+    // Dish chips
+    dishChips = [];
+    chipIdCounter = 0;
+    (currentReview?.dishes || []).forEach(d => addDishChip(d.name, d.id));
+    renderDishChips();
+
+    // Photos
+    const photosGrid = document.getElementById('overall-photos');
+    updatePhotoGrid(photosGrid, [...(currentReview?.overall_photos || []), ...getPendingPhotos()], 10, null);
+
+    // Delete button only for existing reviews
+    document.getElementById('delete-review-btn').style.display = currentReview ? 'block' : 'none';
+
+    // Clear errors
+    clearReviewValidationState();
 }
 
 function clearReviewValidationState() {
@@ -3218,214 +3243,42 @@ function showReviewValidationError(message, element = null) {
     showToast(message);
 }
 
-function getReviewFormValidation() {
-    const overallRating = parseInt(document.getElementById('overall-stars').dataset.rating) || 0;
-    const priceRating = parseInt(document.getElementById('price-rating').dataset.rating) || 0;
-    const dishCards = document.querySelectorAll('.dish-card');
-
-    if (overallRating === 0) {
-        return {
-            valid: false,
-            message: 'Add an overall rating before saving.',
-            element: document.getElementById('overall-rating-group'),
-        };
-    }
-
-    if (priceRating === 0) {
-        return {
-            valid: false,
-            message: 'Add a price rating before saving.',
-            element: document.getElementById('price-rating-group'),
-        };
-    }
-
-    for (const card of dishCards) {
-        const name = card.querySelector('.dish-card-name').value.trim();
-        const rating = parseInt(card.querySelector('.star-rating').dataset.rating) || 0;
-        const remarks = card.querySelector('.dish-remarks textarea').value.trim();
-        const hasPhotos = card.querySelectorAll('.photo-thumb').length > 0;
-
-        if (!name && (rating > 0 || remarks || hasPhotos)) {
-            return {
-                valid: false,
-                message: 'Name each dish before saving.',
-                element: card,
-            };
-        }
-
-        if (name && rating === 0) {
-            return {
-                valid: false,
-                message: 'Rate each dish you added before saving.',
-                element: card,
-            };
-        }
-    }
-
-    return { valid: true };
-}
-
-function getReviewFormPayload() {
-    return {
-        overall_rating: parseInt(document.getElementById('overall-stars').dataset.rating) || 0,
-        price_rating: parseInt(document.getElementById('price-rating').dataset.rating) || 0,
-        overall_remarks: document.getElementById('overall-remarks').value.trim() || null,
-        dishes: collectDishData(),
-    };
-}
-
-function buildDishDrafts() {
-    return Array.from(document.querySelectorAll('.dish-card'))
-        .map(card => {
-            const localId = card.dataset.dishId;
-            const name = card.querySelector('.dish-card-name').value.trim();
-            const rating = parseInt(card.querySelector('.star-rating').dataset.rating) || 0;
-            const remarks = card.querySelector('.dish-remarks textarea').value.trim();
-
-            if (!name) return null;
-
-            return {
-                localId,
-                persistedId: localId.startsWith('new-') ? null : parseInt(localId),
-                name,
-                rating,
-                remarks: remarks || null,
-            };
-        })
-        .filter(Boolean);
-}
-
-async function persistReviewFromForm() {
-    if (!currentReviewPlaceId) return null;
-
-    clearReviewValidationState();
-    const validation = getReviewFormValidation();
-    if (!validation.valid) {
-        showReviewValidationError(validation.message, validation.element);
-        return null;
-    }
-
-    const dishDrafts = buildDishDrafts();
-
-    try {
-        const response = await fetch(`${API_URL}/api/places/${currentReviewPlaceId}/review`, {
-            method: 'POST',
-            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify(getReviewFormPayload())
-        });
-
-        if (!response.ok) throw new Error('Failed to save review');
-
-        const data = await response.json();
-        currentReview = data.review;
-        const savedDishes = currentReview.dishes || [];
-        const remainingNewDishes = [...savedDishes];
-        const dishIdMap = {};
-
-        for (const draft of dishDrafts) {
-            if (draft.persistedId) {
-                dishIdMap[draft.localId] = draft.persistedId;
-                const matchIndex = remainingNewDishes.findIndex(d => d.id === draft.persistedId);
-                if (matchIndex >= 0) {
-                    remainingNewDishes.splice(matchIndex, 1);
-                }
-            }
-        }
-
-        for (const draft of dishDrafts) {
-            if (draft.persistedId) continue;
-            const matchedDish = remainingNewDishes.shift();
-            if (matchedDish?.id) {
-                dishIdMap[draft.localId] = matchedDish.id;
-            }
-        }
-
-        return {
-            review: currentReview,
-            reviewId: currentReview.id,
-            dishIdMap,
-        };
-    } catch (error) {
-        console.error('Failed to save review:', error);
-        showToast('Failed to save review 😅');
-        return null;
-    }
-}
-
-// Review mode state
-let reviewMode = 'view'; // 'view' or 'edit'
 let pendingOverallPhotos = [];
-let pendingDishPhotos = {};
 let pendingPhotoIdCounter = 0;
 
 function resetPendingReviewPhotos() {
-    pendingOverallPhotos.forEach(photo => {
-        if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl);
-    });
-    Object.values(pendingDishPhotos).flat().forEach(photo => {
-        if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl);
-    });
     pendingOverallPhotos = [];
-    pendingDishPhotos = {};
 }
 
-function getPendingPhotos(dishId = null) {
-    return dishId ? (pendingDishPhotos[String(dishId)] || []) : pendingOverallPhotos;
+function getPendingPhotos() {
+    return pendingOverallPhotos;
 }
 
-function queuePendingPhoto(file, dishId = null) {
+async function queuePendingPhoto(file) {
+    const previewUrl = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.readAsDataURL(file);
+    });
     const pendingPhoto = {
         localId: `pending-${++pendingPhotoIdCounter}`,
         pending: true,
         file,
-        previewUrl: URL.createObjectURL(file),
+        previewUrl,
     };
-
-    if (dishId) {
-        const key = String(dishId);
-        if (!pendingDishPhotos[key]) pendingDishPhotos[key] = [];
-        pendingDishPhotos[key].push(pendingPhoto);
-    } else {
-        pendingOverallPhotos.push(pendingPhoto);
-    }
-
+    pendingOverallPhotos.push(pendingPhoto);
     return pendingPhoto;
 }
 
-function removePendingPhoto(localId, dishId = null) {
-    if (dishId) {
-        const key = String(dishId);
-        const existing = pendingDishPhotos[key] || [];
-        const target = existing.find(photo => photo.localId === localId);
-        if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
-        pendingDishPhotos[key] = existing.filter(photo => photo.localId !== localId);
-        if (pendingDishPhotos[key].length === 0) delete pendingDishPhotos[key];
-        return;
-    }
-
-    const target = pendingOverallPhotos.find(photo => photo.localId === localId);
-    if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+function removePendingPhoto(localId) {
     pendingOverallPhotos = pendingOverallPhotos.filter(photo => photo.localId !== localId);
 }
 
-async function flushPendingReviewPhotos(reviewId, dishIdMap = {}) {
+async function flushPendingReviewPhotos(reviewId) {
     for (const photo of pendingOverallPhotos) {
         await uploadPhoto(reviewId, photo.file, null);
-        if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl);
     }
-
-    for (const [localDishId, photos] of Object.entries(pendingDishPhotos)) {
-        const resolvedDishId = dishIdMap[localDishId] || (String(localDishId).startsWith('new-') ? null : parseInt(localDishId));
-        if (!resolvedDishId) continue;
-
-        for (const photo of photos) {
-            await uploadPhoto(reviewId, photo.file, resolvedDishId);
-            if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl);
-        }
-    }
-
     pendingOverallPhotos = [];
-    pendingDishPhotos = {};
 }
 
 // Open review sheet for a place
@@ -3435,267 +3288,29 @@ async function openReviewSheet(placeId) {
     const place = places.find(p => p.id === placeId);
     if (!place) return;
 
-    // Set title and subtitle
     document.getElementById('review-sheet-title').textContent = 'Review';
     document.getElementById('review-sheet-place').textContent = place.name;
 
-    // Show sheet immediately
     const sheet = document.getElementById('review-sheet');
     _prevFocusEl = document.activeElement;
     sheet.style.display = 'flex';
     sheet._trapFocusCleanup = trapFocus(sheet);
     sheet.classList.add('loading');
-
-    // Hide both modes while loading
-    document.getElementById('review-view-mode').style.display = 'none';
-    document.getElementById('review-edit-mode').style.display = 'none';
-    document.getElementById('review-view-footer').style.display = 'none';
-    document.getElementById('review-edit-footer').style.display = 'none';
-
     hapticFeedback('light');
 
-    // Load existing review
     try {
         const response = await fetch(`${API_URL}/api/places/${placeId}/review`, {
             headers: getAuthHeaders()
         });
-
         sheet.classList.remove('loading');
-
-        if (response.ok) {
-            const data = await response.json();
-            currentReview = data.review;
-            showReviewViewMode();
-        } else if (response.status === 404) {
-            currentReview = null;
-            showReviewEditMode(true);
-        }
+        currentReview = response.ok ? (await response.json()).review : null;
     } catch (error) {
         console.error('Failed to load review:', error);
         sheet.classList.remove('loading');
         currentReview = null;
-        showReviewEditMode(true);
-    }
-}
-
-// Render view mode (read-only)
-function showReviewViewMode() {
-    reviewMode = 'view';
-
-    // Show view mode, hide edit mode
-    document.getElementById('review-view-mode').style.display = 'block';
-    document.getElementById('review-edit-mode').style.display = 'none';
-    document.getElementById('review-view-footer').style.display = 'flex';
-    document.getElementById('review-edit-footer').style.display = 'none';
-
-    if (!currentReview) return;
-
-    // Render overall stars (styled like edit mode)
-    const rating = currentReview.overall_rating || 0;
-    let starsHtml = '';
-    for (let i = 1; i <= 5; i++) {
-        starsHtml += `<span class="star${i <= rating ? ' filled' : ''}">★</span>`;
-    }
-    document.getElementById('view-overall-stars').innerHTML = starsHtml;
-
-    // Render price rating (styled like edit mode)
-    const price = currentReview.price_rating || 0;
-    let priceHtml = '';
-    for (let i = 1; i <= 5; i++) {
-        priceHtml += `<span class="price-icon${i <= price ? ' filled' : ''}">💰</span>`;
-    }
-    document.getElementById('view-price-rating').innerHTML = priceHtml;
-
-    // Render overall photos (view only, clickable)
-    const photosContainer = document.getElementById('view-overall-photos');
-    const overallPhotos = currentReview.overall_photos || [];
-    renderViewPhotos(photosContainer, overallPhotos);
-
-    // Render remarks
-    document.getElementById('view-overall-remarks').textContent = currentReview.overall_remarks || '';
-
-    // Render edited timestamp
-    if (currentReview.updated_at) {
-        const date = new Date(currentReview.updated_at);
-        document.getElementById('view-edited').textContent = `Last edited ${formatTimeAgo(date)}`;
-    } else {
-        document.getElementById('view-edited').textContent = '';
     }
 
-    // Render dishes
-    renderViewDishes();
-}
-
-// Render view-only photos (clickable for fullscreen)
-function renderViewPhotos(container, photos) {
-    container.innerHTML = '';
-
-    photos.forEach((photo, index) => {
-        const thumb = document.createElement('div');
-        thumb.className = 'photo-thumb';
-        thumb.innerHTML = `<img src="${photo.url}" alt="Photo">`;
-        thumb.addEventListener('click', () => {
-            openPhotoViewer(photos, index, false);
-        });
-        container.appendChild(thumb);
-    });
-}
-
-// Render view-only dishes (collapsible)
-function renderViewDishes() {
-    const container = document.getElementById('view-dishes');
-    container.innerHTML = '';
-
-    if (!currentReview?.dishes?.length) {
-        container.innerHTML = '<div class="view-remarks" style="text-align: center; color: var(--hint-color);">No dishes reviewed</div>';
-        return;
-    }
-
-    currentReview.dishes.forEach(dish => {
-        // Build styled stars
-        let starsHtml = '';
-        const rating = dish.rating || 0;
-        for (let i = 1; i <= 5; i++) {
-            starsHtml += `<span class="star${i <= rating ? ' filled' : ''}">★</span>`;
-        }
-        const hasRemarks = Boolean(dish.remarks);
-        const dishPhotos = dish.photos || [];
-        const photoCount = dishPhotos.length;
-        const metaBits = [];
-        if (hasRemarks) metaBits.push('Notes');
-        if (photoCount > 0) metaBits.push(`${photoCount} photo${photoCount === 1 ? '' : 's'}`);
-        const metaHtml = metaBits.length
-            ? `<div class="view-dish-meta">${metaBits.join(' · ')}</div>`
-            : '';
-
-        const card = document.createElement('div');
-        card.className = 'view-dish-card';
-
-        card.innerHTML = `
-            <div class="view-dish-header">
-                <div class="view-dish-main">
-                    <span class="view-dish-name">${dish.name}</span>
-                    ${metaHtml}
-                </div>
-                <div class="view-dish-side">
-                    <span class="view-dish-rating">${starsHtml}</span>
-                    <span class="view-dish-toggle">⌄</span>
-                </div>
-            </div>
-            <div class="view-dish-content">
-                <div class="view-dish-remarks">${dish.remarks || ''}</div>
-                <div class="view-dish-photos"></div>
-            </div>
-        `;
-
-        // Add photos
-        const photosContainer = card.querySelector('.view-dish-photos');
-        dishPhotos.forEach((photo, index) => {
-            const thumb = document.createElement('div');
-            thumb.className = 'photo-thumb';
-            thumb.innerHTML = `<img src="${photo.url}" alt="Photo">`;
-            thumb.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openPhotoViewer(dishPhotos, index, false);
-            });
-            photosContainer.appendChild(thumb);
-        });
-
-        // Toggle expand/collapse
-        card.querySelector('.view-dish-header').addEventListener('click', () => {
-            card.classList.toggle('expanded');
-        });
-
-        container.appendChild(card);
-    });
-}
-
-// Show edit mode
-function showReviewEditMode(isNew = false) {
-    reviewMode = 'edit';
-    clearReviewValidationState();
-
-    // Show edit mode, hide view mode
-    document.getElementById('review-view-mode').style.display = 'none';
-    document.getElementById('review-edit-mode').style.display = 'block';
-    document.getElementById('review-view-footer').style.display = 'none';
-    document.getElementById('review-edit-footer').style.display = 'flex';
-
-    // Clear dishes
-    document.getElementById('review-dishes').innerHTML = '';
-    dishIdCounter = 0;
-
-    if (currentReview && !isNew) {
-        // Populate from existing review
-        if (currentReview.dishes && currentReview.dishes.length > 0) {
-            currentReview.dishes.forEach(dish => {
-                addDishCard({
-                    id: dish.id,
-                    name: dish.name,
-                    rating: dish.rating,
-                    remarks: dish.remarks,
-                    photos: dish.photos || []
-                });
-            });
-        }
-
-        document.getElementById('overall-stars').dataset.rating = currentReview.overall_rating;
-        document.getElementById('price-rating').dataset.rating = currentReview.price_rating;
-        document.getElementById('overall-remarks').value = currentReview.overall_remarks || '';
-
-        const overallPhotosGrid = document.getElementById('overall-photos');
-        updatePhotoGrid(overallPhotosGrid, [...(currentReview.overall_photos || []), ...getPendingPhotos()], 3, null);
-
-        document.getElementById('delete-review-btn').style.display = 'block';
-        document.getElementById('save-review-btn').textContent = 'Save';
-    } else {
-        // New review
-        document.getElementById('overall-stars').dataset.rating = 0;
-        document.getElementById('price-rating').dataset.rating = 0;
-        document.getElementById('overall-remarks').value = '';
-        updatePhotoGrid(document.getElementById('overall-photos'), [...getPendingPhotos()], 3, null);
-
-        document.getElementById('delete-review-btn').style.display = 'none';
-        document.getElementById('save-review-btn').textContent = 'Save';
-    }
-
-    // Initialize rating components
-    initStarRating(document.getElementById('overall-stars'), () => {
-        document.getElementById('overall-rating-group')?.classList.remove('invalid');
-        if ((parseInt(document.getElementById('overall-stars').dataset.rating) || 0) > 0) {
-            const errorEl = document.getElementById('review-form-error');
-            if (errorEl?.textContent.includes('overall')) {
-                errorEl.textContent = '';
-                errorEl.style.display = 'none';
-            }
-        }
-    });
-    initPriceRating(document.getElementById('price-rating'), () => {
-        document.getElementById('price-rating-group')?.classList.remove('invalid');
-        if ((parseInt(document.getElementById('price-rating').dataset.rating) || 0) > 0) {
-            const errorEl = document.getElementById('review-form-error');
-            if (errorEl?.textContent.includes('price')) {
-                errorEl.textContent = '';
-                errorEl.style.display = 'none';
-            }
-        }
-    });
-}
-
-// Switch to edit mode button handler
-function switchToEditMode() {
-    showReviewEditMode(false);
-    hapticFeedback('light');
-}
-
-// Cancel edit and return to view mode
-function cancelEditMode() {
-    if (currentReview) {
-        showReviewViewMode();
-    } else {
-        closeReviewSheet();
-    }
-    hapticFeedback('light');
+    populateReviewForm();
 }
 
 // Close review sheet
@@ -3705,7 +3320,6 @@ function closeReviewSheet() {
     sheet.style.display = 'none';
     currentReviewPlaceId = null;
     currentReview = null;
-    reviewMode = 'view';
     resetPendingReviewPhotos();
     _prevFocusEl?.focus();
     _prevFocusEl = null;
@@ -3796,18 +3410,10 @@ async function photoViewerDelete() {
 
         if (photoViewerPhotos.length === 0) {
             closePhotoViewer();
-            // Refresh the edit mode photo grid
-            if (reviewMode === 'edit') {
-                const overallPhotosGrid = document.getElementById('overall-photos');
-                if (photo._dishId) {
-                    const dishGrid = document.querySelector(`.dish-photos[data-dish-id="${photo._dishId}"]`);
-                    if (dishGrid) {
-                        const dish = currentReview?.dishes?.find(d => String(d.id) === String(photo._dishId));
-                        updatePhotoGrid(dishGrid, [...(dish?.photos || []), ...getPendingPhotos(photo._dishId)], 2, photo._dishId);
-                    }
-                } else {
-                    updatePhotoGrid(overallPhotosGrid, [...(currentReview?.overall_photos || []), ...getPendingPhotos()], 3, null);
-                }
+            // Refresh photo grid
+            const overallPhotosGrid = document.getElementById('overall-photos');
+            if (overallPhotosGrid) {
+                updatePhotoGrid(overallPhotosGrid, [...(currentReview?.overall_photos || []), ...getPendingPhotos()], 10, null);
             }
         } else {
             if (photoViewerIndex >= photoViewerPhotos.length) {
@@ -3906,37 +3512,56 @@ async function saveReview() {
     hapticFeedback('medium');
 
     try {
-        const persisted = await persistReviewFromForm();
-        if (!persisted) return;
+        const response = await fetch(`${API_URL}/api/places/${currentReviewPlaceId}/review`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify(getReviewFormPayload())
+        });
 
-        await flushPendingReviewPhotos(persisted.reviewId, persisted.dishIdMap);
+        if (!response.ok) throw new Error('Failed to save review');
 
-        const refreshedResponse = await fetch(`${API_URL}/api/places/${currentReviewPlaceId}/review`, {
+        const data = await response.json();
+        currentReview = data.review;
+
+        await flushPendingReviewPhotos(currentReview.id);
+
+        // Refresh review data after photo upload
+        const refreshed = await fetch(`${API_URL}/api/places/${currentReviewPlaceId}/review`, {
             headers: getAuthHeaders()
         });
-        if (refreshedResponse.ok) {
-            const refreshedData = await refreshedResponse.json();
-            currentReview = refreshedData.review;
+        if (refreshed.ok) {
+            currentReview = (await refreshed.json()).review;
         }
 
         showSuccessAnimation();
+        closeReviewSheet();
 
-        // Show view mode with updated review
-        showReviewViewMode();
-
-        // Reload reviews and refresh displays
         await loadReviews();
         applyFilters();
         displayPlacesOnMap(false);
 
     } catch (error) {
         console.error('Failed to save review:', error);
-        showToast('Failed to save review 😅', saveReview);
+        showToast('Failed to save review 😅');
     } finally {
         if (saveButton) {
             saveButton.disabled = false;
             saveButton.textContent = 'Save';
         }
+    }
+}
+
+// Silently delete review for a place (no confirm, used when unvisiting)
+async function deleteReviewForPlace(placeId) {
+    try {
+        const response = await fetch(`${API_URL}/api/places/${placeId}/review`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        if (!response.ok) throw new Error('Failed to delete review');
+        await loadReviews();
+    } catch (error) {
+        console.error('Failed to delete review:', error);
     }
 }
 
@@ -4203,8 +3828,9 @@ function updatePhotoGrid(container, photos, maxPhotos, dishId = null) {
         thumb.querySelector('.photo-delete-btn').addEventListener('click', async (e) => {
             e.stopPropagation();
             if (photo.pending) {
-                removePendingPhoto(photo.localId, dishId);
-                updatePhotoGrid(container, [...photos.filter(p => (p.id || p.localId) !== photo.localId)], maxPhotos, dishId);
+                removePendingPhoto(photo.localId);
+                const remaining = photos.filter(p => (p.id || p.localId) !== photo.localId);
+                updatePhotoGrid(container, remaining, maxPhotos, dishId);
                 return;
             }
 
@@ -4213,7 +3839,8 @@ function updatePhotoGrid(container, photos, maxPhotos, dishId = null) {
                 thumb.remove();
                 // Show add button if under limit
                 if (container.querySelectorAll('.photo-thumb').length < maxPhotos) {
-                    addPhotoButton(container, maxPhotos, dishId);
+                    const savedRemaining = photos.filter(p => p.id !== photo.id);
+                    addPhotoButton(container, savedRemaining, maxPhotos, dishId);
                 }
             }
         });
@@ -4228,14 +3855,14 @@ function updatePhotoGrid(container, photos, maxPhotos, dishId = null) {
 
     // Add "+" button if under limit
     if (photos.length < maxPhotos) {
-        addPhotoButton(container, maxPhotos, dishId);
+        addPhotoButton(container, photos.filter(p => !p.pending), maxPhotos, dishId);
     }
 }
 
 /**
  * Add photo upload button to grid
  */
-function addPhotoButton(container, maxPhotos, dishId) {
+function addPhotoButton(container, savedPhotos, maxPhotos, dishId) {
     // Don't add if already at limit or button exists
     if (container.querySelector('.photo-add-btn')) return;
     if (container.querySelectorAll('.photo-thumb').length >= maxPhotos) return;
@@ -4259,8 +3886,8 @@ function addPhotoButton(container, maxPhotos, dishId) {
             e.target.value = '';
             return;
         }
-        queuePendingPhoto(file, dishId);
-        updatePhotoGrid(container, [...photos, ...getPendingPhotos(dishId)], maxPhotos, dishId);
+        await queuePendingPhoto(file);
+        updatePhotoGrid(container, [...savedPhotos, ...getPendingPhotos()], maxPhotos, dishId);
         showToast('Photo ready to save');
 
         // Reset input
@@ -4274,72 +3901,21 @@ function addPhotoButton(container, maxPhotos, dishId) {
 
 // Setup review sheet
 // Setup drag-and-drop for dish cards
-function setupDishDragAndDrop() {
-    const container = document.getElementById('review-dishes');
-    if (!container) return;
-
-    let draggedCard = null;
-
-    container.addEventListener('dragstart', (e) => {
-        if (!e.target.classList.contains('dish-card')) return;
-        draggedCard = e.target;
-        e.target.classList.add('dragging');
-        hapticFeedback('light');
-    });
-
-    container.addEventListener('dragend', (e) => {
-        if (!e.target.classList.contains('dish-card')) return;
-        e.target.classList.remove('dragging');
-        draggedCard = null;
-    });
-
-    container.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        if (!draggedCard) return;
-        const afterElement = getDragAfterElement(container, e.clientY);
-        if (afterElement == null) {
-            container.appendChild(draggedCard);
-        } else {
-            container.insertBefore(draggedCard, afterElement);
-        }
-    });
-}
-
-// Get element to insert dragged card after
-function getDragAfterElement(container, y) {
-    const draggableElements = [...container.querySelectorAll('.dish-card:not(.dragging)')];
-    return draggableElements.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
-        if (offset < 0 && offset > closest.offset) {
-            return { offset, element: child };
-        }
-        return closest;
-    }, { offset: Number.NEGATIVE_INFINITY }).element;
-}
-
 function setupReviewSheet() {
     document.getElementById('review-sheet-close').addEventListener('click', closeReviewSheet);
-    document.getElementById('add-dish-btn').addEventListener('click', () => addDishCard());
     document.getElementById('save-review-btn').addEventListener('click', saveReview);
     document.getElementById('delete-review-btn').addEventListener('click', deleteReview);
 
-    // View/Edit mode buttons
-    document.getElementById('edit-review-btn').addEventListener('click', switchToEditMode);
-    document.getElementById('cancel-edit-btn').addEventListener('click', cancelEditMode);
-
     // Close on backdrop click
     document.getElementById('review-sheet').addEventListener('click', (e) => {
-        if (e.target.id === 'review-sheet') {
-            closeReviewSheet();
-        }
+        if (e.target.id === 'review-sheet') closeReviewSheet();
     });
 
     // Setup swipe-to-close gesture
     setupSheetGestures(document.getElementById('review-sheet'), closeReviewSheet);
 
-    // Setup dish drag-and-drop
-    setupDishDragAndDrop();
+    // Setup dish chip input
+    setupDishChipInput();
 
     // Setup photo viewer
     setupPhotoViewer();
@@ -4390,14 +3966,14 @@ async function loadReviews() {
 function renderReviews() {
     const container = document.getElementById('reviews-list');
     const emptyState = document.getElementById('reviews-empty');
-    const countEl = document.querySelector('.reviews-count');
 
     // Apply current sort and filter
     const sorted = sortReviews(allReviews);
     const filtered = filterReviews(sorted);
 
-    // Update count
-    countEl.textContent = `${filtered.length} ${filtered.length === 1 ? 'review' : 'reviews'}`;
+    // Update results count
+    const countEl = document.getElementById('reviews-results-count');
+    if (countEl) countEl.textContent = `${filtered.length} ${filtered.length === 1 ? 'review' : 'reviews'}`;
 
     // Show empty state if no reviews
     if (filtered.length === 0) {
@@ -4408,63 +3984,111 @@ function renderReviews() {
 
     emptyState.style.display = 'none';
 
-    // Render cards
-    container.innerHTML = filtered.map(review => createReviewCard(review)).join('');
-
-    // Add click handlers
-    container.querySelectorAll('.review-card').forEach(card => {
-        card.addEventListener('click', () => {
-            const placeId = parseInt(card.dataset.placeId);
-            openReviewSheetFromHistory(placeId);
-            hapticFeedback('light');
-        });
+    container.innerHTML = '';
+    filtered.forEach(review => {
+        const card = createReviewCard(review);
+        container.appendChild(card);
     });
 }
 
-// Create HTML for review card
+// Create DOM element for review card
 function createReviewCard(review) {
-    // Calculate photo count
-    const dishPhotos = review.dishes.reduce((sum, d) => sum + (d.photos?.length || 0), 0);
-    const overallPhotos = review.overall_photos?.length || 0;
-    const totalPhotos = dishPhotos + overallPhotos;
+    const allPhotos = [
+        ...(review.overall_photos || []),
+        ...(review.dishes || []).flatMap(d => d.photos || [])
+    ];
+    const timeAgo = formatTimeAgo(new Date(review.updated_at || review.created_at));
 
-    // Render stars
-    const stars = '⭐'.repeat(review.overall_rating) + '☆'.repeat(5 - review.overall_rating);
+    const card = document.createElement('div');
+    card.className = 'review-card';
+    card.dataset.placeId = review.place_id;
 
-    // Price rating
-    const priceLabels = ['', '💰 Budget', '💰💰 Affordable', '💰💰💰 Moderate', '💰💰💰💰 Pricey', '💰💰💰💰💰 Splurge'];
-    const priceText = priceLabels[review.price_rating] || '';
+    // Photo strip: ≤3 use fixed grid, >3 scrollable
+    if (allPhotos.length > 0) {
+        const strip = document.createElement('div');
+        if (allPhotos.length <= 3) {
+            strip.className = `review-card-photo-strip count-${allPhotos.length}`;
+        } else {
+            strip.className = 'review-card-photo-strip scrollable';
+        }
+        allPhotos.forEach((photo, index) => {
+            const thumb = document.createElement('div');
+            thumb.className = 'review-card-photo-thumb';
+            thumb.innerHTML = `<img src="${safeUrl(photo.url)}" alt="Photo" loading="lazy">`;
+            thumb.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openPhotoViewer(allPhotos, index, false);
+                hapticFeedback('light');
+            });
+            strip.appendChild(thumb);
+        });
+        card.appendChild(strip);
+    }
 
-    // Truncate remarks
-    const preview = review.overall_remarks
-        ? (review.overall_remarks.length > 80
-            ? review.overall_remarks.slice(0, 80) + '...'
-            : review.overall_remarks)
-        : '';
+    // Body
+    const body = document.createElement('div');
+    body.className = 'review-card-body';
 
-    // Format timestamp
-    const date = new Date(review.updated_at || review.created_at);
-    const timeAgo = formatTimeAgo(date);
-
-    return `
-        <div class="review-card" data-place-id="${review.place_id}">
-            <div class="review-card-header">
-                <div class="review-card-place">${review.place_name || 'Unknown Place'}</div>
-                <div class="review-card-rating">
-                    <span class="review-stars">${stars}</span>
-                    <span class="review-rating-num">${review.overall_rating}/5</span>
-                </div>
-            </div>
-            ${priceText ? `<div class="review-card-price">${priceText}</div>` : ''}
-            <div class="review-card-meta">
-                ${totalPhotos > 0 ? `📸 ${totalPhotos} photo${totalPhotos > 1 ? 's' : ''}` : ''}
-                ${totalPhotos > 0 && review.dishes.length > 0 ? ' • ' : ''}
-                ${review.dishes.length} dish${review.dishes.length !== 1 ? 'es' : ''}
-            </div>
-            ${preview ? `<div class="review-card-preview">"${preview}"</div>` : ''}
-            <div class="review-card-footer">📅 ${timeAgo}</div>
-        </div>
+    // Place name + stars
+    let starsHtml = '';
+    for (let i = 1; i <= 5; i++) {
+        starsHtml += `<span class="rc-star${i <= review.overall_rating ? ' filled' : ''}">★</span>`;
+    }
+    const nameRow = document.createElement('div');
+    nameRow.className = 'review-card-name-row';
+    nameRow.innerHTML = `
+        <div class="review-card-place">${escapeHtml(review.place_name || 'Unknown Place')}</div>
+        <div class="review-card-stars">${starsHtml}</div>
     `;
+    body.appendChild(nameRow);
+
+    // Price icons + timestamp
+    let priceHtml = '';
+    if (review.price_rating) {
+        for (let i = 1; i <= 5; i++) {
+            priceHtml += `<span class="rc-price${i <= review.price_rating ? ' filled' : ''}">💰</span>`;
+        }
+    }
+    const metaRow = document.createElement('div');
+    metaRow.className = 'review-card-meta-row';
+    metaRow.innerHTML = `
+        <div class="review-card-price-icons">${priceHtml}</div>
+        <div class="review-card-time">${timeAgo}</div>
+    `;
+    body.appendChild(metaRow);
+
+    // Dish chips — single line, overflow fades out
+    if (review.dishes?.length > 0) {
+        const chipsRow = document.createElement('div');
+        chipsRow.className = 'review-card-chips';
+        review.dishes.forEach(d => {
+            const chip = document.createElement('span');
+            chip.className = 'review-card-chip';
+            chip.textContent = d.name;
+            chipsRow.appendChild(chip);
+        });
+        body.appendChild(chipsRow);
+    }
+
+    // Notes preview
+    if (review.overall_remarks) {
+        const preview = review.overall_remarks.length > 90
+            ? review.overall_remarks.slice(0, 90) + '…'
+            : review.overall_remarks;
+        const notes = document.createElement('div');
+        notes.className = 'review-card-preview';
+        notes.textContent = `"${preview}"`;
+        body.appendChild(notes);
+    }
+
+    card.appendChild(body);
+
+    card.addEventListener('click', () => {
+        openReviewSheetFromHistory(review.place_id);
+        hapticFeedback('light');
+    });
+
+    return card;
 }
 
 // Format time ago helper
@@ -4481,12 +4105,14 @@ function formatTimeAgo(date) {
     return date.toLocaleDateString();
 }
 
-// Sort reviews
-function sortReviews(reviews) {
-    const sortBy = document.getElementById('reviews-sort')?.value || 'newest';
-    const sorted = [...reviews];
+// ========== REVIEWS FILTER STATE ==========
+let reviewsSortBy = 'newest';       // active sort
+let reviewsDrawerSort = 'newest';   // in-drawer pending sort
+let reviewSearchQuery = '';
 
-    switch (sortBy) {
+function sortReviews(reviews) {
+    const sorted = [...reviews];
+    switch (reviewsSortBy) {
         case 'newest':
             sorted.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
             break;
@@ -4500,29 +4126,70 @@ function sortReviews(reviews) {
             sorted.sort((a, b) => a.overall_rating - b.overall_rating);
             break;
     }
-
     return sorted;
 }
 
-// Filter reviews
+// Filter reviews by search query (place name)
 function filterReviews(reviews) {
-    const activeFilter = document.querySelector('.review-filter-chip.active')?.dataset.filter || 'all';
+    if (!reviewSearchQuery.trim()) return reviews;
+    const q = reviewSearchQuery.toLowerCase();
+    return reviews.filter(r => (r.place_name || '').toLowerCase().includes(q));
+}
 
-    return reviews.filter(review => {
-        switch (activeFilter) {
-            case 'all':
-                return true;
-            case 'photos':
-                const dishPhotos = review.dishes.reduce((sum, d) => sum + (d.photos?.length || 0), 0);
-                const overallPhotos = review.overall_photos?.length || 0;
-                return (dishPhotos + overallPhotos) > 0;
-            case '5star':
-                return review.overall_rating === 5;
-            case '4star':
-                return review.overall_rating === 4;
-            default:
-                return true;
-        }
+function updateReviewsFilterButton() {
+    const countEl = document.getElementById('reviews-filter-count');
+    if (!countEl) return;
+    const count = reviewsSortBy !== 'newest' ? 1 : 0;
+    countEl.textContent = count;
+    countEl.style.display = count > 0 ? 'flex' : 'none';
+}
+
+function renderReviewsActiveFilterPills() {
+    const container = document.getElementById('reviews-active-filters');
+    if (!container) return;
+    let html = '';
+    if (reviewsSortBy !== 'newest') {
+        const labels = { oldest: 'Oldest', highest: 'Top Rated', lowest: 'Lowest Rated' };
+        html = `<span class="filter-pill">${labels[reviewsSortBy] || reviewsSortBy}<button class="filter-pill-remove" onclick="removeReviewsFilter('sort')">×</button></span>`;
+    }
+    container.innerHTML = html;
+}
+
+function removeReviewsFilter(type) {
+    if (type === 'sort') reviewsSortBy = 'newest';
+    renderReviews();
+    updateReviewsFilterButton();
+    renderReviewsActiveFilterPills();
+}
+
+function openReviewsFilterDrawer() {
+    reviewsDrawerSort = reviewsSortBy;
+    // Sync drawer UI
+    document.querySelectorAll('#reviews-sort-options .filter-option').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.sort === reviewsDrawerSort);
+    });
+    const drawer = document.getElementById('reviews-filter-drawer');
+    drawer.style.display = 'flex';
+    document.getElementById('reviews-filter-btn').setAttribute('aria-expanded', 'true');
+}
+
+function closeReviewsFilterDrawer() {
+    document.getElementById('reviews-filter-drawer').style.display = 'none';
+    document.getElementById('reviews-filter-btn').setAttribute('aria-expanded', 'false');
+}
+
+function applyReviewsFilterDrawer() {
+    reviewsSortBy = reviewsDrawerSort;
+    closeReviewsFilterDrawer();
+    renderReviews();
+    updateReviewsFilterButton();
+    renderReviewsActiveFilterPills();
+}
+
+function clearReviewsFilterDrawer() {
+    reviewsDrawerSort = 'newest';
+    document.querySelectorAll('#reviews-sort-options .filter-option').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.sort === 'newest');
     });
 }
 
@@ -4539,20 +4206,41 @@ async function openReviewSheetFromHistory(placeId) {
 
 // Setup reviews view
 function setupReviewsView() {
-    // Sort dropdown change handler
-    document.getElementById('reviews-sort')?.addEventListener('change', renderReviews);
-
-    // Filter chips click handlers
-    document.querySelectorAll('.review-filter-chip').forEach(chip => {
-        chip.addEventListener('click', () => {
-            document.querySelectorAll('.review-filter-chip').forEach(c => {
-                c.classList.remove('active');
-                c.setAttribute('aria-pressed', 'false');
-            });
-            chip.classList.add('active');
-            chip.setAttribute('aria-pressed', 'true');
+    // Search
+    const searchInput = document.getElementById('reviews-search-input');
+    const clearBtn = document.getElementById('reviews-search-clear');
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            reviewSearchQuery = searchInput.value;
+            clearBtn.style.display = reviewSearchQuery ? 'block' : 'none';
             renderReviews();
-            hapticFeedback('light');
+        });
+        clearBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            reviewSearchQuery = '';
+            clearBtn.style.display = 'none';
+            renderReviews();
+            searchInput.focus();
+        });
+    }
+
+    // Filter button
+    document.getElementById('reviews-filter-btn')?.addEventListener('click', openReviewsFilterDrawer);
+    document.getElementById('reviews-filter-drawer-close')?.addEventListener('click', closeReviewsFilterDrawer);
+    document.getElementById('reviews-filter-apply')?.addEventListener('click', applyReviewsFilterDrawer);
+    document.getElementById('reviews-filter-clear-all')?.addEventListener('click', clearReviewsFilterDrawer);
+
+    // Backdrop close
+    document.getElementById('reviews-filter-drawer')?.addEventListener('click', (e) => {
+        if (e.target.id === 'reviews-filter-drawer') closeReviewsFilterDrawer();
+    });
+
+    // Sort option buttons inside drawer
+    document.querySelectorAll('#reviews-sort-options .filter-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#reviews-sort-options .filter-option').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            reviewsDrawerSort = btn.dataset.sort;
         });
     });
 }
@@ -4569,3 +4257,4 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+

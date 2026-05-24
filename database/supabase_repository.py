@@ -313,24 +313,30 @@ def create_or_update_review(
 
     now = datetime.utcnow().isoformat()
 
+    safe_price = price_rating if price_rating and price_rating >= 1 else None
+
     if existing.data:
         # Update existing
         review_id = existing.data[0]["id"]
-        supabase.table("reviews").update({
+        update_payload = {
             "overall_rating": overall_rating,
-            "price_rating": price_rating,
             "overall_remarks": overall_remarks,
             "updated_at": now,
-        }).eq("id", review_id).execute()
+        }
+        if safe_price is not None:
+            update_payload["price_rating"] = safe_price
+        supabase.table("reviews").update(update_payload).eq("id", review_id).execute()
     else:
         # Create new
-        result = supabase.table("reviews").insert({
+        insert_payload = {
             "place_id": place_id,
             "user_id": user_id,
             "overall_rating": overall_rating,
-            "price_rating": price_rating,
             "overall_remarks": overall_remarks,
-        }).execute()
+        }
+        if safe_price is not None:
+            insert_payload["price_rating"] = safe_price
+        result = supabase.table("reviews").insert(insert_payload).execute()
         review_id = result.data[0]["id"]
 
     # Handle dishes
@@ -347,11 +353,12 @@ def create_or_update_review(
 
         for dish_data in dishes:
             dish_id = dish_data.get("id")
+            dish_rating = dish_data.get("rating") or 1  # DB NOT NULL CHECK (>=1)
             if dish_id and dish_id in existing_dish_ids:
                 # Update existing dish
                 supabase.table("review_dishes").update({
                     "dish_name": dish_data["name"],
-                    "rating": dish_data["rating"],
+                    "rating": dish_rating,
                     "remarks": dish_data.get("remarks"),
                     "updated_at": now,
                 }).eq("id", dish_id).execute()
@@ -361,7 +368,7 @@ def create_or_update_review(
                 supabase.table("review_dishes").insert({
                     "review_id": review_id,
                     "dish_name": dish_data["name"],
-                    "rating": dish_data["rating"],
+                    "rating": dish_rating,
                     "remarks": dish_data.get("remarks"),
                 }).execute()
 
@@ -518,16 +525,13 @@ def delete_dish(dish_id: int) -> bool:
 
 
 def get_photo_count(review_id: int, dish_id: Optional[int] = None) -> int:
-    """Get count of photos for a review or specific dish."""
+    """Get photo count for a review, filtered by dish_id (None = overall photos only)."""
     supabase = get_supabase()
-
     query = supabase.table("review_photos").select("id", count="exact").eq("review_id", review_id)
-
     if dish_id is not None:
         query = query.eq("dish_id", dish_id)
     else:
         query = query.is_("dish_id", "null")
-
     result = query.execute()
     return result.count or 0
 
@@ -546,9 +550,9 @@ def add_photo(
     """
     supabase = get_supabase()
 
-    # Check photo limits
+    # Check photo limits (route already checks, but guard here too)
     count = get_photo_count(review_id, dish_id)
-    max_photos = 2 if dish_id else 3
+    max_photos = 10
     if count >= max_photos:
         return None
 

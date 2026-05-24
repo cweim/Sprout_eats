@@ -150,6 +150,15 @@ body {
     height: 100%;
 }
 
+/* Small dot marker used at low zoom levels */
+.marker-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.8);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+}
+
 /* Map filter panel */
 .map-filter-panel {
     position: absolute;
@@ -196,17 +205,29 @@ body {
     box-shadow: 0 2px 6px rgba(124, 185, 142, 0.3);
 }
 
-.map-cuisine-select {
-    padding: 8px 12px;
-    border: none;
+.map-cuisine-select-wrap {
     background: var(--card-bg-alpha);
-    color: var(--text-color);
-    font-size: 13px;
-    border-radius: 16px;
+    padding: 5px 10px;
+    border-radius: 20px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    cursor: pointer;
     width: fit-content;
-    max-width: 160px;
+}
+
+.map-cuisine-select {
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-color);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    padding-right: 16px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238A8A8A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0px center;
 }
 
 /* List view */
@@ -232,20 +253,42 @@ body {
 /* Search bar */
 .search-bar {
     position: relative;
+    display: flex;
+    align-items: center;
+    background-color: var(--secondary-bg);
+    border-radius: 20px;
 }
 
-#search-input {
-    width: 100%;
-    padding: 10px 40px 10px 16px;
+.search-icon {
+    padding-left: 13px;
+    flex-shrink: 0;
+    color: var(--hint-color);
+    display: flex;
+    line-height: 0;
+    pointer-events: none;
+}
+
+.search-icon svg {
+    display: block;
+}
+
+#search-input,
+#reviews-search-input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 40px 10px 8px;
     border: none;
-    background-color: var(--secondary-bg);
+    background-color: transparent;
     border-radius: 20px;
     font-size: 15px;
     color: var(--text-color);
     outline: none;
+    -webkit-appearance: none;
+    appearance: none;
 }
 
-#search-input::placeholder {
+#search-input::placeholder,
+#reviews-search-input::placeholder {
     color: var(--hint-color);
 }
 
@@ -303,9 +346,9 @@ body {
 }
 
 .visited-chip[data-filter="unvisited"].active {
-    background-color: var(--warm-coral);
-    border-color: var(--warm-coral);
-    box-shadow: 0 2px 6px rgba(232, 168, 124, 0.3);
+    background-color: var(--sprout-purple);
+    border-color: var(--sprout-purple);
+    box-shadow: 0 2px 6px rgba(139, 126, 200, 0.3);
 }
 
 .visited-chip:not(.active):hover {
@@ -499,7 +542,7 @@ body {
 }
 
 .place-card-address {
-    font-size: 13px;
+    font-size: 14px;
     color: var(--hint-color);
     margin-bottom: 8px;
 }
@@ -565,6 +608,7 @@ body {
     opacity: 0.9;
     border-color: var(--button-color);
 }
+
 
 .place-card-notes .notes-text {
     color: var(--text-color);
@@ -953,6 +997,7 @@ body {
     font-weight: 600;
     border-radius: 10px;
 }
+
 
 .place-popup-actions .card-action-btn.delete-btn {
     flex: 1 1 0;
@@ -1540,96 +1585,25 @@ body {
 }
 
 .review-prompt-content {
-    max-width: 460px;
-    padding: 20px 20px 18px;
-}
-
-.review-prompt-header {
-    align-items: flex-start;
-    margin-bottom: 16px;
-}
-
-.review-prompt-heading {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.review-prompt-kicker {
-    display: inline-flex;
-    align-items: center;
-    width: fit-content;
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: linear-gradient(135deg, rgba(124, 185, 142, 0.16) 0%, rgba(168, 213, 184, 0.28) 100%);
-    color: var(--sprout-green);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-}
-
-.review-prompt-body {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    margin-bottom: 18px;
-}
-
-.review-prompt-hero {
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
-    padding: 16px;
-    border: 1px solid rgba(139, 126, 200, 0.12);
-    border-radius: 18px;
-    background:
-        linear-gradient(180deg, rgba(240, 237, 255, 0.92) 0%, rgba(255, 255, 255, 0.96) 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
-}
-
-.review-prompt-icon {
-    flex-shrink: 0;
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 14px;
-    background: linear-gradient(135deg, var(--sprout-purple) 0%, var(--sprout-purple-light) 100%);
-    color: white;
-    font-size: 20px;
-    box-shadow: 0 8px 18px rgba(139, 126, 200, 0.22);
-}
-
-.review-prompt-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
+    max-width: 400px;
+    padding: 28px 24px 16px;
+    text-align: center;
 }
 
 .review-prompt-place-name {
-    color: var(--sprout-purple);
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
-    line-height: 1.3;
-    letter-spacing: -0.01em;
-}
-
-#review-prompt-text {
     color: var(--text-color);
-    font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.25;
+    margin-bottom: 6px;
+    word-break: break-word;
 }
 
-.review-prompt-note {
-    padding: 12px 14px;
-    border-radius: 14px;
-    background: var(--secondary-bg);
+.review-prompt-question {
+    font-size: 15px;
+    font-weight: 400;
     color: var(--hint-color);
-    font-size: 13px;
-    line-height: 1.45;
+    margin-bottom: 24px;
 }
 
 .review-prompt-footer {
@@ -1719,6 +1693,20 @@ body {
     background: var(--danger-bg);
     color: #C95555;
     box-shadow: none;
+}
+
+.card-action-btn.external-btn {
+    background: transparent;
+    border: 1.5px solid var(--secondary-bg);
+    color: var(--hint-color);
+}
+
+
+.card-action-btn.external-btn:hover {
+    background: var(--sprout-purple);
+    border-color: var(--sprout-purple);
+    color: var(--button-text-color);
+    box-shadow: 0 4px 12px rgba(139, 126, 200, 0.25);
 }
 
 /* ========== SEARCH GOOGLE BUTTON ========== */
@@ -2011,29 +1999,28 @@ body {
     position: relative;
     width: 44px;
     height: 44px;
-    border: 1.5px solid var(--secondary-bg);
-    background: var(--card-bg);
+    border: none;
+    background: var(--sprout-purple);
     border-radius: 12px;
     font-size: 18px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: opacity 0.15s ease;
     display: flex;
     align-items: center;
     justify-content: center;
+    color: #fff;
+}
+
+.filter-btn .filter-icon {
+    filter: brightness(0) invert(1);
 }
 
 .filter-btn:hover {
-    border-color: var(--sprout-purple-light);
-    background: #FAF8FF;
+    opacity: 0.85;
 }
 
-.filter-btn.has-filters {
-    border-color: var(--sprout-purple);
-    background: var(--sprout-purple);
-}
-
-.filter-btn.has-filters .filter-icon {
-    filter: brightness(0) invert(1);
+.filter-btn:active {
+    opacity: 0.7;
 }
 
 .filter-count {
@@ -2242,31 +2229,43 @@ body {
     box-shadow: 0 6px 16px rgba(139, 126, 200, 0.4);
 }
 
-/* ========== SPROUT TOGGLE IN CARDS ========== */
+/* ========== SPROUT ICON IN CARDS (decorative) ========== */
 
-.sprout-toggle {
+.sprout-icon {
     width: 32px;
     height: 32px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    padding: 0;
-    transition: transform 0.2s ease;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.sprout-toggle:hover {
-    transform: scale(1.1);
-}
-
-.sprout-toggle:active {
-    transform: scale(0.95);
-}
-
-.sprout-toggle img {
+.sprout-icon img {
     width: 100%;
     height: 100%;
     object-fit: contain;
+}
+
+/* Distance + visited toggle row */
+.place-card-distance-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+}
+
+.place-card-distance-row .place-card-distance {
+    margin-top: 0;
+}
+
+/* Small visited toggle inline in distance row */
+.card-visited-toggle {
+    width: auto;
+    flex: none;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 20px;
 }
 
 /* Updated card header with sprout */
@@ -2429,6 +2428,11 @@ body {
 .app-main[data-view="map"] .fab-discover {
     bottom: 140px;
 }
+
+.app-main[data-view="reviews"] .fab-discover {
+    display: none;
+}
+
 
 .fab-discover:hover {
     transform: translateY(-2px);
@@ -2635,6 +2639,206 @@ body {
 
 .review-section:last-child {
     margin-bottom: 0;
+}
+
+.review-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--hint-color);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+}
+
+/* Ratings row: rating + price side by side */
+.review-ratings-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.review-ratings-row .rating-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    flex: 1;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.review-ratings-row .rating-group .review-label {
+    margin-bottom: 4px;
+}
+
+.review-ratings-row .star-rating .star {
+    width: 28px;
+    height: 28px;
+    font-size: 22px;
+}
+
+.review-ratings-row .price-rating .price-icon {
+    width: 24px;
+    height: 24px;
+    font-size: 18px;
+}
+
+.rating-group.invalid {
+    border-color: rgba(224, 123, 123, 0.35);
+    background: var(--danger-bg);
+}
+
+/* Dish chip input container */
+.dish-chips-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--secondary-bg);
+    border-radius: 12px;
+    background: var(--bg-color);
+    min-height: 44px;
+    align-items: center;
+    transition: border-color 0.2s ease;
+}
+
+.dish-chips-container:focus-within {
+    border-color: var(--sprout-purple-light);
+}
+
+/* Individual dish chip */
+.dish-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px 4px 10px;
+    background: var(--sprout-purple-light);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--sprout-purple);
+}
+
+.dish-chip-name {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dish-chip-remove {
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    color: var(--sprout-purple);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    opacity: 0.7;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.15s ease;
+}
+
+.dish-chip-remove:hover {
+    opacity: 1;
+}
+
+/* "+ Add a dish" trigger — flows inline after chips */
+.dish-add-trigger {
+    display: inline-flex;
+    align-items: center;
+}
+
+.dish-add-label {
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 15px;
+    border: 1.5px dashed var(--hint-color);
+    color: var(--hint-color);
+    font-size: 13px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.dish-add-label:active {
+    border-color: var(--sprout-purple);
+    color: var(--sprout-purple);
+}
+
+/* Inline input that replaces the label */
+.dish-add-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 15px;
+    border: 1.5px solid var(--sprout-purple);
+    background: transparent;
+}
+
+.dish-chip-confirm-btn {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: var(--sprout-purple);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Input inside the inline input wrap */
+.dish-chip-input {
+    flex: 1;
+    min-width: 80px;
+    border: none;
+    background: transparent;
+    color: var(--text-color);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    padding: 0;
+}
+
+.dish-chip-input::placeholder {
+    color: var(--hint-color);
+}
+
+/* Review remarks textarea */
+.review-remarks {
+    width: 100%;
+    min-height: 80px;
+    padding: 10px 12px;
+    border: 1px solid var(--secondary-bg);
+    border-radius: 12px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+}
+
+.review-remarks:focus {
+    border-color: var(--sprout-purple-light);
+}
+
+.review-remarks::placeholder {
+    color: var(--hint-color);
 }
 
 .section-header {
@@ -2997,6 +3201,12 @@ button:disabled,
     pointer-events: none;
 }
 
+/* Review button on unvisited place: allow click for nudge toast */
+.card-action-btn.review-btn.disabled {
+    pointer-events: auto;
+    cursor: pointer;
+}
+
 /* ========== REVIEW BADGE IN PLACE CARDS ========== */
 
 .review-badge {
@@ -3226,38 +3436,7 @@ button:disabled,
     display: flex;
 }
 
-/* Reviews controls */
-.reviews-controls {
-    padding: 12px 16px;
-    background-color: var(--bg-color);
-    border-bottom: 1px solid var(--secondary-bg);
-}
-
-.reviews-header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-}
-
-.reviews-count {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-color);
-    margin: 0;
-}
-
-.reviews-sort-select {
-    padding: 6px 12px;
-    border: 1px solid var(--secondary-bg);
-    background-color: var(--card-bg);
-    color: var(--text-color);
-    border-radius: 12px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    outline: none;
-}
+/* Reviews view reuses .list-controls styles — no extra rules needed */
 
 .reviews-filters {
     display: flex;
@@ -3333,14 +3512,14 @@ button:disabled,
     background-color: var(--card-bg);
     border: 1.5px solid var(--secondary-bg);
     border-radius: 16px;
-    padding: 16px;
+    padding: 0;
     margin-bottom: 12px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
     cursor: pointer;
     transition: all 0.2s ease;
     width: 100%;
     max-width: 100%;
-    overflow-x: clip;
+    overflow: hidden;
 }
 
 .review-card:hover {
@@ -3368,49 +3547,170 @@ button:disabled,
     flex: 1;
 }
 
-.review-card-rating {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
+/* Photo grid — 1/2/3 photo layouts */
+.review-card-photo-strip {
+    display: grid;
     gap: 2px;
+    height: 140px;
+    overflow: hidden;
 }
 
-.review-stars {
-    font-size: 14px;
+/* 1 photo: full width */
+.review-card-photo-strip.count-1 {
+    grid-template-columns: 1fr;
+}
+
+/* 2 photos: equal halves */
+.review-card-photo-strip.count-2 {
+    grid-template-columns: 1fr 1fr;
+}
+
+/* 3 photos: big left + two stacked right */
+.review-card-photo-strip.count-3 {
+    grid-template-columns: 2fr 1fr;
+    grid-template-rows: 1fr 1fr;
+}
+
+.review-card-photo-strip.count-3 .review-card-photo-thumb:first-child {
+    grid-row: 1 / 3;
+}
+
+.review-card-photo-thumb {
+    overflow: hidden;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+    min-width: 0;
+    min-height: 0;
+}
+
+.review-card-photo-thumb:active {
+    opacity: 0.8;
+}
+
+.review-card-photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* 4+ photos: horizontal scroll, first 3 visible, peek 4th */
+.review-card-photo-strip.scrollable {
+    display: flex;
+    gap: 3px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    height: 140px;
+}
+
+.review-card-photo-strip.scrollable::-webkit-scrollbar {
+    display: none;
+}
+
+.review-card-photo-strip.scrollable .review-card-photo-thumb {
+    flex-shrink: 0;
+    width: calc(33% - 2px);
+    min-width: 100px;
+    height: 140px;
+}
+
+/* Body */
+.review-card-body {
+    padding: 12px 14px 14px;
+}
+
+/* Place name + stars */
+.review-card-name-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.review-card-place {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-color);
+    line-height: 1.3;
+    flex: 1;
+}
+
+.review-card-stars {
+    display: flex;
+    gap: 1px;
+    flex-shrink: 0;
+    padding-top: 2px;
+}
+
+.rc-star {
+    font-size: 15px;
+    color: var(--secondary-bg);
     line-height: 1;
 }
 
-.review-rating-num {
+.rc-star.filled {
+    color: #FFD700;
+}
+
+/* Price icons + timestamp */
+.review-card-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.review-card-price-icons {
+    display: flex;
+    gap: 1px;
+}
+
+.rc-price {
+    font-size: 12px;
+    opacity: 0.2;
+    line-height: 1;
+}
+
+.rc-price.filled {
+    opacity: 1;
+}
+
+.review-card-time {
     font-size: 11px;
     color: var(--hint-color);
-    font-weight: 500;
 }
 
-.review-card-price {
-    font-size: 13px;
-    color: var(--text-color);
-    margin-bottom: 6px;
-}
-
-.review-card-meta {
+/* Dish chips — single line, fade right */
+.review-card-chips {
     display: flex;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--hint-color);
+    gap: 5px;
+    overflow: hidden;
     margin-bottom: 8px;
+    -webkit-mask-image: linear-gradient(to right, black 80%, transparent 100%);
+    mask-image: linear-gradient(to right, black 80%, transparent 100%);
 }
 
+.review-card-chip {
+    display: inline-block;
+    padding: 2px 9px;
+    background: var(--sprout-purple-light);
+    color: var(--sprout-purple);
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Notes preview */
 .review-card-preview {
     font-size: 13px;
-    color: var(--text-color);
+    color: var(--hint-color);
     line-height: 1.4;
     font-style: italic;
-    margin-bottom: 8px;
-}
-
-.review-card-footer {
-    font-size: 12px;
-    color: var(--hint-color);
 }
 
 /* Review indicators on place cards */
@@ -3464,11 +3764,8 @@ button:disabled,
 /* ========== DARK MODE COMPONENT OVERRIDES ========== */
 
 /* Map filter panel dark mode */
-[data-theme="dark"] .map-filter-row {
-    background: rgba(44, 44, 46, 0.95);
-}
-
-[data-theme="dark"] .map-cuisine-select {
+[data-theme="dark"] .map-filter-row,
+[data-theme="dark"] .map-cuisine-select-wrap {
     background: rgba(44, 44, 46, 0.95);
 }
 
