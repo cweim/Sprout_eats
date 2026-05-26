@@ -1142,7 +1142,6 @@ function fitAllPlaces() {
 // Setup map control buttons
 function setupMapControls() {
     document.getElementById('btn-my-location').addEventListener('click', goToMyLocation);
-    document.getElementById('btn-fit-all').addEventListener('click', fitAllPlaces);
 
     // Map filter chips (visited/unvisited)
     const mapFilterChips = document.querySelectorAll('.map-filter-chip');
@@ -2978,6 +2977,28 @@ async function initApp() {
 
     // Show map view by default
     switchView('map');
+
+    // Handle Telegram startapp deep link param
+    const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param
+        || new URLSearchParams(window.location.search).get('startapp');
+    if (startParam) {
+        if (startParam.startsWith('review_')) {
+            const placeId = parseInt(startParam.slice('review_'.length));
+            if (!isNaN(placeId)) {
+                setTimeout(() => openReviewSheet(placeId), 300);
+            }
+        } else if (startParam.startsWith('place_')) {
+            const placeId = parseInt(startParam.slice('place_'.length));
+            if (!isNaN(placeId)) {
+                markersLayer.eachLayer(marker => {
+                    if (marker.placeData && marker.placeData.id === placeId) {
+                        map.setView(marker.getLatLng(), 16);
+                        marker.openPopup();
+                    }
+                });
+            }
+        }
+    }
 
     console.log(`Loaded ${places.length} places`);
 }
