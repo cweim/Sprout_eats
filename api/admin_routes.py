@@ -102,6 +102,30 @@ async def get_feedback_reports(
     }
 
 
+@router.get("/users")
+async def get_users(
+    limit: int = 100,
+    offset: int = 0,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """List all users with place/review counts."""
+    users = repository.list_users_with_stats(limit=limit, offset=offset)
+    return {"users": users, "limit": limit, "offset": offset}
+
+
+@router.get("/places")
+async def get_places(
+    platform: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """List recently saved places across all users."""
+    places = repository.list_recent_places(platform=platform, limit=limit, offset=offset)
+    total = repository.get_recent_places_count(platform=platform)
+    return {"places": places, "total": total, "limit": limit, "offset": offset}
+
+
 @router.get("/failed-extractions")
 async def get_failed_extractions(
     platform: Optional[str] = None,

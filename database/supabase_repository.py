@@ -1001,6 +1001,14 @@ def get_dashboard_overview() -> Dict[str, Any]:
         supabase.table("feedback_attachments").select("id", count="exact").execute().count or 0
     )
 
+    places_new_7d = (
+        supabase.table("places").select("id", count="exact").gte("created_at", since_7d).is_("deleted_at", "null").execute().count or 0
+    )
+    failed_total = supabase.table("failed_extractions").select("id", count="exact").execute().count or 0
+    failed_7d = (
+        supabase.table("failed_extractions").select("id", count="exact").gte("created_at", since_7d).execute().count or 0
+    )
+
     review_rate = round(reviews_total / places_visited_total, 4) if places_visited_total else 0.0
     visited_rate = round(places_visited_total / places_total, 4) if places_total else 0.0
 
@@ -1008,6 +1016,7 @@ def get_dashboard_overview() -> Dict[str, Any]:
         "users_total": users_total,
         "users_new_7d": users_new_7d,
         "places_total": places_total,
+        "places_new_7d": places_new_7d,
         "places_visited_total": places_visited_total,
         "visited_rate": visited_rate,
         "reviews_total": reviews_total,
@@ -1016,6 +1025,8 @@ def get_dashboard_overview() -> Dict[str, Any]:
         "feedback_total": feedback_total,
         "feedback_open": feedback_open,
         "feedback_with_attachments": feedback_with_attachments,
+        "failed_extractions_total": failed_total,
+        "failed_extractions_7d": failed_7d,
     }
 
 
@@ -1130,6 +1141,69 @@ def get_failed_extractions(
         query = query.eq("platform", platform)
     result = query.execute()
     return result.data or []
+
+
+def list_users_with_stats(*, limit: int = 100, offset: int = 0) -> list[dict]:
+    """Return users with place/review counts, newest first."""
+    supabase = get_supabase()
+    result = (
+        supabase.table("users")
+        .select("id, username, first_name, last_name, created_at")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .offset(offset)
+        .execute()
+    )
+    users = result.data or []
+    if not users:
+        return []
+    user_ids = [u["id"] for u in users]
+    # Place counts (active only)
+    places_res = (
+        supabase.table("places")
+        .select("user_id", count="exact")
+        .in_("user_id", user_ids)
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    # Per-user counts via grouped approach: fetch all rows and count in Python
+    place_rows = supabase.table("places").select("user_id").in_("user_id", user_ids).is_("deleted_at", "null").execute().data or []
+    review_rows = supabase.table("reviews").select("user_id").in_("user_id", user_ids).execute().data or []
+    place_counts = {}
+    for row in place_rows:
+        place_counts[row["user_id"]] = place_counts.get(row["user_id"], 0) + 1
+    review_counts = {}
+    for row in review_rows:
+        review_counts[row["user_id"]] = review_counts.get(row["user_id"], 0) + 1
+    for u in users:
+        u["places_count"] = place_counts.get(u["id"], 0)
+        u["reviews_count"] = review_counts.get(u["id"], 0)
+        u["display_name"] = u.get("first_name") or u.get("username") or f"User {u['id']}"
+    return users
+
+
+def list_recent_places(*, limit: int = 100, offset: int = 0, platform: str | None = None) -> list[dict]:
+    """Return recently saved places across all users, newest first."""
+    supabase = get_supabase()
+    query = (
+        supabase.table("places")
+        .select("id, user_id, name, address, source_platform, source_url, is_visited, created_at")
+        .is_("deleted_at", "null")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .offset(offset)
+    )
+    if platform:
+        query = query.eq("source_platform", platform)
+    return query.execute().data or []
+
+
+def get_recent_places_count(*, platform: str | None = None) -> int:
+    supabase = get_supabase()
+    query = supabase.table("places").select("id", count="exact").is_("deleted_at", "null")
+    if platform:
+        query = query.eq("source_platform", platform)
+    return query.execute().count or 0
 
 
 def get_failed_extraction_count(*, platform: str | None = None) -> int:

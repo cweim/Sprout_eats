@@ -39,7 +39,9 @@
             </section>
 
             <nav class="tab-nav">
-                <button class="tab-btn active" data-tab="feedback">Feedback Inbox</button>
+                <button class="tab-btn active" data-tab="feedback">Feedback</button>
+                <button class="tab-btn" data-tab="users">Users</button>
+                <button class="tab-btn" data-tab="places">Places</button>
                 <button class="tab-btn" data-tab="failed-links">Failed Links</button>
             </nav>
 
@@ -81,6 +83,59 @@
                         <p>Select a report to inspect it.</p>
                     </div>
                 </div>
+            </section>
+
+            <!-- Users tab -->
+            <section class="tab-panel hidden" data-panel="users">
+                <div class="panel-header">
+                    <h2>Users</h2>
+                    <button id="users-refresh-btn">Refresh</button>
+                </div>
+                <div id="users-summary" class="summary"></div>
+                <table class="failed-table">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>ID</th>
+                            <th>Places</th>
+                            <th>Reviews</th>
+                            <th>Joined</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-tbody"></tbody>
+                </table>
+                <div id="users-empty" class="empty-state hidden">No users yet.</div>
+            </section>
+
+            <!-- Places tab -->
+            <section class="tab-panel hidden" data-panel="places">
+                <div class="panel-header">
+                    <h2>Recently Saved Places</h2>
+                    <div class="filters">
+                        <select id="places-filter-platform">
+                            <option value="">All platforms</option>
+                            <option value="instagram">Instagram</option>
+                            <option value="tiktok">TikTok</option>
+                        </select>
+                        <button id="places-refresh-btn">Refresh</button>
+                    </div>
+                </div>
+                <div id="places-summary" class="summary"></div>
+                <table class="failed-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Name</th>
+                            <th>Address</th>
+                            <th>Platform</th>
+                            <th>Visited</th>
+                            <th>Source</th>
+                        </tr>
+                    </thead>
+                    <tbody id="places-tbody"></tbody>
+                </table>
+                <div id="places-empty" class="empty-state hidden">No places saved yet.</div>
+                <div id="places-pagination" class="pagination"></div>
             </section>
 
             <section class="failed-links-panel tab-panel hidden" data-panel="failed-links">

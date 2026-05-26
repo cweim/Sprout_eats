@@ -57,14 +57,14 @@ function renderOverviewCards(overview) {
     const cards = [
         ['Users', overview.users_total],
         ['New Users (7d)', overview.users_new_7d],
-        ['Places', overview.places_total],
-        ['Visited Places', overview.places_visited_total],
-        ['Visited Rate', `${(overview.visited_rate * 100).toFixed(1)}%`],
-        ['Reviews', overview.reviews_total],
-        ['Review Rate', `${(overview.review_rate * 100).toFixed(1)}%`],
+        ['Places Saved', overview.places_total],
+        ['New Places (7d)', overview.places_new_7d ?? '—'],
+        ['Visited', `${overview.places_visited_total} (${(overview.visited_rate * 100).toFixed(0)}%)`],
+        ['Reviews', `${overview.reviews_total} (${(overview.review_rate * 100).toFixed(0)}%)`],
         ['Pending Reminders', overview.pending_reminders],
-        ['Feedback', overview.feedback_total],
-        ['Open Feedback', overview.feedback_open],
+        ['Open Feedback', `${overview.feedback_open} / ${overview.feedback_total}`],
+        ['Failed Extractions (7d)', overview.failed_extractions_7d ?? '—'],
+        ['Failed Total', overview.failed_extractions_total ?? '—'],
     ];
     document.getElementById('overview-cards').innerHTML = cards.map(([label, value]) => `
         <div class="card">
@@ -248,6 +248,8 @@ function bindTabs() {
             const panel = document.querySelector(`.tab-panel[data-panel="${btn.dataset.tab}"]`);
             if (panel) panel.classList.remove('hidden');
             if (btn.dataset.tab === 'failed-links') loadFailedLinks();
+            if (btn.dataset.tab === 'users') loadUsers();
+            if (btn.dataset.tab === 'places') loadPlaces();
         });
     });
 }
@@ -323,6 +325,99 @@ function bindFailedLinks() {
     });
 }
 
+// ── Users ─────────────────────────────────────────────────────────────────────
+
+async function loadUsers() {
+    const response = await adminFetch('/admin/api/users?limit=200');
+    if (!response.ok) return;
+    const data = await response.json();
+    const users = data.users || [];
+    const summary = document.getElementById('users-summary');
+    const tbody = document.getElementById('users-tbody');
+    const empty = document.getElementById('users-empty');
+    summary.textContent = `${users.length} user${users.length === 1 ? '' : 's'}`;
+    if (!users.length) { empty.classList.remove('hidden'); tbody.innerHTML = ''; return; }
+    empty.classList.add('hidden');
+    tbody.innerHTML = users.map((u) => {
+        const name = escapeHtml(u.display_name);
+        const username = u.username ? `@${escapeHtml(u.username)}` : '—';
+        const joined = new Date(u.created_at).toLocaleDateString();
+        return `<tr>
+            <td><strong>${name}</strong><br><small>${username}</small></td>
+            <td><small>${u.id}</small></td>
+            <td>${u.places_count}</td>
+            <td>${u.reviews_count}</td>
+            <td>${joined}</td>
+        </tr>`;
+    }).join('');
+}
+
+function bindUsers() {
+    document.getElementById('users-refresh-btn').addEventListener('click', loadUsers);
+}
+
+// ── Places ────────────────────────────────────────────────────────────────────
+
+let placesOffset = 0;
+const PLACES_PAGE_SIZE = 100;
+
+async function loadPlaces() {
+    const platform = document.getElementById('places-filter-platform').value;
+    const params = new URLSearchParams({ limit: PLACES_PAGE_SIZE, offset: placesOffset });
+    if (platform) params.set('platform', platform);
+    const response = await adminFetch(`/admin/api/places?${params}`);
+    if (!response.ok) return;
+    const data = await response.json();
+    renderPlaces(data.places, data.total);
+}
+
+function renderPlaces(places, total) {
+    const tbody = document.getElementById('places-tbody');
+    const empty = document.getElementById('places-empty');
+    const summary = document.getElementById('places-summary');
+    const pagination = document.getElementById('places-pagination');
+    summary.textContent = `${total} place${total === 1 ? '' : 's'} saved`;
+    if (!places.length) { empty.classList.remove('hidden'); tbody.innerHTML = ''; pagination.innerHTML = ''; return; }
+    empty.classList.add('hidden');
+    tbody.innerHTML = places.map((p) => {
+        const date = new Date(p.created_at).toLocaleDateString();
+        const src = p.source_url
+            ? `<a href="${escapeHtml(p.source_url)}" target="_blank" rel="noopener">link</a>`
+            : '—';
+        return `<tr>
+            <td>${escapeHtml(date)}</td>
+            <td><strong>${escapeHtml(p.name)}</strong></td>
+            <td><small>${escapeHtml(p.address || '—')}</small></td>
+            <td>${escapeHtml(p.source_platform || '—')}</td>
+            <td>${p.is_visited ? '✓' : ''}</td>
+            <td>${src}</td>
+        </tr>`;
+    }).join('');
+    const totalPages = Math.ceil(total / PLACES_PAGE_SIZE);
+    const currentPage = Math.floor(placesOffset / PLACES_PAGE_SIZE) + 1;
+    pagination.innerHTML = totalPages > 1
+        ? `<button ${currentPage === 1 ? 'disabled' : ''} onclick="placesPage(-1)">← Prev</button>
+           <span>Page ${currentPage} of ${totalPages}</span>
+           <button ${currentPage === totalPages ? 'disabled' : ''} onclick="placesPage(1)">Next →</button>`
+        : '';
+}
+
+function placesPage(direction) {
+    placesOffset = Math.max(0, placesOffset + direction * PLACES_PAGE_SIZE);
+    loadPlaces();
+}
+
+function bindPlaces() {
+    document.getElementById('places-filter-platform').addEventListener('change', () => {
+        placesOffset = 0;
+        loadPlaces();
+    });
+    document.getElementById('places-refresh-btn').addEventListener('click', () => {
+        placesOffset = 0;
+        loadPlaces();
+    });
+}
+
 function bindLogin() {
     document.getElementById('login-form').addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -351,6 +446,8 @@ async function init() {
     bindFilters();
     bindTabs();
     bindFailedLinks();
+    bindUsers();
+    bindPlaces();
     await validateAdminSession();
 }
 
