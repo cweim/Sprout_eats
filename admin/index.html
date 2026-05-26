@@ -38,7 +38,12 @@
                 <div id="overview-cards" class="cards"></div>
             </section>
 
-            <section class="feedback-panel">
+            <nav class="tab-nav">
+                <button class="tab-btn active" data-tab="feedback">Feedback Inbox</button>
+                <button class="tab-btn" data-tab="failed-links">Failed Links</button>
+            </nav>
+
+            <section class="feedback-panel tab-panel" data-panel="feedback">
                 <div class="panel-header">
                     <h2>Feedback Inbox</h2>
                     <div class="filters">
@@ -76,6 +81,36 @@
                         <p>Select a report to inspect it.</p>
                     </div>
                 </div>
+            </section>
+
+            <section class="failed-links-panel tab-panel hidden" data-panel="failed-links">
+                <div class="panel-header">
+                    <h2>Failed Links</h2>
+                    <div class="filters">
+                        <select id="failed-filter-platform">
+                            <option value="">All platforms</option>
+                            <option value="instagram">Instagram</option>
+                            <option value="tiktok">TikTok</option>
+                            <option value="other">Other</option>
+                        </select>
+                        <button id="failed-refresh-btn">Refresh</button>
+                    </div>
+                </div>
+                <div id="failed-summary" class="summary"></div>
+                <table id="failed-table" class="failed-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Platform</th>
+                            <th>Reason</th>
+                            <th>URL</th>
+                            <th>Caption preview</th>
+                        </tr>
+                    </thead>
+                    <tbody id="failed-tbody"></tbody>
+                </table>
+                <div id="failed-empty" class="empty-state hidden">No failed extractions recorded yet.</div>
+                <div id="failed-pagination" class="pagination"></div>
             </section>
         </main>
     </div>

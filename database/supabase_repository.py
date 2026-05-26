@@ -149,6 +149,21 @@ def get_place_count(user_id: int) -> int:
     return result.count or 0
 
 
+def get_most_recent_place(user_id: int) -> Optional[Dict[str, Any]]:
+    """Get the most recently saved place for a user."""
+    supabase = get_supabase()
+    result = (
+        supabase.table("places")
+        .select("name, created_at")
+        .eq("user_id", user_id)
+        .is_("deleted_at", "null")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
 def get_reviews_count(user_id: int) -> int:
     """Get count of reviews for a user."""
     supabase = get_supabase()
@@ -1023,3 +1038,105 @@ def create_app_event(
         "metadata": metadata or {},
     }).execute()
     return result.data[0] if result.data else None
+
+
+# =============================================================================
+# Bot Pending Sessions
+# =============================================================================
+
+def save_bot_session(user_id: int, session_type: str, payload: dict, ttl_hours: int = 24) -> None:
+    """Upsert a bot session (replaces any existing session of the same type for this user)."""
+    supabase = get_supabase()
+    expires_at = (datetime.utcnow() + timedelta(hours=ttl_hours)).isoformat()
+    supabase.table("bot_pending_sessions").upsert({
+        "user_id": user_id,
+        "session_type": session_type,
+        "payload": payload,
+        "expires_at": expires_at,
+    }).execute()
+
+
+def get_bot_session(user_id: int, session_type: str) -> Optional[dict]:
+    """Fetch a non-expired bot session, or None if missing/expired."""
+    supabase = get_supabase()
+    now = datetime.utcnow().isoformat()
+    result = (
+        supabase.table("bot_pending_sessions")
+        .select("payload")
+        .eq("user_id", user_id)
+        .eq("session_type", session_type)
+        .gt("expires_at", now)
+        .limit(1)
+        .execute()
+    )
+    if result.data:
+        return result.data[0]["payload"]
+    return None
+
+
+def delete_bot_session(user_id: int, session_type: str) -> None:
+    """Delete a bot session after it's been consumed."""
+    supabase = get_supabase()
+    supabase.table("bot_pending_sessions").delete().eq("user_id", user_id).eq("session_type", session_type).execute()
+
+
+def cleanup_expired_bot_sessions() -> int:
+    """Delete all expired bot sessions. Returns count deleted."""
+    supabase = get_supabase()
+    now = datetime.utcnow().isoformat()
+    result = supabase.table("bot_pending_sessions").delete().lt("expires_at", now).execute()
+    return len(result.data) if result.data else 0
+
+
+# =============================================================================
+# Failed Extractions
+# =============================================================================
+
+def log_failed_extraction(
+    user_id: int,
+    url: str,
+    *,
+    platform: str = "other",
+    caption_preview: str = "",
+    reason: str = "no_slots",
+) -> None:
+    """Record a link where the bot found 0 resolved places."""
+    supabase = get_supabase()
+    supabase.table("failed_extractions").insert({
+        "user_id": user_id,
+        "url": url,
+        "platform": platform,
+        "caption_preview": (caption_preview or "")[:300],
+        "reason": reason,
+    }).execute()
+
+
+def get_failed_extractions(
+    *,
+    platform: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict]:
+    """Return failed extractions, newest first, optionally filtered by platform."""
+    supabase = get_supabase()
+    query = (
+        supabase.table("failed_extractions")
+        .select("id, user_id, url, platform, caption_preview, reason, created_at")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .offset(offset)
+    )
+    if platform:
+        query = query.eq("platform", platform)
+    result = query.execute()
+    return result.data or []
+
+
+def get_failed_extraction_count(*, platform: str | None = None) -> int:
+    """Return total count of failed extractions."""
+    supabase = get_supabase()
+    query = supabase.table("failed_extractions").select("id", count="exact")
+    if platform:
+        query = query.eq("platform", platform)
+    result = query.execute()
+    return result.count or 0

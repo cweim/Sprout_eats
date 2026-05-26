@@ -60,6 +60,9 @@ INSTAGRAM_WORKER_TOKEN = os.getenv("INSTAGRAM_WORKER_TOKEN", "").strip()
 APIFY_API_TOKEN = os.getenv("APIFY_API_TOKEN", "").strip()
 APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID", "apify/instagram-reel-scraper").strip()
 
+# Place extraction LLM fallback (Claude Haiku) — off by default due to cost
+ENABLE_LLM_PLACE_FALLBACK: bool = os.getenv("ENABLE_LLM_PLACE_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}
+
 # Reminder job
 REMINDER_JOB_INTERVAL_MINUTES = int(os.getenv("REMINDER_JOB_INTERVAL_MINUTES", "5"))
 REMINDER_JOB_STARTUP_DELAY_SECONDS = int(os.getenv("REMINDER_JOB_STARTUP_DELAY_SECONDS", "30"))

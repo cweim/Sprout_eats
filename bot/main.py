@@ -26,19 +26,20 @@ from bot.handlers import (
     action_callback,
     toggle_place_callback,
     save_selected_callback,
+    save_all_callback,
     cancel_selection_callback,
     incorrect_place_callback,
+    correction_pick_callback,
     delete_place_callback,
     unresolved_pick_callback,
+    cancel_extraction_callback,
     handle_text,
     handle_photo,
     handle_location,
-    review_conversation_handler,
     handle_remind_later,
     handle_remind_stop,
     handle_dismiss,
-    handle_review_photo_callback,
-    handle_review_photo_upload,
+    handle_review_callback,
     feedback_conversation_handler,
 )
 
@@ -94,28 +95,25 @@ async def check_review_reminders(context: ContextTypes.DEFAULT_TYPE):
                 continue
 
             # Send reminder message
-            place_name = place['name'][:config.REMINDER_PLACE_NAME_MAX_LENGTH]
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(
-                    "📝 Write Review",
-                    callback_data=f"review:{place_id}:{place_name}"
-                )],
-                [
-                    InlineKeyboardButton(
-                        "Ask Later",
-                        callback_data=f"remind_later:{reminder_id}"
-                    ),
-                    InlineKeyboardButton(
-                        "Don't Ask",
-                        callback_data=f"remind_stop:{place_id}"
-                    )
-                ]
+            review_btn_row = []
+            if config.WEBAPP_URL:
+                from telegram import WebAppInfo
+                review_btn_row = [InlineKeyboardButton(
+                    "⭐ Write Review →",
+                    web_app=WebAppInfo(url=f"{config.WEBAPP_URL}?startapp=review_{place_id}")
+                )]
+            keyboard_rows = []
+            if review_btn_row:
+                keyboard_rows.append(review_btn_row)
+            keyboard_rows.append([
+                InlineKeyboardButton("Ask Later", callback_data=f"remind_later:{reminder_id}"),
+                InlineKeyboardButton("Don't Ask", callback_data=f"remind_stop:{place_id}"),
             ])
+            keyboard = InlineKeyboardMarkup(keyboard_rows)
 
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"Hey! How was *{place['name']}*? 🍜\n\n"
-                     f"Share your thoughts while it's fresh!",
+                text=f"Hey! How was *{place['name']}*? 🍜\n\nWrite your review while it's fresh.",
                 parse_mode='Markdown',
                 reply_markup=keyboard
             )
@@ -127,6 +125,14 @@ async def check_review_reminders(context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Failed to send reminder {reminder['id']}: {e}")
 
     logger.info(f"Processed {len(pending)} reminders")
+
+    # Piggyback: clean up expired bot sessions
+    try:
+        deleted = repository.cleanup_expired_bot_sessions()
+        if deleted:
+            logger.info(f"Cleaned up {deleted} expired bot sessions")
+    except Exception as e:
+        logger.warning(f"Bot session cleanup failed: {e}")
 
 
 def setup_reminder_job(application):
@@ -189,7 +195,13 @@ def main():
     logger.info("Whisper model ready")
 
     # Create application
-    app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).post_init(post_init).build()
+    app = (
+        Application.builder()
+        .token(config.TELEGRAM_BOT_TOKEN)
+        .post_init(post_init)
+        .concurrent_updates(True)
+        .build()
+    )
 
     # Set up reminder job
     setup_reminder_job(app)
@@ -206,24 +218,24 @@ def main():
     app.add_handler(CallbackQueryHandler(action_callback, pattern="^action_"))
     app.add_handler(CallbackQueryHandler(toggle_place_callback, pattern="^toggle_place_"))
     app.add_handler(CallbackQueryHandler(save_selected_callback, pattern="^save_selected$"))
+    app.add_handler(CallbackQueryHandler(save_all_callback, pattern="^save_all$"))
     app.add_handler(CallbackQueryHandler(cancel_selection_callback, pattern="^cancel_selection$"))
     app.add_handler(CallbackQueryHandler(incorrect_place_callback, pattern="^incorrect_place_"))
+    app.add_handler(CallbackQueryHandler(correction_pick_callback, pattern="^correction_pick_"))
     app.add_handler(CallbackQueryHandler(delete_place_callback, pattern="^delete_place_"))
     app.add_handler(CallbackQueryHandler(unresolved_pick_callback, pattern="^unresolved_pick_"))
+    app.add_handler(CallbackQueryHandler(cancel_extraction_callback, pattern="^cancel_extraction_"))
 
     # Reminder callback handlers
     app.add_handler(CallbackQueryHandler(handle_remind_later, pattern=r'^remind_later:'))
     app.add_handler(CallbackQueryHandler(handle_remind_stop, pattern=r'^remind_stop:'))
     app.add_handler(CallbackQueryHandler(handle_dismiss, pattern=r'^dismiss$'))
-    app.add_handler(CallbackQueryHandler(handle_review_photo_callback, pattern=r'^review_photo:'))
+    app.add_handler(CallbackQueryHandler(handle_review_callback, pattern=r'^review:'))
 
     # Feedback conversation handler must be before generic message handlers
     app.add_handler(feedback_conversation_handler)
 
-    # Review conversation handler (must be before generic text handler)
-    app.add_handler(review_conversation_handler)
-
-    # Review photo uploads (only active after Telegram review save)
+    # Photos (Instagram fallback screenshots)
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     # Handle text messages (URLs and place name responses)

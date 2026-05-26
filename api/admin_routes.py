@@ -102,6 +102,19 @@ async def get_feedback_reports(
     }
 
 
+@router.get("/failed-extractions")
+async def get_failed_extractions(
+    platform: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """List links where the bot found 0 places, newest first."""
+    rows = repository.get_failed_extractions(platform=platform, limit=limit, offset=offset)
+    total = repository.get_failed_extraction_count(platform=platform)
+    return {"rows": rows, "total": total, "limit": limit, "offset": offset}
+
+
 @router.get("/feedback/{report_id}")
 async def get_feedback_report(report_id: int, admin: AdminUser = Depends(get_current_admin)):
     """Get a single feedback report with attachments."""

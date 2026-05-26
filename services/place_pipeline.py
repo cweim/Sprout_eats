@@ -1,7 +1,10 @@
 import asyncio
 from dataclasses import asdict, dataclass, field
+import logging
 import re
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 from services.places import (
     PlaceResult,
@@ -12,7 +15,7 @@ from services.places import (
 )
 
 
-PIN_MARKERS = ("📍", "📌")
+PIN_MARKERS = ("📍", "📌", "🍴", "🍽️", "🥢", "🏠")
 ADDRESS_HINT_RE = re.compile(
     r"("
     r"(?:Singapore|SG)\s*\d{6}"
@@ -25,7 +28,8 @@ ADDRESS_HINT_RE = re.compile(
 LOCATION_ONLY_CUE_RE = re.compile(
     r"\b("
     r"level|lvl|floor|flr|next\s+to|near|opposite|beside|inside|within|"
-    r"mall|shopping\s+centre|shopping\s+center|city|plaza"
+    r"mall|shopping\s+centre|shopping\s+center|city|plaza|"
+    r"centre|center|tower|building|financial|house"
     r")\b",
     re.IGNORECASE,
 )
@@ -316,11 +320,12 @@ def is_address_only_name(name: str) -> bool:
 
 def is_creator_or_publisher_mention(text: str, mention: str) -> bool:
     mention_pattern = f"@{mention}"
-    context = previous_context(text, mention_pattern, chars=80).lower()
-    following_start = text.find(mention_pattern)
-    following = text[following_start:following_start + 100].lower() if following_start >= 0 else ""
-    combined = f"{context} {following}"
-    return any(word in combined for word in CREATOR_CONTEXT_WORDS)
+    for line in text.splitlines():
+        if mention_pattern not in line:
+            continue
+        line_lower = line.lower()
+        return any(word in line_lower for word in CREATOR_CONTEXT_WORDS)
+    return False
 
 
 def extract_plain_caption_list_slots(caption: str) -> list[PlaceEvidence]:
@@ -374,6 +379,73 @@ def extract_plain_caption_list_slots(caption: str) -> list[PlaceEvidence]:
     return slots
 
 
+def extract_numbered_list_slots(caption: str) -> list[PlaceEvidence]:
+    """Extract '1. Name' or '1. Name — Address' list patterns (requires ≥2 matches)."""
+    lines = [clean_text(line) for line in caption.splitlines()]
+    slots: list[PlaceEvidence] = []
+    location_context = infer_country_hint(caption)
+
+    for line in lines:
+        m = re.match(r"^\d+[.)]\s+(.+)$", line)
+        if not m:
+            continue
+        content = clean_text(m.group(1))
+        if not content or is_likely_non_place_line(content):
+            continue
+        parts = re.split(r"\s*[—–]\s*|\s+[-]\s+", content, maxsplit=1)
+        name = clean_text(parts[0])
+        address = clean_text(parts[1]) if len(parts) > 1 else None
+        if not name or not has_place_name_shape(name) or len(name.split()) > 6:
+            continue
+        slots.append(
+            PlaceEvidence(
+                slot_id=f"numbered_list_{len(slots) + 1}",
+                source="caption_list",
+                raw_text=line,
+                name_candidate=name,
+                address_candidate=address,
+                area_candidate=location_context if not address else None,
+                confidence="high",
+            )
+        )
+
+    return slots if len(slots) >= 2 else []
+
+
+def extract_first_line_slot(caption: str) -> list[PlaceEvidence]:
+    """Last resort: treat first meaningful line as venue name when location context is present."""
+    lines = [clean_text(l) for l in caption.splitlines() if clean_text(l)]
+    if not lines:
+        return []
+    first = lines[0]
+    if MENTION_RE.search(first) or HASHTAG_RE.search(first):
+        return []
+    if len(first.split()) > 6 or not has_place_name_shape(first):
+        return []
+    if is_likely_non_place_line(first):
+        return []
+    first_lower = first.lower()
+    # Filter creator/attribution lines
+    if first_lower.startswith(("video by", "post by", "by ", "filmed by", "photo by")):
+        return []
+    # Filter domain-like strings (e.g. "foodstamp.sg")
+    if re.search(r"\b\w+\.(sg|com|my|co|net|io|app)\b", first_lower):
+        return []
+    location_context = infer_country_hint(caption)
+    if not location_context:
+        return []
+    return [
+        PlaceEvidence(
+            slot_id="first_line_1",
+            source="first_line",
+            raw_text=first,
+            name_candidate=first,
+            area_candidate=location_context,
+            confidence="low",
+        )
+    ]
+
+
 def has_place_name_shape(text: str) -> bool:
     if ":" in text and len(text.split()) > 2:
         return False
@@ -406,6 +478,7 @@ def extract_mention_slots(caption: str, *, country_hint: Optional[str] = None) -
         return slots
 
     country_hint = country_hint or infer_country_hint(caption)
+    caption_has_food = has_food_context(caption)
     for mention in mentions:
         if is_creator_or_publisher_mention(caption, mention):
             continue
@@ -415,7 +488,7 @@ def extract_mention_slots(caption: str, *, country_hint: Optional[str] = None) -
         mention_context = mention_context_match.group(0) if mention_context_match else f"@{mention}"
         area = extract_parenthesized_area(mention_context) or country_hint
 
-        if not area and not has_food_context(mention_context):
+        if not area and not has_food_context(mention_context) and not caption_has_food:
             continue
 
         slots.append(
@@ -485,6 +558,33 @@ def extract_place_evidence_from_metadata(record: dict[str, Any]) -> list[PlaceEv
     if slots:
         return dedupe_slots(slots)
 
+    slots = extract_numbered_list_slots(caption)
+    if slots:
+        return dedupe_slots(slots)
+
+    # Instagram location tag from Apify — high confidence only when it's an actual venue name
+    # (filter out country/city strings and building/area descriptors)
+    location_tag = record.get("apify_location_tag", "").strip()
+    if (
+        location_tag
+        and has_place_name_shape(location_tag)
+        and not is_address_only_name(location_tag)
+        and not is_location_only_pin_text(location_tag)
+    ):
+        country_hint = infer_country_hint(caption)
+        slots = [
+            PlaceEvidence(
+                slot_id="location_tag_1",
+                source="location_tag",
+                raw_text=location_tag,
+                name_candidate=location_tag,
+                area_candidate=country_hint,
+                confidence="high",
+                notes=["Instagram location tag"],
+            )
+        ]
+        return dedupe_slots(slots)
+
     ocr_text = ((ocr.get("combined") or {}).get("text") or "").strip()
     if ocr_text:
         slots = extract_caption_pin_slots(ocr_text) or extract_plain_caption_list_slots(ocr_text)
@@ -518,6 +618,10 @@ def extract_place_evidence_from_metadata(record: dict[str, Any]) -> list[PlaceEv
                 slot.source = "transcript"
                 slot.confidence = "low"
             return dedupe_slots(slots)
+
+    slots = extract_first_line_slot(caption)
+    if slots:
+        return dedupe_slots(slots)
 
     return []
 
@@ -763,8 +867,73 @@ async def resolve_place_slots(
     return suggestions
 
 
-async def run_slot_pipeline_for_metadata(record: dict[str, Any]) -> list[PlaceSlotSuggestion]:
+async def extract_slots_via_llm(caption: str, platform: str = "") -> list[PlaceEvidence]:
+    """Claude Haiku fallback when all rule-based extractors return no slots."""
+    import config  # local import to avoid circular dependency
+    if not getattr(config, "ENABLE_LLM_PLACE_FALLBACK", False):
+        return []
+    try:
+        import json as _json
+
+        import anthropic
+
+        client = anthropic.AsyncAnthropic()
+        prompt = (
+            f"Extract restaurant/cafe/bar/venue names from this {platform} caption. "
+            "Return ONLY a JSON array of objects with keys: name (string), address (string or null), area (string or null). "
+            "Return [] if no venues are clearly mentioned. No prose, no markdown.\n\nCaption:\n"
+            + caption[:2000]
+        )
+        response = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+        items = _json.loads(raw)
+        if not isinstance(items, list):
+            return []
+        country_hint = infer_country_hint(caption)
+        slots: list[PlaceEvidence] = []
+        for item in items:
+            name = (item.get("name") or "").strip()
+            if not name or not has_place_name_shape(name):
+                continue
+            slots.append(
+                PlaceEvidence(
+                    slot_id=f"llm_{len(slots) + 1}",
+                    source="llm_fallback",
+                    raw_text=name,
+                    name_candidate=name,
+                    address_candidate=(item.get("address") or "").strip() or None,
+                    area_candidate=(item.get("area") or "").strip() or country_hint or None,
+                    confidence="low",
+                )
+            )
+        return slots
+    except Exception as exc:
+        logger.warning("LLM place fallback failed: %s", exc)
+        return []
+
+
+async def extract_place_evidence_from_metadata_async(
+    record: dict[str, Any], *, platform: str = ""
+) -> list[PlaceEvidence]:
+    """Async variant of extract_place_evidence_from_metadata with LLM fallback."""
     slots = extract_place_evidence_from_metadata(record)
+    if slots:
+        return slots
+    core = record.get("yt_dlp_core") or {}
+    caption = "\n".join(
+        part for part in [core.get("title") or "", core.get("description") or ""] if part
+    )
+    return await extract_slots_via_llm(caption, platform=platform)
+
+
+async def run_slot_pipeline_for_metadata(
+    record: dict[str, Any], *, platform: str = ""
+) -> list[PlaceSlotSuggestion]:
+    slots = await extract_place_evidence_from_metadata_async(record, platform=platform)
     if not slots:
         return []
     return await resolve_place_slots(slots)

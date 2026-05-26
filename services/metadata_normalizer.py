@@ -33,4 +33,8 @@ def metadata_candidate_to_runtime_record(
     record["debug"]["thumbnail_url"] = candidate.thumbnail_url
     record["debug"]["video_url"] = candidate.video_url
     record["debug"]["image_urls"] = candidate.image_urls
+    # Surface Instagram's own location tag as a direct high-confidence slot hint
+    location_tag = ((candidate.raw_fields or {}).get("locationName") or "").strip()
+    if location_tag and candidate.source == "instagram_apify":
+        record["apify_location_tag"] = location_tag
     return record

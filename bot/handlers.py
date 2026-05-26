@@ -3,6 +3,7 @@ import logging
 import math
 import html
 import re
+import uuid
 import warnings
 from io import BytesIO
 from urllib.parse import quote
@@ -86,16 +87,9 @@ async def _safe_edit_callback_message(query, text: str, reply_markup=None) -> bo
             return False
         raise
 
-# Review conversation states
-REVIEW_DISH_NAME = 100
-REVIEW_DISH_RATING = 101
-REVIEW_DISH_REMARKS = 102
-REVIEW_OVERALL_RATING = 103
-REVIEW_PRICE_RATING = 104
-REVIEW_OVERALL_REMARKS = 105
 FEEDBACK_CATEGORY = 200
 FEEDBACK_COLLECT = 201
-MAX_TELEGRAM_REVIEW_PHOTOS = 3
+MAX_TELEGRAM_REVIEW_PHOTOS = 10
 MAX_FEEDBACK_IMAGES = 5
 
 # Review context storage in user_data:
@@ -243,6 +237,15 @@ def build_google_maps_url(place) -> str:
     return f"https://www.google.com/maps/search/?api=1&query={quote(name)}"
 
 
+def _open_map_keyboard() -> InlineKeyboardMarkup | None:
+    """Return a one-button keyboard to open the Mini App, or None if not configured."""
+    if not config.WEBAPP_URL:
+        return None
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("🗺️ View on Map", web_app=WebAppInfo(url=config.WEBAPP_URL))
+    ]])
+
+
 def build_saved_place_message(place, source_url: str | None = None) -> str:
     """Build a concise saved-place confirmation with labeled links."""
     name = html.escape(str(get_place_value(place, "name", "this place")))
@@ -301,86 +304,66 @@ def ensure_bot_user(update: Update):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     ensure_bot_user(update)
-    keyboard = []
-
-    # Add viewer button if WEBAPP_URL is configured
-    if config.WEBAPP_URL:
-        keyboard.append([
-            InlineKeyboardButton(
-                "🗺️ Open My Map",
-                web_app=WebAppInfo(url=config.WEBAPP_URL)
-            )
-        ])
-
-    keyboard.append([
-        InlineKeyboardButton("📍 Find places near me", callback_data="action_nearby"),
-    ])
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
 
     count = repository.get_place_count(user_id)
-    if count > 0:
-        count_text = f"📍 You've saved {count} place{'s' if count != 1 else ''}!"
-    else:
-        count_text = "📍 No places saved yet — let's find some!"
 
-    await update.message.reply_text(
-        f"Hey there! 👋\n\n"
-        f"Send me an Instagram Reel or TikTok link, "
-        f"and I'll dig up the spots mentioned and save them to your map. 🗺️\n\n"
-        f"{count_text}",
-        reply_markup=reply_markup,
-    )
+    if count == 0:
+        # New user — explain what the bot does
+        text = (
+            "Hey! 👋 I save food places from Instagram Reels and TikTok.\n\n"
+            "Send me a video link and I'll extract the restaurant or cafe "
+            "and pin it to your personal map. 🗺️"
+        )
+        keyboard = []
+        if config.WEBAPP_URL:
+            keyboard.append([InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))])
+        keyboard.append([InlineKeyboardButton("❓ How it works", callback_data="action_howto")])
+    else:
+        # Returning user — show personalised summary
+        recent = repository.get_most_recent_place(user_id)
+        recent_line = ""
+        if recent:
+            from datetime import datetime, timezone
+            try:
+                added_at = datetime.fromisoformat(recent['created_at'].replace('Z', '+00:00'))
+                days_ago = (datetime.now(timezone.utc) - added_at).days
+                if days_ago == 0:
+                    when = "today"
+                elif days_ago == 1:
+                    when = "yesterday"
+                else:
+                    when = f"{days_ago} days ago"
+                recent_line = f"\n📍 Last saved: {recent['name']}, {when}"
+            except Exception:
+                pass
+
+        text = (
+            f"Hey! 👋 You've saved {count} place{'s' if count != 1 else ''}."
+            f"{recent_line}\n\n"
+            "Send me a video link to save more."
+        )
+        keyboard = []
+        if config.WEBAPP_URL:
+            keyboard.append([InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))])
+        keyboard.append([InlineKeyboardButton("📍 Find places near me", callback_data="action_nearby")])
+
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def places_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    places = repository.get_all_places(user_id)
-
-    if not places:
-        await update.message.reply_text(
-            "No places saved yet! 📍\n\n"
-            "Send me a video link and I'll find some for you."
-        )
-        return
-
-    text = f"📍 Your collection ({len(places)} places):\n\n"
-    for i, place in enumerate(places, 1):
-        text += format_place_line(place, i) + "\n\n"
-
-    await update.message.reply_text(text)
+    keyboard = [[InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))]] if config.WEBAPP_URL else []
+    await update.message.reply_text(
+        "See all your saved places on the interactive map 👇",
+        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
+    )
 
 
 async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    places = repository.get_all_places(user_id)
-
-    if not places:
-        await update.message.reply_text(
-            "No places saved yet! 📍\n\n"
-            "Send me a video link and I'll find some for you."
-        )
-        return
-
-    await update.message.reply_text("Drawing your map... 🗺️")
-
-    # Prepare places for map
-    map_places = [(p['latitude'], p['longitude'], p['name']) for p in places]
-
-    try:
-        image_bytes = await generate_map_image(map_places)
-        if image_bytes:
-            await update.message.reply_photo(
-                photo=BytesIO(image_bytes),
-                caption=f"🗺️ Your map: {len(places)} place{'s' if len(places) != 1 else ''} saved!",
-            )
-        else:
-            await update.message.reply_text("Hmm, the map didn't load. Try again in a bit!")
-    except Exception as e:
-        logger.error(f"Error generating map: {e}")
-        await update.message.reply_text(
-            "Oops! Hit a snag drawing your map. Give it another try?"
-        )
+    keyboard = [[InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))]] if config.WEBAPP_URL else []
+    await update.message.reply_text(
+        "Your interactive map is in the app — tap to explore 👇",
+        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
+    )
 
 
 async def viewer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -406,18 +389,10 @@ async def viewer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    keyboard = [
-        [
-            InlineKeyboardButton("Yes, clear all", callback_data="clear_confirm"),
-            InlineKeyboardButton("Keep them", callback_data="clear_cancel"),
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    count = repository.get_place_count(user_id)
+    keyboard = [[InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))]] if config.WEBAPP_URL else []
     await update.message.reply_text(
-        f"🗑️ Clear all your saved places? ({count} will be removed)",
-        reply_markup=reply_markup,
+        "To manage or remove your saved places, open the app 👇",
+        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
     )
 
 
@@ -530,6 +505,37 @@ async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
         await query.delete_message()
+
+    elif query.data == "action_howto":
+        skip_btn = InlineKeyboardMarkup([[InlineKeyboardButton("✕ Skip", callback_data="dismiss")]])
+
+        await query.edit_message_text(
+            "🔗 *Step 1 — Send a link*\n\n"
+            "Paste any Instagram Reel or TikTok video that features a restaurant or cafe.\n"
+            "I'll extract the place and save it to your map automatically.",
+            parse_mode="Markdown",
+            reply_markup=skip_btn,
+        )
+        await asyncio.sleep(0.6)
+
+        step2_keyboard = []
+        if config.WEBAPP_URL:
+            step2_keyboard.append([InlineKeyboardButton("🗺️ Open My Map →", web_app=WebAppInfo(url=config.WEBAPP_URL))])
+        step2_keyboard.append([InlineKeyboardButton("✕ Skip", callback_data="dismiss")])
+        await query.message.reply_text(
+            "🗺️ *Step 2 — Explore your map*\n\n"
+            "Your saved places show up in an interactive map. Tap any pin to see details or get directions.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(step2_keyboard),
+        )
+        await asyncio.sleep(0.6)
+
+        await query.message.reply_text(
+            "⭐ *Step 3 — Leave reviews*\n\n"
+            "After visiting a place, write a quick review — rating, dishes, photos. Find it in the Reviews tab.\n\n"
+            "Ready! Just send me a video link to get started. 🎬",
+            parse_mode="Markdown",
+        )
 
     elif query.data == "action_menu":
         count = repository.get_place_count(user_id)
@@ -644,6 +650,7 @@ async def _save_single_place_result(
     source_language: str | None = None,
     source_transcript: str | None = None,
     source_transcript_en: str | None = None,
+    alt_candidates: list | None = None,
 ):
     saved_place = repository.add_place(
         user_id=user_id,
@@ -688,6 +695,7 @@ async def _save_single_place_result(
             "place_id": saved_place_id,
             "source_url": source_url,
             "source_platform": source_platform,
+            "candidates": alt_candidates or [],
         }
 
     await update.message.reply_text(
@@ -754,6 +762,7 @@ async def _start_multi_place_selection(
         if place.get("confidence_label") == "high"
     }
     context.user_data["selected_indices"] = high_confidence_indices or {0}
+    _persist_place_session(context, update.effective_user.id)
 
     selected = context.user_data["selected_indices"]
     keyboard = build_selection_keyboard(context.user_data["pending_places"], selected)
@@ -792,6 +801,13 @@ async def _handle_instagram_no_cookie_url(update: Update, context: ContextTypes.
 
     if not places:
         reviewable_candidates = collect_reviewable_unresolved_candidates(unresolved_suggestions)
+        if not reviewable_candidates:
+            caption_preview = (getattr(candidate, "description", "") or "")[:300]
+            reason = "no_slots" if not slots else "no_google_match"
+            try:
+                repository.log_failed_extraction(user_id, text, platform="instagram", caption_preview=caption_preview, reason=reason)
+            except Exception:
+                pass
         await prompt_instagram_manual_fallback(
             status_msg,
             context,
@@ -862,6 +878,13 @@ async def _handle_tiktok_url(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     if not places:
         reviewable_candidates = collect_reviewable_unresolved_candidates(unresolved_suggestions)
+        if not reviewable_candidates:
+            caption_preview = (getattr(candidate, "description", "") or "")[:300]
+            reason = "no_slots" if not slots else "no_google_match"
+            try:
+                repository.log_failed_extraction(user_id, text, platform="tiktok", caption_preview=caption_preview, reason=reason)
+            except Exception:
+                pass
         await prompt_tiktok_manual_fallback(
             status_msg,
             context,
@@ -1004,20 +1027,26 @@ def build_selection_message(places: list, selected_indices: set, video_meta: dic
 
 
 def build_selection_keyboard(places: list, selected_indices: set) -> InlineKeyboardMarkup:
-    """Build keyboard for ranked multi-place review."""
+    """Build keyboard for multi-place selection. Save All is the primary CTA."""
     keyboard = []
 
+    # Primary CTA — save everything, one tap
+    total = len(places)
+    keyboard.append([
+        InlineKeyboardButton(f"✅ Save All {total}", callback_data="save_all"),
+    ])
+
+    # Toggle rows for users who want to pick
     for i, place in enumerate(places):
         checkbox = "☑️" if i in selected_indices else "⬜"
-        label = f"#{i + 1}"
-        name = place["name"][:20] + "..." if len(place["name"]) > 20 else place["name"]
-        keyboard.append([InlineKeyboardButton(f"{checkbox} {label}: {name}", callback_data=f"toggle_place_{i}")])
+        name = place["name"][:22] + "…" if len(place["name"]) > 22 else place["name"]
+        keyboard.append([InlineKeyboardButton(f"{checkbox} {name}", callback_data=f"toggle_place_{i}")])
 
     selected_count = len(selected_indices)
-    save_text = f"💾 Save Chosen ({selected_count})" if selected_count > 0 else "💾 Save Chosen"
+    save_text = f"Save Selected ({selected_count})" if selected_count > 0 else "Save Selected"
     keyboard.append([
         InlineKeyboardButton(save_text, callback_data="save_selected"),
-        InlineKeyboardButton("🚫 None Of These", callback_data="cancel_selection"),
+        InlineKeyboardButton("None of these", callback_data="cancel_selection"),
     ])
 
     return InlineKeyboardMarkup(keyboard)
@@ -1124,15 +1153,52 @@ def build_reviewable_candidate_keyboard(candidates: list[dict]) -> InlineKeyboar
     return InlineKeyboardMarkup(keyboard)
 
 
+def _restore_place_session_from_db(context, user_id: int) -> bool:
+    """Try to load place_selection session from DB into user_data. Returns True if found."""
+    session = repository.get_bot_session(user_id, "place_selection")
+    if not session:
+        return False
+    context.user_data["pending_places"] = session["pending_places"]
+    context.user_data["selected_indices"] = set(session.get("selected_indices", []))
+    context.user_data["pending_video_meta"] = session.get("pending_video_meta", {})
+    context.user_data["pending_url"] = session.get("pending_url", "")
+    context.user_data["pending_platform"] = session.get("pending_platform", "unknown")
+    return True
+
+
+def _persist_place_session(context, user_id: int) -> None:
+    """Write current place_selection user_data to DB."""
+    repository.save_bot_session(user_id, "place_selection", {
+        "pending_places": context.user_data.get("pending_places", []),
+        "selected_indices": list(context.user_data.get("selected_indices", set())),
+        "pending_video_meta": context.user_data.get("pending_video_meta", {}),
+        "pending_url": context.user_data.get("pending_url", ""),
+        "pending_platform": context.user_data.get("pending_platform", "unknown"),
+    })
+
+
+def _clear_place_session(context, user_id: int) -> None:
+    """Clear place_selection from user_data and DB."""
+    for key in ("pending_places", "pending_url", "pending_platform", "pending_video_meta", "selected_indices"):
+        context.user_data.pop(key, None)
+    try:
+        repository.delete_bot_session(user_id, "place_selection")
+    except Exception:
+        pass
+
+
 async def toggle_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Toggle place selection checkbox."""
     query = update.callback_query
+    user_id = update.effective_user.id
 
     pending_places = context.user_data.get("pending_places")
     if not pending_places:
-        await _safe_answer_callback(query, "Search expired!")
-        await _safe_edit_callback_message(query, "That search expired! Send the link again. 🔄")
-        return
+        if not _restore_place_session_from_db(context, user_id):
+            await _safe_answer_callback(query, "Session timed out!")
+            await _safe_edit_callback_message(query, "That session timed out — just resend the link and I'll try again. 🔄")
+            return
+        pending_places = context.user_data["pending_places"]
 
     # Get or initialize selected indices
     selected = context.user_data.get("selected_indices", set())
@@ -1151,6 +1217,7 @@ async def toggle_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     context.user_data["selected_indices"] = selected
+    _persist_place_session(context, user_id)
 
     # Rebuild keyboard and update message
     video_meta = context.user_data.get("pending_video_meta", {})
@@ -1166,12 +1233,14 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     ensure_bot_user(update)
 
     pending_places = context.user_data.get("pending_places")
-    selected = context.user_data.get("selected_indices", set())
-
     if not pending_places:
-        await _safe_answer_callback(query, "Search expired!")
-        await _safe_edit_callback_message(query, "That search expired! Send the link again. 🔄")
-        return
+        if not _restore_place_session_from_db(context, user_id):
+            await _safe_answer_callback(query, "Session timed out!")
+            await _safe_edit_callback_message(query, "That session timed out — just resend the link and I'll try again.")
+            return
+        pending_places = context.user_data["pending_places"]
+
+    selected = context.user_data.get("selected_indices", set())
 
     if not selected:
         await _safe_answer_callback(query, "Pick some places first!")
@@ -1214,27 +1283,79 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
         saved_names.append(place_data["name"])
 
     # Clear pending data
-    context.user_data.pop("pending_places", None)
-    context.user_data.pop("pending_url", None)
-    context.user_data.pop("pending_platform", None)
-    context.user_data.pop("pending_video_meta", None)
-    context.user_data.pop("selected_indices", None)
+    _clear_place_session(context, user_id)
 
     # Show confirmation
     await query.delete_message()
 
     count = len(saved_names)
-    if count == 1:
-        await query.message.reply_text(
-            f"✅ Saved <b>{html.escape(saved_names[0])}</b>",
-            parse_mode="HTML"
+    names_text = "\n".join(f"• {html.escape(name)}" for name in saved_names)
+    await query.message.reply_text(
+        f"✅ Saved {count} place{'s' if count != 1 else ''}\n\n{names_text}",
+        parse_mode="HTML",
+        reply_markup=_open_map_keyboard(),
+    )
+
+
+async def save_all_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Save all pending places without requiring individual selection."""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    ensure_bot_user(update)
+
+    pending_places = context.user_data.get("pending_places")
+    if not pending_places:
+        if not _restore_place_session_from_db(context, user_id):
+            await _safe_answer_callback(query, "Session timed out!")
+            await _safe_edit_callback_message(query, "That session timed out — just resend the link and I'll try again.")
+            return
+        pending_places = context.user_data["pending_places"]
+
+    await query.answer("Saving all...")
+    await query.edit_message_text("Saving your places... 💾")
+
+    source_url = context.user_data.get("pending_url", "")
+    source_platform = context.user_data.get("pending_platform", "unknown")
+    video_meta = context.user_data.get("pending_video_meta", {})
+
+    saved_names = []
+    for place_data in pending_places:
+        repository.add_place(
+            user_id=user_id,
+            name=place_data["name"],
+            address=place_data["address"],
+            latitude=place_data["latitude"],
+            longitude=place_data["longitude"],
+            google_place_id=place_data.get("place_id"),
+            source_url=source_url,
+            source_platform=source_platform,
+            source_title=video_meta.get("source_title"),
+            source_uploader=video_meta.get("source_uploader"),
+            source_duration=video_meta.get("source_duration"),
+            source_hashtags=video_meta.get("source_hashtags"),
+            place_types=",".join(place_data.get("types", [])) if place_data.get("types") else None,
+            place_rating=place_data.get("rating"),
+            place_rating_count=place_data.get("rating_count"),
+            place_price_level=place_data.get("price_level"),
+            place_opening_hours=place_data.get("opening_hours"),
+            source_language=video_meta.get("source_language"),
+            source_transcript=video_meta.get("source_transcript"),
+            source_transcript_en=video_meta.get("source_transcript_en"),
         )
-    else:
-        names_text = "\n".join(f"• {html.escape(name)}" for name in saved_names)
-        await query.message.reply_text(
-            f"✅ Saved {count} places\n\n{names_text}",
-            parse_mode="HTML"
-        )
+        saved_names.append(place_data["name"])
+
+    _clear_place_session(context, user_id)
+
+    await query.delete_message()
+
+    count = len(saved_names)
+    names_text = "\n".join(f"• {html.escape(name)}" for name in saved_names)
+    open_map_btn = _open_map_keyboard()
+    await query.message.reply_text(
+        f"✅ Saved {count} place{'s' if count != 1 else ''}\n\n{names_text}",
+        parse_mode="HTML",
+        reply_markup=open_map_btn,
+    )
 
 
 async def unresolved_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1244,7 +1365,7 @@ async def unresolved_pick_callback(update: Update, context: ContextTypes.DEFAULT
 
     unresolved_slots = context.user_data.get("pending_unresolved_slots")
     if not unresolved_slots:
-        await query.edit_message_text("That suggestion expired. Send the link again.")
+        await query.edit_message_text("That session timed out — just resend the link and I'll try again.")
         return
 
     try:
@@ -1291,6 +1412,7 @@ async def unresolved_pick_callback(update: Update, context: ContextTypes.DEFAULT
     await query.message.reply_location(latitude=place["latitude"], longitude=place["longitude"])
     await query.message.reply_text(
         build_saved_place_message(place, source_url=source_url),
+        reply_markup=_open_map_keyboard(),
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
@@ -1299,14 +1421,10 @@ async def unresolved_pick_callback(update: Update, context: ContextTypes.DEFAULT
 async def cancel_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel place selection."""
     query = update.callback_query
+    user_id = update.effective_user.id
     await query.answer("Discarded")
 
-    # Clear pending data
-    context.user_data.pop("pending_places", None)
-    context.user_data.pop("pending_url", None)
-    context.user_data.pop("pending_platform", None)
-    context.user_data.pop("pending_video_meta", None)
-    context.user_data.pop("selected_indices", None)
+    _clear_place_session(context, user_id)
 
     await query.edit_message_text(
         "Discarded those suggestions. Send another link whenever you're ready."
@@ -1314,7 +1432,7 @@ async def cancel_selection_callback(update: Update, context: ContextTypes.DEFAUL
 
 
 async def incorrect_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Unsave an auto-saved single result and ask for the correct place name."""
+    """Show alternative candidates if available, otherwise ask for place name."""
     user_id = update.effective_user.id
     query = update.callback_query
     await query.answer()
@@ -1327,24 +1445,98 @@ async def incorrect_place_callback(update: Update, context: ContextTypes.DEFAULT
         return
 
     correction_context = context.user_data.get("correction_place_context") or {}
-    if correction_context.get("place_id") == place_id:
+    candidates = correction_context.get("candidates", [])
+
+    if candidates and correction_context.get("place_id") == place_id:
+        # Show alternatives — don't delete yet
+        keyboard = []
+        for i, c in enumerate(candidates[:3]):
+            label = c["name"][:30] + "…" if len(c["name"]) > 30 else c["name"]
+            addr = c.get("address", "")[:28] + "…" if len(c.get("address", "")) > 28 else c.get("address", "")
+            btn_label = f"{label} — {addr}" if addr else label
+            keyboard.append([InlineKeyboardButton(btn_label, callback_data=f"correction_pick_{place_id}_{i}")])
+        keyboard.append([InlineKeyboardButton("None of these — I'll type the name", callback_data=f"correction_pick_{place_id}_manual")])
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(
+            "❌ Got it. Here are other matches I found:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+    else:
+        # No candidates — fall back to text input
+        if correction_context.get("place_id") == place_id:
+            context.user_data["pending_url"] = correction_context.get("source_url", "")
+            context.user_data["pending_platform"] = correction_context.get("source_platform", "unknown")
+            context.user_data.pop("correction_place_context", None)
+
+        deleted = repository.delete_place(user_id, place_id)
+        await query.edit_message_reply_markup(reply_markup=None)
+
+        msg = "Removed. " if deleted else "Already removed. "
+        await query.message.reply_text(msg + "Reply with the correct place name and I'll search for it.")
+
+
+async def correction_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle user picking a correction candidate or requesting manual input."""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    await query.answer()
+
+    parts = query.data.split("_")
+    # pattern: correction_pick_{place_id}_{index|manual}
+    try:
+        place_id = int(parts[2])
+        pick = parts[3]
+    except (IndexError, ValueError):
+        await query.edit_message_reply_markup(reply_markup=None)
+        return
+
+    correction_context = context.user_data.get("correction_place_context") or {}
+    candidates = correction_context.get("candidates", [])
+
+    # Delete the wrong place
+    repository.delete_place(user_id, place_id)
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    if pick == "manual":
         context.user_data["pending_url"] = correction_context.get("source_url", "")
         context.user_data["pending_platform"] = correction_context.get("source_platform", "unknown")
         context.user_data.pop("correction_place_context", None)
+        await query.message.reply_text("Reply with the place name and I'll search for it.")
+        return
 
-    deleted = repository.delete_place(user_id, place_id)
-    await query.edit_message_reply_markup(reply_markup=None)
+    try:
+        candidate = candidates[int(pick)]
+    except (IndexError, ValueError):
+        await query.message.reply_text("Reply with the place name and I'll search for it.")
+        return
 
-    if deleted:
-        await query.message.reply_text(
-            "Removed that saved place.\n\n"
-            "Reply with the correct place name and I'll search for it instead."
-        )
-    else:
-        await query.message.reply_text(
-            "That saved place was already removed.\n\n"
-            "Reply with the correct place name and I'll search for it instead."
-        )
+    context.user_data.pop("correction_place_context", None)
+
+    # Reconstruct a PlaceResult from stored candidate dict
+    from services.places import PlaceResult
+    place = PlaceResult(
+        name=candidate["name"],
+        address=candidate.get("address", ""),
+        latitude=candidate.get("latitude", 0),
+        longitude=candidate.get("longitude", 0),
+        place_id=candidate.get("place_id"),
+        types=candidate.get("types", []),
+        rating=candidate.get("rating"),
+        rating_count=candidate.get("rating_count"),
+        price_level=candidate.get("price_level"),
+        opening_hours=candidate.get("opening_hours"),
+        confidence_score=candidate.get("confidence_score", 0),
+        matched_source_type=candidate.get("matched_source_type"),
+    )
+
+    await _save_single_place_result(
+        update,
+        context,
+        user_id=user_id,
+        place=place,
+        source_url=correction_context.get("source_url", ""),
+        source_platform=correction_context.get("source_platform", "unknown"),
+    )
 
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1358,17 +1550,59 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     platform = detect_platform(text)
     logger.info("URL received: user_id=%s platform=%s url=%s", user_id, platform, text)
 
-    status_msg = await update.message.reply_text("Ooh, fresh content! Let me dig in... 🔍")
+    task_id = uuid.uuid4().hex[:8]
+    cancel_markup = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✕ Cancel", callback_data=f"cancel_extraction_{task_id}")
+    ]])
+    status_msg = await update.message.reply_text(
+        "Ooh, fresh content! Let me dig in... 🔍",
+        reply_markup=cancel_markup,
+    )
 
-    try:
+    async def _run():
         if platform == "instagram" and config.INSTAGRAM_NO_COOKIE_ENABLED:
             await _handle_instagram_no_cookie_url(update, context, text, status_msg)
             return
-
         if platform == "tiktok":
             await _handle_tiktok_url(update, context, text, status_msg)
             return
+        await _handle_generic_url(update, context, text, status_msg, platform)
 
+    task = asyncio.create_task(_run())
+    context.user_data[f'extraction_task_{task_id}'] = task
+    try:
+        await task
+    except asyncio.CancelledError:
+        try:
+            await status_msg.edit_text("Cancelled. Send another link anytime.", reply_markup=None)
+        except Exception:
+            pass
+    finally:
+        context.user_data.pop(f'extraction_task_{task_id}', None)
+
+
+async def cancel_extraction_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel an in-progress extraction task."""
+    query = update.callback_query
+    await query.answer("Cancelling...")
+
+    task_id = query.data.replace("cancel_extraction_", "")
+    task = context.user_data.pop(f'extraction_task_{task_id}', None)
+    if task and not task.done():
+        task.cancel()
+    else:
+        # Already finished — just remove the button
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
+
+
+async def _handle_generic_url(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, status_msg, platform: str) -> None:
+    """Handle URL extraction for non-TikTok, non-Instagram-worker platforms."""
+    user_id = update.effective_user.id
+    try:
         # Step 1: Download
         if platform == "instagram" and await instagram_request_will_queue():
             active_jobs, waiting_jobs = await get_instagram_queue_status()
@@ -1379,7 +1613,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text,
             )
             await status_msg.edit_text(
-                "Instagram processing is busy right now. I’ve queued your request and will process it shortly."
+                "Having trouble with Instagram right now. If you know the place name, just type it and I’ll find it."
             )
         else:
             await status_msg.edit_text("Downloading video... 📥")
@@ -1464,6 +1698,10 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             video_ocr_text = video_ocr_payload.get("combined_text", "") if video_ocr_payload else ""
             combined_text = f"{metadata_text} {ocr_text} {video_ocr_text} {transcript_text}".strip()
             if not combined_text:
+                try:
+                    repository.log_failed_extraction(user_id, text, platform=platform, caption_preview="", reason="no_slots")
+                except Exception:
+                    pass
                 await status_msg.edit_text(
                     "I couldn't find enough text or audio to identify a place.\n\n"
                     "Reply with the place name and I'll search for it."
@@ -1479,6 +1717,10 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=build_reviewable_candidate_keyboard(reviewable_candidates),
                     )
                 else:
+                    try:
+                        repository.log_failed_extraction(user_id, text, platform=platform, caption_preview=metadata_text[:300], reason="no_google_match")
+                    except Exception:
+                        pass
                     await status_msg.edit_text(
                         "I found some possible place names, but none could be verified against Google Places.\n\n"
                         "Reply with the exact place or branch name and I'll search for it."
@@ -1494,6 +1736,11 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if transcript_text:
                     checked_sources.append("audio")
                 checked_text = ", ".join(checked_sources) if checked_sources else "the post"
+                reason = "no_slots" if not slots else "no_google_match"
+                try:
+                    repository.log_failed_extraction(user_id, text, platform=platform, caption_preview=metadata_text[:300], reason=reason)
+                except Exception:
+                    pass
                 await status_msg.edit_text(
                     "I couldn't confidently identify a specific food place.\n\n"
                     f"I checked the {checked_text}, but there wasn't a clear match.\n\n"
@@ -1551,23 +1798,39 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             confirmation = build_saved_place_message(place, source_url=text)
 
             saved_place_id = get_saved_place_id(saved_place)
-            correction_keyboard = None
+            keyboard_rows = []
+            if config.WEBAPP_URL:
+                keyboard_rows.append([
+                    InlineKeyboardButton("🗺️ View on Map", web_app=WebAppInfo(url=config.WEBAPP_URL))
+                ])
             if saved_place_id:
-                correction_keyboard = InlineKeyboardMarkup([[
-                    InlineKeyboardButton(
-                        "This is incorrect",
-                        callback_data=f"incorrect_place_{saved_place_id}",
-                    )
-                ]])
+                keyboard_rows.append([
+                    InlineKeyboardButton("This is incorrect", callback_data=f"incorrect_place_{saved_place_id}")
+                ])
+                # Store alt candidates (suggestions[0].candidates excluding winner) for correction flow
+                alt_candidates = []
+                if suggestions:
+                    for c in suggestions[0].candidates[1:4]:
+                        alt_candidates.append({
+                            "name": c.name, "address": c.address,
+                            "latitude": c.latitude, "longitude": c.longitude,
+                            "place_id": c.place_id, "types": c.types,
+                            "rating": c.rating, "rating_count": c.rating_count,
+                            "price_level": c.price_level, "opening_hours": c.opening_hours,
+                            "confidence_score": c.confidence_score,
+                            "matched_source_type": c.matched_source_type,
+                        })
                 context.user_data["correction_place_context"] = {
                     "place_id": saved_place_id,
                     "source_url": text,
                     "source_platform": result.platform,
+                    "candidates": alt_candidates,
                 }
+            reply_markup = InlineKeyboardMarkup(keyboard_rows) if keyboard_rows else None
 
             await update.message.reply_text(
                 confirmation,
-                reply_markup=correction_keyboard,
+                reply_markup=reply_markup,
                 parse_mode="HTML",
                 disable_web_page_preview=True,
             )
@@ -1618,6 +1881,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if place.get("confidence_label") == "high"
             }
             context.user_data["selected_indices"] = high_confidence_indices or {0}
+            _persist_place_session(context, user_id)
 
             selected = context.user_data["selected_indices"]
             keyboard = build_selection_keyboard(context.user_data["pending_places"], selected)
@@ -1639,13 +1903,13 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error("Download timed out")
         await safe_edit_status(
             status_msg,
-            "This one's taking too long! 🐌\n\nTry a shorter video?"
+            "This video is taking too long to process. Try a shorter clip, or just type the place name."
         )
     except VideoTooLongError as e:
         logger.warning(f"Video too long: {e}")
         await safe_edit_status(
             status_msg,
-            f"That video's too long! 📹\n\nMax {config.MAX_VIDEO_DURATION // 60} minutes allowed."
+            f"This video is too long (max {config.MAX_VIDEO_DURATION // 60} min). Try a shorter clip, or just type the place name."
         )
     except InstagramCooldownError as e:
         logger.warning("Instagram retrieval cooling down: %s", e)
@@ -1653,8 +1917,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["pending_platform"] = "instagram"
         await safe_edit_status(
             status_msg,
-            "Instagram processing is busy right now. I’ve queued your request and will process it shortly.\n\n"
-            "If you already know the place name, you can reply with it and I’ll search manually."
+            "Having trouble with Instagram right now. If you know the place name, just type it and I’ll find it."
         )
     except InstagramNoCookieCooldownError as e:
         logger.warning("Instagram no-cookie pipeline cooling down: %s", e)
@@ -1665,22 +1928,14 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["pending_platform"] = "instagram"
         await safe_edit_status(
             status_msg,
-            "Instagram is blocking access to this post right now.\n\n"
-            "Try again later, or reply with the place name and I’ll search for it manually."
+            "Can’t access this post — it may be private or geo-restricted. Type the place name and I’ll search for it."
         )
     except Exception as e:
         logger.error(f"Error processing URL: {e}")
-        error_text = str(e).lower()
-        if "connect" in error_text or "network" in error_text:
-            await safe_edit_status(
-                status_msg,
-                "Hit a connection snag! 🌧️\n\nGive it a moment and try again."
-            )
-        else:
-            await safe_edit_status(
-                status_msg,
-                "Oops, something went wrong!\n\nMind trying that again?"
-            )
+        await safe_edit_status(
+            status_msg,
+            "Something went wrong on my end. Try again, or type the place name to search manually."
+        )
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1831,26 +2086,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         finally:
             cleanup_files(temp_path)
 
-    await handle_review_photo_upload(update, context)
-
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show list of places to delete."""
-    user_id = update.effective_user.id
-    places = repository.get_all_places(user_id)
-
-    if not places:
-        await update.message.reply_text("Nothing to remove! No places saved yet. 📍")
-        return
-
-    keyboard = []
-    for place in places:
-        name = place['name'][:25] + "..." if len(place['name']) > 25 else place['name']
-        keyboard.append([InlineKeyboardButton(name, callback_data=f"delete_place_{place['id']}")])
-
+    keyboard = [[InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))]] if config.WEBAPP_URL else []
     await update.message.reply_text(
-        "Which place would you like to remove? 🗑️",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        "To remove a saved place, open the app and delete it from there 👇",
+        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
     )
 
 
@@ -2178,24 +2419,6 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# ========== REVIEW CONVERSATION HANDLERS ==========
-
-PRICE_LABELS = ['', 'Budget-friendly', 'Affordable', 'Moderate', 'Pricey', 'Splurge']
-
-
-def clear_review_context(context: ContextTypes.DEFAULT_TYPE):
-    """Clear all review-related context."""
-    keys = ['review_place_id', 'review_place_name', 'review_dishes',
-            'review_current_dish', 'review_overall', 'review_price', 'review_remarks']
-    for key in keys:
-        context.user_data.pop(key, None)
-
-
-def clear_review_photo_context(context: ContextTypes.DEFAULT_TYPE):
-    """Clear pending Telegram photo follow-up state."""
-    context.user_data.pop("review_photo_context", None)
-
-
 def clear_feedback_context(context: ContextTypes.DEFAULT_TYPE):
     """Clear active Telegram feedback collection state."""
     context.user_data.pop("feedback_context", None)
@@ -2242,277 +2465,28 @@ def feedback_category_label(category: str) -> str:
     return labels.get(category, "feedback")
 
 
-def build_review_photo_keyboard(mode: str = "prompt") -> InlineKeyboardMarkup:
-    """Build inline buttons for the post-review photo flow."""
-    if mode == "upload":
-        return InlineKeyboardMarkup([[
-            InlineKeyboardButton("Done", callback_data="review_photo:done"),
-            InlineKeyboardButton("Skip", callback_data="review_photo:skip"),
-        ]])
-
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("Add Photos", callback_data="review_photo:add"),
-        InlineKeyboardButton("Skip", callback_data="review_photo:skip"),
-    ]])
-
-
-def build_review_summary(place_name: str, review_data: dict) -> str:
-    """Build formatted review summary."""
-    overall_stars = '⭐' * review_data['overall_rating']
-    price_money = '💰' * review_data['price_rating']
-
-    lines = [
-        f"*{place_name}*",
-        f"{overall_stars} · {price_money}",
-        ""
-    ]
-
-    for dish in review_data['dishes']:
-        dish_stars = '⭐' * dish['rating']
-        line = f"• {dish['name']} {dish_stars}"
-        if dish.get('remarks'):
-            line += f'\n  "{dish["remarks"]}"'
-        lines.append(line)
-
-    if review_data.get('overall_remarks'):
-        lines.append("")
-        lines.append(f'"{review_data["overall_remarks"]}"')
-
-    return '\n'.join(lines)
-
-
-async def review_dish_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle dish name input."""
-    text = update.message.text.strip().lower()
-
-    if text == 'done':
-        # Move to overall ratings
-        if not context.user_data.get('review_dishes'):
-            await update.message.reply_text(
-                "Please add at least one dish before finishing.\n"
-                "What did you order?"
-            )
-            return REVIEW_DISH_NAME
-
-        await update.message.reply_text(
-            "Now for the overall...\n\n"
-            f"How would you rate *{context.user_data['review_place_name']}* overall? (1-5)",
-            parse_mode='Markdown'
-        )
-        return REVIEW_OVERALL_RATING
-
-    # Store dish name and ask for rating
-    context.user_data['review_current_dish'] = {'name': update.message.text.strip()}
-
-    await update.message.reply_text(
-        f"*{update.message.text.strip()}* - Rating? (1-5 stars)",
-        parse_mode='Markdown'
-    )
-    return REVIEW_DISH_RATING
-
-
-async def review_dish_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle dish rating input."""
-    try:
-        rating = int(update.message.text.strip())
-        if rating < 1 or rating > 5:
-            raise ValueError()
-    except ValueError:
-        await update.message.reply_text("Please enter a number 1-5")
-        return REVIEW_DISH_RATING
-
-    context.user_data['review_current_dish']['rating'] = rating
-    stars = '⭐' * rating + '☆' * (5 - rating)
-
-    await update.message.reply_text(
-        f"{stars} Nice! Any quick note about it? (or 'skip')"
-    )
-    return REVIEW_DISH_REMARKS
-
-
-async def review_dish_remarks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle dish remarks input."""
-    text = update.message.text.strip()
-
-    dish = context.user_data['review_current_dish']
-    dish['remarks'] = None if text.lower() == 'skip' else text
-
-    # Add completed dish to list
-    context.user_data['review_dishes'].append(dish)
-    context.user_data['review_current_dish'] = None
-
-    await update.message.reply_text(
-        "Got it! Another dish? (or 'done')"
-    )
-    return REVIEW_DISH_NAME
-
-
-async def review_overall_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle overall rating input."""
-    try:
-        rating = int(update.message.text.strip())
-        if rating < 1 or rating > 5:
-            raise ValueError()
-    except ValueError:
-        await update.message.reply_text("Please enter a number 1-5")
-        return REVIEW_OVERALL_RATING
-
-    context.user_data['review_overall'] = rating
-    stars = '⭐' * rating
-
-    await update.message.reply_text(
-        f"{stars} And how's the pricing? (1-5, where 1=budget, 5=splurge)"
-    )
-    return REVIEW_PRICE_RATING
-
-
-async def review_price_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle price rating input."""
-    try:
-        rating = int(update.message.text.strip())
-        if rating < 1 or rating > 5:
-            raise ValueError()
-    except ValueError:
-        await update.message.reply_text("Please enter a number 1-5")
-        return REVIEW_PRICE_RATING
-
-    context.user_data['review_price'] = rating
-    money = '💰' * rating
-
-    await update.message.reply_text(
-        f"{money} {PRICE_LABELS[rating]}. Any final thoughts? (or 'skip')"
-    )
-    return REVIEW_OVERALL_REMARKS
-
-
-async def review_overall_remarks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle overall remarks and save review."""
-    text = update.message.text.strip()
-    context.user_data['review_remarks'] = None if text.lower() == 'skip' else text
-
-    # Save review to database
-    place_id = context.user_data['review_place_id']
-    place_name = context.user_data['review_place_name']
-
-    review_data = {
-        'overall_rating': context.user_data['review_overall'],
-        'price_rating': context.user_data['review_price'],
-        'overall_remarks': context.user_data['review_remarks'],
-        'dishes': context.user_data['review_dishes']
-    }
-
-    try:
-        # Get user_id from Telegram
-        user_id = update.effective_user.id
-        ensure_bot_user(update)
-        saved_review = repository.create_or_update_review(
-            place_id=place_id,
-            user_id=user_id,
-            overall_rating=review_data['overall_rating'],
-            price_rating=review_data['price_rating'],
-            overall_remarks=review_data['overall_remarks'],
-            dishes=review_data['dishes']
-        )
-
-        # Build summary message
-        summary = build_review_summary(place_name, review_data)
-
-        await update.message.reply_text(
-            f"Review saved! 🎉\n\n{summary}\n\n"
-            f"View & edit anytime in the Mini App! ✨",
-            parse_mode='Markdown'
-        )
-
-        if saved_review and saved_review.get("id"):
-            repository.create_app_event(
-                user_id=user_id,
-                event_name="telegram_review_completed",
-                event_source="telegram_bot",
-                entity_type="review",
-                entity_id=str(saved_review["id"]),
-                metadata={"place_id": place_id, "place_name": place_name},
-            )
-            context.user_data["review_photo_context"] = {
-                "review_id": saved_review["id"],
-                "place_name": place_name,
-                "mode": "prompt",
-            }
-            await update.message.reply_text(
-                f"Want to add photos for {place_name} too?",
-                reply_markup=build_review_photo_keyboard("prompt"),
-            )
-    except Exception as e:
-        logger.error(f"Failed to save review: {e}")
-        await update.message.reply_text(
-            "Oops, couldn't save your review. Please try again!"
-        )
-
-    # Clear review context
-    clear_review_context(context)
-    return ConversationHandler.END
-
-
-async def cancel_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancel review conversation."""
-    clear_review_context(context)
-    await update.message.reply_text(
-        "Review cancelled. You can start again anytime!"
-    )
-    return ConversationHandler.END
-
-
 async def handle_review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle 'Write Review' button callback."""
-    user_id = update.effective_user.id
+    """Handle 'Write Review' button — open Mini App to review sheet."""
     query = update.callback_query
-    ensure_bot_user(update)
     await query.answer()
 
-    # Callback data format: "review:place_id:place_name"
     parts = query.data.split(':', 2)
-    if len(parts) != 3 or parts[0] != 'review':
+    if len(parts) < 2:
         return
 
-    place_id = int(parts[1])
-    place_name = parts[2]
+    place_id = parts[1]
 
-    # Check if place is marked as visited
-    place = repository.get_place_by_id(user_id, place_id)
-
-    if not place:
-        await query.message.reply_text("❌ Place not found!")
-        return ConversationHandler.END
-
-    if not place.get('is_visited'):
+    if config.WEBAPP_URL:
+        keyboard = [[InlineKeyboardButton(
+            "⭐ Write Review →",
+            web_app=WebAppInfo(url=f"{config.WEBAPP_URL}?startapp=review_{place_id}")
+        )]]
         await query.message.reply_text(
-            f"📍 Please mark *{place_name}* as visited first before writing a review!\n\n"
-            f"You can mark it as visited in the Mini App viewer.",
-            parse_mode='Markdown'
+            "Tap below to write your review in the app 👇",
+            reply_markup=InlineKeyboardMarkup(keyboard),
         )
-        return ConversationHandler.END
-
-    # Place is visited, proceed with review
-    await query.message.reply_text(
-        f"Great! Let's review *{place_name}* 📝\n\n"
-        f"What did you order? (type dish name, or 'done' when finished)",
-        parse_mode='Markdown'
-    )
-
-    context.user_data['review_place_id'] = place_id
-    context.user_data['review_place_name'] = place_name
-    context.user_data['review_dishes'] = []
-    context.user_data['review_current_dish'] = None
-    repository.create_app_event(
-        user_id=user_id,
-        event_name="telegram_review_started",
-        event_source="telegram_bot",
-        entity_type="place",
-        entity_id=str(place_id),
-        metadata={"place_name": place_name},
-    )
-
-    # Return the first state to enter the conversation
-    return REVIEW_DISH_NAME
+    else:
+        await query.message.reply_text("Open the app to write your review.")
 
 
 async def handle_remind_later(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2570,130 +2544,13 @@ async def handle_remind_stop(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def handle_dismiss(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle 'Maybe Later' or dismiss button."""
+    """Dismiss an inline keyboard from a message."""
     query = update.callback_query
     await query.answer()
-    # Just acknowledge, don't delete message
-    # The reminder will still fire in 1 hour
-
-
-async def handle_review_photo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle post-review photo prompt actions."""
-    query = update.callback_query
-    await query.answer()
-
-    photo_context = context.user_data.get("review_photo_context")
-    if not photo_context:
-        await query.edit_message_text("That photo prompt expired. You can add photos in the Mini App.")
-        return
-
-    action = query.data.split(":", 1)[1] if ":" in query.data else ""
-    review_id = photo_context.get("review_id")
-    place_name = photo_context.get("place_name", "this place")
-
-    if action == "add":
-        current_count = repository.get_photo_count(review_id)
-        if current_count >= MAX_TELEGRAM_REVIEW_PHOTOS:
-            clear_review_photo_context(context)
-            await query.edit_message_text(
-                "This review already has the maximum number of photos.\n"
-                "You can manage them in the Mini App."
-            )
-            return
-
-        photo_context["mode"] = "upload"
-        context.user_data["review_photo_context"] = photo_context
-        await query.edit_message_text(
-            f"Send up to {MAX_TELEGRAM_REVIEW_PHOTOS - current_count} photo(s) for {place_name}.\n"
-            "When you're done, tap Done.",
-            reply_markup=build_review_photo_keyboard("upload"),
-        )
-        return
-
-    if action == "done":
-        clear_review_photo_context(context)
-        await query.edit_message_text(
-            "Done. Your review is saved, and you can still manage photos later in the Mini App."
-        )
-        return
-
-    if action == "skip":
-        clear_review_photo_context(context)
-        await query.edit_message_text(
-            "No problem. You can add photos later in the Mini App."
-        )
-        return
-
-
-async def handle_review_photo_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Upload Telegram photos for the pending post-review prompt."""
-    photo_context = context.user_data.get("review_photo_context")
-    if not photo_context or photo_context.get("mode") != "upload":
-        return
-
-    if not update.message or not update.message.photo:
-        return
-
-    user_id = update.effective_user.id
-    review_id = photo_context.get("review_id")
-    place_name = photo_context.get("place_name", "this place")
-
-    current_count = repository.get_photo_count(review_id)
-    if current_count >= MAX_TELEGRAM_REVIEW_PHOTOS:
-        clear_review_photo_context(context)
-        await update.message.reply_text(
-            "This review already has the maximum number of photos.\n"
-            "You can manage them in the Mini App."
-        )
-        return
-
     try:
-        telegram_photo = update.message.photo[-1]
-        telegram_file = await telegram_photo.get_file()
-        photo_bytes = bytes(await telegram_file.download_as_bytearray())
-        filename = f"{telegram_photo.file_unique_id}.jpg"
-        file_url, storage_path = storage_upload_photo(user_id, review_id, photo_bytes, filename)
-        saved_photo = repository.add_photo(
-            review_id=review_id,
-            file_url=file_url,
-            storage_path=storage_path,
-        )
-        if not saved_photo:
-            clear_review_photo_context(context)
-            await update.message.reply_text(
-                "This review already has the maximum number of photos.\n"
-                "You can manage them in the Mini App."
-            )
-            return
-    except Exception as e:
-        logger.error(f"Failed to upload Telegram review photo: {e}")
-        await update.message.reply_text(
-            "I couldn't upload that photo. Try sending it again, or add it later in the Mini App."
-        )
-        return
-
-    new_count = repository.get_photo_count(review_id)
-    repository.create_app_event(
-        user_id=user_id,
-        event_name="telegram_review_photo_added",
-        event_source="telegram_bot",
-        entity_type="review",
-        entity_id=str(review_id),
-        metadata={"photo_count": new_count},
-    )
-    if new_count >= MAX_TELEGRAM_REVIEW_PHOTOS:
-        clear_review_photo_context(context)
-        await update.message.reply_text(
-            f"Added photo {new_count}/{MAX_TELEGRAM_REVIEW_PHOTOS} for {place_name}.\n"
-            "That's the max for Telegram review photos."
-        )
-        return
-
-    await update.message.reply_text(
-        f"Added photo {new_count}/{MAX_TELEGRAM_REVIEW_PHOTOS} for {place_name}.\n"
-        "Send another photo or tap Done.",
-        reply_markup=build_review_photo_keyboard("upload"),
-    )
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
 
 
 feedback_conversation_handler = ConversationHandler(
@@ -2713,39 +2570,4 @@ feedback_conversation_handler = ConversationHandler(
     persistent=False,
     per_chat=True,
     per_user=True,
-)
-
-
-# Review conversation handler
-review_conversation_handler = ConversationHandler(
-    entry_points=[
-        CallbackQueryHandler(handle_review_callback, pattern=r'^review:')
-    ],
-    states={
-        REVIEW_DISH_NAME: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, review_dish_name)
-        ],
-        REVIEW_DISH_RATING: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, review_dish_rating)
-        ],
-        REVIEW_DISH_REMARKS: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, review_dish_remarks)
-        ],
-        REVIEW_OVERALL_RATING: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, review_overall_rating)
-        ],
-        REVIEW_PRICE_RATING: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, review_price_rating)
-        ],
-        REVIEW_OVERALL_REMARKS: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, review_overall_remarks)
-        ],
-    },
-    fallbacks=[
-        CommandHandler('cancel', cancel_review)
-    ],
-    name="review_conversation",
-    persistent=False,
-    per_chat=True,
-    per_user=True
 )

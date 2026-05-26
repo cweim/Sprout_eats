@@ -237,6 +237,92 @@ function bindFilters() {
     });
 }
 
+// ── Tab navigation ────────────────────────────────────────────────────────────
+
+function bindTabs() {
+    document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach((p) => p.classList.add('hidden'));
+            btn.classList.add('active');
+            const panel = document.querySelector(`.tab-panel[data-panel="${btn.dataset.tab}"]`);
+            if (panel) panel.classList.remove('hidden');
+            if (btn.dataset.tab === 'failed-links') loadFailedLinks();
+        });
+    });
+}
+
+// ── Failed Links ──────────────────────────────────────────────────────────────
+
+let failedLinksOffset = 0;
+const FAILED_PAGE_SIZE = 50;
+
+async function loadFailedLinks() {
+    const platform = document.getElementById('failed-filter-platform').value;
+    const params = new URLSearchParams({ limit: FAILED_PAGE_SIZE, offset: failedLinksOffset });
+    if (platform) params.set('platform', platform);
+    const response = await adminFetch(`/admin/api/failed-extractions?${params}`);
+    if (!response.ok) return;
+    const data = await response.json();
+    renderFailedLinks(data.rows, data.total);
+}
+
+function renderFailedLinks(rows, total) {
+    const tbody = document.getElementById('failed-tbody');
+    const empty = document.getElementById('failed-empty');
+    const summary = document.getElementById('failed-summary');
+    const pagination = document.getElementById('failed-pagination');
+
+    summary.textContent = `${total} failed extraction${total === 1 ? '' : 's'} recorded`;
+
+    if (!rows.length) {
+        tbody.innerHTML = '';
+        empty.classList.remove('hidden');
+        pagination.innerHTML = '';
+        return;
+    }
+    empty.classList.add('hidden');
+
+    tbody.innerHTML = rows.map((row) => {
+        const date = new Date(row.created_at).toLocaleString();
+        const url = escapeHtml(row.url);
+        const preview = escapeHtml(row.caption_preview || '—');
+        const reason = row.reason === 'no_slots' ? 'No slots' : row.reason === 'no_google_match' ? 'No Google match' : escapeHtml(row.reason || '—');
+        return `<tr>
+            <td>${escapeHtml(date)}</td>
+            <td>${escapeHtml(row.platform || '—')}</td>
+            <td><span class="badge">${reason}</span></td>
+            <td><a href="${url}" target="_blank" rel="noopener">${url.length > 60 ? url.slice(0, 60) + '…' : url}</a></td>
+            <td class="caption-cell" title="${preview}">${preview.length > 120 ? preview.slice(0, 120) + '…' : preview}</td>
+        </tr>`;
+    }).join('');
+
+    // Pagination
+    const totalPages = Math.ceil(total / FAILED_PAGE_SIZE);
+    const currentPage = Math.floor(failedLinksOffset / FAILED_PAGE_SIZE) + 1;
+    pagination.innerHTML = totalPages > 1
+        ? `<button ${currentPage === 1 ? 'disabled' : ''} onclick="failedPage(-1)">← Prev</button>
+           <span>Page ${currentPage} of ${totalPages}</span>
+           <button ${currentPage === totalPages ? 'disabled' : ''} onclick="failedPage(1)">Next →</button>`
+        : '';
+}
+
+function failedPage(direction) {
+    failedLinksOffset = Math.max(0, failedLinksOffset + direction * FAILED_PAGE_SIZE);
+    loadFailedLinks();
+}
+
+function bindFailedLinks() {
+    document.getElementById('failed-filter-platform').addEventListener('change', () => {
+        failedLinksOffset = 0;
+        loadFailedLinks();
+    });
+    document.getElementById('failed-refresh-btn').addEventListener('click', () => {
+        failedLinksOffset = 0;
+        loadFailedLinks();
+    });
+}
+
 function bindLogin() {
     document.getElementById('login-form').addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -263,6 +349,8 @@ async function init() {
     await initSupabase();
     bindLogin();
     bindFilters();
+    bindTabs();
+    bindFailedLinks();
     await validateAdminSession();
 }
 

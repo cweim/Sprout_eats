@@ -5,7 +5,10 @@ from services.place_pipeline import (
     PlaceEvidence,
     build_runtime_metadata_record,
     candidate_matches_evidence,
+    extract_caption_pin_slots,
+    extract_numbered_list_slots,
     extract_place_evidence_from_metadata,
+    is_creator_or_publisher_mention,
     resolve_place_slots,
 )
 from services.places import PlaceResult
@@ -155,3 +158,85 @@ def test_compact_name_validation_handles_punctuation_and_fused_handles():
 
     assert candidate_matches_evidence(guum, guum_slot)[0] is True
     assert candidate_matches_evidence(fuego, fuego_slot)[0] is True
+
+
+# ── Fix 1: creator false-positive with per-line context ──────────────────────
+
+def test_creator_check_does_not_bleed_across_lines():
+    """'follow' on a different line must not flag @venue as creator."""
+    caption = "follow @aidenandmaddy for more Singapore tips\n@kinkibar"
+    assert is_creator_or_publisher_mention(caption, "kinkibar") is False
+
+
+def test_creator_check_flags_same_line_follow():
+    """'follow @venue' on the same line is a creator mention."""
+    caption = "follow @kinkibar for more tips"
+    assert is_creator_or_publisher_mention(caption, "kinkibar") is True
+
+
+# ── Fix 3: food emoji markers treated as pin markers ────────────────────────
+
+def test_food_emoji_marker_extracts_venue():
+    """🍴 marker should produce a caption_pin slot like 📍."""
+    caption = "🍴 49 Seats\nSingapore"
+    slots = extract_caption_pin_slots(caption)
+    assert len(slots) == 1
+    assert slots[0].name_candidate == "49 Seats"
+    assert slots[0].source == "caption_pin"
+
+
+def test_fork_knife_emoji_with_address():
+    """🍽️ marker with inline address should split correctly."""
+    caption = "🍽️ Osteria Mozza, 333 Orchard Rd"
+    slots = extract_caption_pin_slots(caption)
+    assert len(slots) == 1
+    assert slots[0].name_candidate == "Osteria Mozza"
+
+
+# ── Fix 4: numbered list extractor ──────────────────────────────────────────
+
+def test_numbered_list_extracts_venues():
+    """1. Name pattern (≥2 items) should be extracted."""
+    caption = "Best cafes in Singapore:\n1. Chye Seng Huat\n2. Papa Palheta\n3. Nylon Coffee"
+    slots = extract_numbered_list_slots(caption)
+    names = [s.name_candidate for s in slots]
+    assert "Chye Seng Huat" in names
+    assert "Papa Palheta" in names
+    assert "Nylon Coffee" in names
+
+
+def test_numbered_list_requires_two_entries():
+    """Single numbered item should not produce slots."""
+    caption = "1. Chye Seng Huat"
+    slots = extract_numbered_list_slots(caption)
+    assert slots == []
+
+
+def test_numbered_list_splits_name_and_address():
+    """'1. Name — Address' should split into name + address."""
+    caption = "1. Chye Seng Huat — 150 Tyrwhitt Rd, Singapore\n2. Papa Palheta — Erskine Road"
+    slots = extract_numbered_list_slots(caption)
+    assert slots[0].name_candidate == "Chye Seng Huat"
+    assert "Tyrwhitt" in (slots[0].address_candidate or "")
+
+
+# ── Fix 2: Apify locationName → direct slot ─────────────────────────────────
+
+def test_apify_location_tag_creates_slot_when_caption_empty():
+    """apify_location_tag in record should produce a high-confidence slot."""
+    record = build_runtime_metadata_record(title="", description="Singapore")
+    record["apify_location_tag"] = "Laifabar"
+    slots = extract_place_evidence_from_metadata(record)
+    assert len(slots) == 1
+    assert slots[0].name_candidate == "Laifabar"
+    assert slots[0].source == "location_tag"
+    assert slots[0].confidence == "high"
+
+
+def test_apify_location_tag_not_used_when_caption_slots_found():
+    """Caption pin slots take priority over apify_location_tag."""
+    record = build_runtime_metadata_record(description="📍 Mensho Tokyo")
+    record["apify_location_tag"] = "Some Area Tag"
+    slots = extract_place_evidence_from_metadata(record)
+    assert slots[0].name_candidate == "Mensho Tokyo"
+    assert slots[0].source == "caption_pin"

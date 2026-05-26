@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -49,23 +50,37 @@ async def extract_instagram_via_apify(url: str) -> MetadataCandidate:
     timeout = httpx.Timeout(max(30, config.INSTAGRAM_NO_COOKIE_TIMEOUT_SECONDS))
 
     t0 = time.monotonic()
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(endpoint, params=params, json=payload)
-            response.raise_for_status()
-            items = response.json()
-    except Exception as exc:
+    last_exc: Exception | None = None
+    items = None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(endpoint, params=params, json=payload)
+                response.raise_for_status()
+                items = response.json()
+            last_exc = None
+            break
+        except httpx.TimeoutException as exc:
+            last_exc = exc
+            if attempt == 0:
+                logger.warning("metric.apify.timeout_retry url=%s attempt=1", url)
+                await asyncio.sleep(3)
+        except Exception as exc:
+            last_exc = exc
+            break
+
+    if last_exc is not None:
         elapsed = time.monotonic() - t0
         logger.warning(
             "metric.apify.failure url=%s elapsed_s=%.2f error=%s",
-            url, elapsed, exc,
+            url, elapsed, last_exc,
         )
         return MetadataCandidate(
             source="instagram_apify",
             platform="instagram",
             url=url,
             success=False,
-            error=str(exc),
+            error=str(last_exc),
         )
 
     if not isinstance(items, list) or not items:

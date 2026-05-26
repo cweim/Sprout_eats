@@ -290,6 +290,47 @@ CREATE POLICY "Users access own feedback attachments" ON feedback_attachments
 -- No end-user RLS policies are created for these tables.
 
 -- =============================================================================
+-- Bot Pending Sessions Table
+-- Survives bot restarts; place-selection state for multi-place flows
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS bot_pending_sessions (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_type TEXT NOT NULL,  -- 'place_selection', 'correction', etc.
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (user_id, session_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_pending_sessions_expires ON bot_pending_sessions(expires_at);
+
+ALTER TABLE bot_pending_sessions ENABLE ROW LEVEL SECURITY;
+
+-- Service role bypasses RLS, so no end-user policy needed.
+
+-- =============================================================================
+-- Failed Extractions Table
+-- Tracks links where the bot found 0 resolved places for debugging/retraining
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS failed_extractions (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    url         TEXT NOT NULL,
+    platform    TEXT,                          -- 'instagram', 'tiktok', 'other'
+    caption_preview TEXT,                     -- first 300 chars of caption/description
+    reason      TEXT,                         -- 'no_slots' | 'no_google_match'
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_failed_extractions_user_id ON failed_extractions(user_id);
+CREATE INDEX IF NOT EXISTS idx_failed_extractions_platform ON failed_extractions(platform);
+CREATE INDEX IF NOT EXISTS idx_failed_extractions_created_at ON failed_extractions(created_at DESC);
+
+ALTER TABLE failed_extractions ENABLE ROW LEVEL SECURITY;
+
+-- =============================================================================
 -- Service Role Bypass
 -- Service role key bypasses RLS by default in Supabase
 -- =============================================================================
