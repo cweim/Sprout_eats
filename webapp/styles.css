@@ -2426,7 +2426,7 @@ body {
 }
 
 .app-main[data-view="map"] .fab-discover {
-    bottom: 140px;
+    bottom: 80px;
 }
 
 .app-main[data-view="reviews"] .fab-discover {
