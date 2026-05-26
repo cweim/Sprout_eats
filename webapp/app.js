@@ -1275,6 +1275,9 @@ function createPlaceCard(place) {
         actionsHtml += `<a href="${safeUrl(place.source_url)}" target="_blank" class="card-action-btn external-btn" onclick="event.stopPropagation()" aria-label="View original reel">▶️ Reel</a>`;
     }
 
+    // Share button
+    actionsHtml += `<button class="card-action-btn share-btn" onclick="event.stopPropagation(); sharePlace(${place.id})" aria-label="Share this place">↗ Share</button>`;
+
     actionsHtml += '</div>';
 
     card.innerHTML = headerHtml + addressHtml + metaHtml + distanceHtml + notesHtml + actionsHtml;
@@ -1289,6 +1292,39 @@ function createPlaceCard(place) {
     });
 
     return card;
+}
+
+// Share a place via native share sheet or Telegram share URL
+function sharePlace(placeId) {
+    const place = places.find(p => p.id === placeId);
+    if (!place) return;
+
+    // Build Google Maps URL
+    const mapsUrl = place.google_place_id
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}&query_place_id=${place.google_place_id}`
+        : `https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`;
+
+    // Build share message
+    const lines = [`Check out ${place.name}! 🍽️`];
+    if (place.address) lines.push(place.address);
+    lines.push('');
+    lines.push(`📍 ${mapsUrl}`);
+    if (place.source_url) lines.push(`🎬 ${place.source_url}`);
+    lines.push('');
+    lines.push('Saved via @sprout_eats_bot on Telegram');
+    const text = lines.join('\n');
+
+    if (navigator.share) {
+        navigator.share({ title: place.name, text }).catch(() => {});
+    } else {
+        // Fallback: open Telegram share dialog
+        const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(mapsUrl)}&text=${encodeURIComponent(text)}`;
+        if (window.Telegram?.WebApp?.openTelegramLink) {
+            window.Telegram.WebApp.openTelegramLink(tgUrl);
+        } else {
+            window.open(tgUrl, '_blank');
+        }
+    }
 }
 
 // Toggle visited from card sprout button
