@@ -126,6 +126,32 @@ async def get_places(
     return {"places": places, "total": total, "limit": limit, "offset": offset}
 
 
+@router.get("/users/{user_id}/places")
+async def get_user_places(
+    user_id: int,
+    limit: int = 100,
+    offset: int = 0,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Return active places for a specific user."""
+    places = repository.get_user_places(user_id, limit=limit, offset=offset)
+    return {"places": places, "user_id": user_id}
+
+
+@router.get("/restaurants")
+async def get_restaurants(
+    platform: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """List places grouped by restaurant (google_place_id or name)."""
+    groups, total = repository.list_places_grouped_by_restaurant(
+        platform=platform, limit=limit, offset=offset
+    )
+    return {"restaurants": groups, "total": total, "limit": limit, "offset": offset}
+
+
 @router.get("/failed-extractions")
 async def get_failed_extractions(
     platform: Optional[str] = None,

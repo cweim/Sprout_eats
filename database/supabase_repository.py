@@ -1214,3 +1214,83 @@ def get_failed_extraction_count(*, platform: str | None = None) -> int:
         query = query.eq("platform", platform)
     result = query.execute()
     return result.count or 0
+
+
+def get_user_places(user_id: int, *, limit: int = 100, offset: int = 0) -> list[dict]:
+    """Return active places for a single user, newest first."""
+    supabase = get_supabase()
+    return (
+        supabase.table("places")
+        .select("id, name, address, google_place_id, source_platform, source_url, is_visited, created_at")
+        .eq("user_id", user_id)
+        .is_("deleted_at", "null")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .offset(offset)
+        .execute()
+        .data or []
+    )
+
+
+def list_places_grouped_by_restaurant(
+    *, platform: str | None = None, limit: int = 50, offset: int = 0
+) -> tuple[list[dict], int]:
+    """Group active places by google_place_id (or name), return save/user counts."""
+    supabase = get_supabase()
+    query = (
+        supabase.table("places")
+        .select("id, user_id, name, address, google_place_id, source_platform, created_at")
+        .is_("deleted_at", "null")
+        .order("created_at", desc=True)
+        .limit(5000)
+    )
+    if platform:
+        query = query.eq("source_platform", platform)
+    rows = query.execute().data or []
+
+    # Fetch display names for all involved users
+    user_ids = list({r["user_id"] for r in rows})
+    user_map: dict[int, str] = {}
+    if user_ids:
+        users = (
+            supabase.table("users")
+            .select("id, first_name, username")
+            .in_("id", user_ids)
+            .execute()
+            .data or []
+        )
+        for u in users:
+            user_map[u["id"]] = u.get("first_name") or u.get("username") or f"User {u['id']}"
+
+    # Aggregate by google_place_id or normalised name
+    groups: dict[str, dict] = {}
+    for row in rows:
+        key = row.get("google_place_id") or f"name:{row['name'].lower().strip()}"
+        if key not in groups:
+            groups[key] = {
+                "name": row["name"],
+                "address": row.get("address") or "",
+                "google_place_id": row.get("google_place_id"),
+                "_saves": [],
+                "_user_ids": set(),
+                "last_saved_at": row["created_at"],
+            }
+        g = groups[key]
+        g["_saves"].append(row)
+        g["_user_ids"].add(row["user_id"])
+        if row["created_at"] > g["last_saved_at"]:
+            g["last_saved_at"] = row["created_at"]
+
+    # Sort by save count desc
+    ordered = sorted(groups.values(), key=lambda g: len(g["_saves"]), reverse=True)
+    total = len(ordered)
+    page = ordered[offset : offset + limit]
+
+    for g in page:
+        g["save_count"] = len(g["_saves"])
+        g["user_count"] = len(g["_user_ids"])
+        g["savers"] = [user_map.get(uid, f"User {uid}") for uid in g["_user_ids"]]
+        del g["_saves"]
+        del g["_user_ids"]
+
+    return page, total

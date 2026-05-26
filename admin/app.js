@@ -1,6 +1,7 @@
 let supabaseClient = null;
 let adminSession = null;
 let activeReportId = null;
+let activeUserId = null;
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -250,6 +251,7 @@ function bindTabs() {
             if (btn.dataset.tab === 'failed-links') loadFailedLinks();
             if (btn.dataset.tab === 'users') loadUsers();
             if (btn.dataset.tab === 'places') loadPlaces();
+            if (btn.dataset.tab === 'restaurants') loadRestaurants();
         });
     });
 }
@@ -260,6 +262,8 @@ let failedLinksOffset = 0;
 const FAILED_PAGE_SIZE = 50;
 
 async function loadFailedLinks() {
+    const tbody = document.getElementById('failed-tbody');
+    tbody.innerHTML = `<tr><td colspan="5" class="loading-cell">Loading…</td></tr>`;
     const platform = document.getElementById('failed-filter-platform').value;
     const params = new URLSearchParams({ limit: FAILED_PAGE_SIZE, offset: failedLinksOffset });
     if (platform) params.set('platform', platform);
@@ -294,12 +298,11 @@ function renderFailedLinks(rows, total) {
             <td>${escapeHtml(date)}</td>
             <td>${escapeHtml(row.platform || '—')}</td>
             <td><span class="badge">${reason}</span></td>
-            <td><a href="${url}" target="_blank" rel="noopener">${url.length > 60 ? url.slice(0, 60) + '…' : url}</a></td>
-            <td class="caption-cell" title="${preview}">${preview.length > 120 ? preview.slice(0, 120) + '…' : preview}</td>
+            <td class="cell-url"><a href="${url}" target="_blank" rel="noopener">${url.length > 60 ? url.slice(0, 60) + '…' : url}</a></td>
+            <td class="cell-preview" title="${preview}">${preview.length > 120 ? preview.slice(0, 120) + '…' : preview}</td>
         </tr>`;
     }).join('');
 
-    // Pagination
     const totalPages = Math.ceil(total / FAILED_PAGE_SIZE);
     const currentPage = Math.floor(failedLinksOffset / FAILED_PAGE_SIZE) + 1;
     pagination.innerHTML = totalPages > 1
@@ -328,32 +331,111 @@ function bindFailedLinks() {
 // ── Users ─────────────────────────────────────────────────────────────────────
 
 async function loadUsers() {
+    const list = document.getElementById('users-list');
+    list.innerHTML = `<div class="report-item" style="color:#6a5646;font-size:.85rem;padding:16px">Loading…</div>`;
     const response = await adminFetch('/admin/api/users?limit=200');
     if (!response.ok) return;
     const data = await response.json();
-    const users = data.users || [];
-    const summary = document.getElementById('users-summary');
-    const tbody = document.getElementById('users-tbody');
+    renderUserList(data.users || []);
+}
+
+function renderUserList(users) {
+    const list = document.getElementById('users-list');
     const empty = document.getElementById('users-empty');
+    const summary = document.getElementById('users-summary');
     summary.textContent = `${users.length} user${users.length === 1 ? '' : 's'}`;
-    if (!users.length) { empty.classList.remove('hidden'); tbody.innerHTML = ''; return; }
+    if (!users.length) {
+        empty.classList.remove('hidden');
+        list.innerHTML = '';
+        return;
+    }
     empty.classList.add('hidden');
-    tbody.innerHTML = users.map((u) => {
+    list.innerHTML = users.map((u) => {
         const name = escapeHtml(u.display_name);
-        const username = u.username ? `@${escapeHtml(u.username)}` : '—';
+        const username = u.username ? `@${escapeHtml(u.username)}` : '';
         const joined = new Date(u.created_at).toLocaleDateString();
-        return `<tr>
-            <td><strong>${name}</strong><br><small>${username}</small></td>
-            <td><small>${u.id}</small></td>
-            <td>${u.places_count}</td>
-            <td>${u.reviews_count}</td>
-            <td>${joined}</td>
-        </tr>`;
+        return `<div class="report-item ${u.id === activeUserId ? 'active' : ''}" data-user-id="${u.id}">
+            <div><strong>${name}</strong>${username ? ` <span class="cell-muted">${username}</span>` : ''}</div>
+            <div class="report-meta">
+                <span class="badge">${u.places_count} places</span>
+                <span class="badge">${u.reviews_count} reviews</span>
+                <span class="cell-muted">Joined ${joined}</span>
+            </div>
+        </div>`;
     }).join('');
+    list.querySelectorAll('.report-item[data-user-id]').forEach((item) => {
+        item.addEventListener('click', () => loadUserDetail(parseInt(item.dataset.userId, 10), users));
+    });
+}
+
+async function loadUserDetail(userId, users) {
+    activeUserId = userId;
+    // Re-render list to update active state
+    renderUserList(users);
+
+    const detail = document.getElementById('user-detail');
+    detail.classList.remove('empty');
+    detail.innerHTML = `<div class="loading-cell">Loading saves…</div>`;
+
+    const user = users.find((u) => u.id === userId);
+    const response = await adminFetch(`/admin/api/users/${userId}/places?limit=100`);
+    if (!response.ok) { detail.innerHTML = '<div class="loading-cell">Failed to load.</div>'; return; }
+    const data = await response.json();
+    const places = data.places || [];
+
+    const name = escapeHtml(user?.display_name || `User ${userId}`);
+    const username = user?.username ? ` (@${escapeHtml(user.username)})` : '';
+    const joined = user ? new Date(user.created_at).toLocaleDateString() : '—';
+
+    detail.innerHTML = `
+        <div class="detail-section">
+            <h3>${name}${username}</h3>
+            <div class="report-meta">
+                <span class="cell-muted">ID: ${userId}</span>
+                <span class="cell-muted">Joined ${joined}</span>
+                <span class="badge">${places.length} saves</span>
+            </div>
+        </div>
+        <div class="detail-section">
+            <div class="detail-label">Saved Places</div>
+            ${places.length === 0 ? '<p style="color:#6a5646;font-size:.88rem">No places saved yet.</p>' : `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Name</th>
+                        <th>Address</th>
+                        <th>Platform</th>
+                        <th>Visited</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${places.map((p) => {
+                        const date = new Date(p.created_at).toLocaleDateString();
+                        const src = p.source_url
+                            ? `<a href="${escapeHtml(p.source_url)}" target="_blank" rel="noopener">${escapeHtml(p.name)}</a>`
+                            : escapeHtml(p.name);
+                        return `<tr>
+                            <td class="cell-muted">${escapeHtml(date)}</td>
+                            <td><strong>${src}</strong></td>
+                            <td class="cell-muted">${escapeHtml(p.address || '—')}</td>
+                            <td>${escapeHtml(p.source_platform || '—')}</td>
+                            <td>${p.is_visited ? '✓' : ''}</td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>`}
+        </div>
+    `;
 }
 
 function bindUsers() {
-    document.getElementById('users-refresh-btn').addEventListener('click', loadUsers);
+    document.getElementById('users-refresh-btn').addEventListener('click', () => {
+        activeUserId = null;
+        document.getElementById('user-detail').classList.add('empty');
+        document.getElementById('user-detail').innerHTML = '<p>Select a user to see their saves.</p>';
+        loadUsers();
+    });
 }
 
 // ── Places ────────────────────────────────────────────────────────────────────
@@ -362,6 +444,8 @@ let placesOffset = 0;
 const PLACES_PAGE_SIZE = 100;
 
 async function loadPlaces() {
+    const tbody = document.getElementById('places-tbody');
+    tbody.innerHTML = `<tr><td colspan="6" class="loading-cell">Loading…</td></tr>`;
     const platform = document.getElementById('places-filter-platform').value;
     const params = new URLSearchParams({ limit: PLACES_PAGE_SIZE, offset: placesOffset });
     if (platform) params.set('platform', platform);
@@ -385,9 +469,9 @@ function renderPlaces(places, total) {
             ? `<a href="${escapeHtml(p.source_url)}" target="_blank" rel="noopener">link</a>`
             : '—';
         return `<tr>
-            <td>${escapeHtml(date)}</td>
+            <td class="cell-muted">${escapeHtml(date)}</td>
             <td><strong>${escapeHtml(p.name)}</strong></td>
-            <td><small>${escapeHtml(p.address || '—')}</small></td>
+            <td class="cell-muted">${escapeHtml(p.address || '—')}</td>
             <td>${escapeHtml(p.source_platform || '—')}</td>
             <td>${p.is_visited ? '✓' : ''}</td>
             <td>${src}</td>
@@ -418,6 +502,69 @@ function bindPlaces() {
     });
 }
 
+// ── Restaurants ───────────────────────────────────────────────────────────────
+
+let restaurantsOffset = 0;
+const RESTAURANTS_PAGE_SIZE = 50;
+
+async function loadRestaurants() {
+    const tbody = document.getElementById('restaurants-tbody');
+    tbody.innerHTML = `<tr><td colspan="6" class="loading-cell">Loading…</td></tr>`;
+    const platform = document.getElementById('restaurants-filter-platform').value;
+    const params = new URLSearchParams({ limit: RESTAURANTS_PAGE_SIZE, offset: restaurantsOffset });
+    if (platform) params.set('platform', platform);
+    const response = await adminFetch(`/admin/api/restaurants?${params}`);
+    if (!response.ok) return;
+    const data = await response.json();
+    renderRestaurants(data.restaurants, data.total);
+}
+
+function renderRestaurants(restaurants, total) {
+    const tbody = document.getElementById('restaurants-tbody');
+    const empty = document.getElementById('restaurants-empty');
+    const summary = document.getElementById('restaurants-summary');
+    const pagination = document.getElementById('restaurants-pagination');
+    summary.textContent = `${total} unique place${total === 1 ? '' : 's'} saved across all users`;
+    if (!restaurants.length) { empty.classList.remove('hidden'); tbody.innerHTML = ''; pagination.innerHTML = ''; return; }
+    empty.classList.add('hidden');
+    tbody.innerHTML = restaurants.map((r) => {
+        const lastSaved = new Date(r.last_saved_at).toLocaleDateString();
+        const savers = escapeHtml(r.savers.join(', '));
+        const saveBadgeClass = r.save_count >= 3 ? 'green' : '';
+        return `<tr>
+            <td><strong>${escapeHtml(r.name)}</strong></td>
+            <td class="cell-muted">${escapeHtml(r.address || '—')}</td>
+            <td><span class="badge ${saveBadgeClass}">${r.save_count}</span></td>
+            <td>${r.user_count}</td>
+            <td class="cell-preview" title="${savers}">${savers.length > 60 ? savers.slice(0, 60) + '…' : savers}</td>
+            <td class="cell-muted">${escapeHtml(lastSaved)}</td>
+        </tr>`;
+    }).join('');
+    const totalPages = Math.ceil(total / RESTAURANTS_PAGE_SIZE);
+    const currentPage = Math.floor(restaurantsOffset / RESTAURANTS_PAGE_SIZE) + 1;
+    pagination.innerHTML = totalPages > 1
+        ? `<button ${currentPage === 1 ? 'disabled' : ''} onclick="restaurantsPage(-1)">← Prev</button>
+           <span>Page ${currentPage} of ${totalPages}</span>
+           <button ${currentPage === totalPages ? 'disabled' : ''} onclick="restaurantsPage(1)">Next →</button>`
+        : '';
+}
+
+function restaurantsPage(direction) {
+    restaurantsOffset = Math.max(0, restaurantsOffset + direction * RESTAURANTS_PAGE_SIZE);
+    loadRestaurants();
+}
+
+function bindRestaurants() {
+    document.getElementById('restaurants-filter-platform').addEventListener('change', () => {
+        restaurantsOffset = 0;
+        loadRestaurants();
+    });
+    document.getElementById('restaurants-refresh-btn').addEventListener('click', () => {
+        restaurantsOffset = 0;
+        loadRestaurants();
+    });
+}
+
 function bindLogin() {
     document.getElementById('login-form').addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -436,6 +583,7 @@ function bindLogin() {
         await supabaseClient.auth.signOut();
         adminSession = null;
         activeReportId = null;
+        activeUserId = null;
         showLogin();
     });
 }
@@ -448,6 +596,7 @@ async function init() {
     bindFailedLinks();
     bindUsers();
     bindPlaces();
+    bindRestaurants();
     await validateAdminSession();
 }
 

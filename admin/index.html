@@ -29,7 +29,7 @@
                 <h1>Sprout Admin</h1>
                 <p id="admin-email"></p>
             </div>
-            <button id="sign-out">Sign Out</button>
+            <button id="sign-out" class="ghost">Sign Out</button>
         </header>
 
         <main class="layout">
@@ -38,135 +38,166 @@
                 <div id="overview-cards" class="cards"></div>
             </section>
 
-            <nav class="tab-nav">
-                <button class="tab-btn active" data-tab="feedback">Feedback</button>
-                <button class="tab-btn" data-tab="users">Users</button>
-                <button class="tab-btn" data-tab="places">Places</button>
-                <button class="tab-btn" data-tab="failed-links">Failed Links</button>
-            </nav>
+            <div class="tab-container">
+                <nav class="tab-nav">
+                    <button class="tab-btn active" data-tab="feedback">Feedback</button>
+                    <button class="tab-btn" data-tab="users">Users</button>
+                    <button class="tab-btn" data-tab="places">Places</button>
+                    <button class="tab-btn" data-tab="restaurants">Restaurants</button>
+                    <button class="tab-btn" data-tab="failed-links">Failed Links</button>
+                </nav>
 
-            <section class="feedback-panel tab-panel" data-panel="feedback">
-                <div class="panel-header">
-                    <h2>Feedback Inbox</h2>
-                    <div class="filters">
-                        <select id="filter-status">
-                            <option value="">All statuses</option>
-                            <option value="new">New</option>
-                            <option value="triaged">Triaged</option>
-                            <option value="in_progress">In Progress</option>
-                            <option value="resolved">Resolved</option>
-                            <option value="wont_fix">Won't Fix</option>
-                        </select>
-                        <select id="filter-category">
-                            <option value="">All categories</option>
-                            <option value="bug">Bug</option>
-                            <option value="feature_request">Feature Request</option>
-                            <option value="places_not_found">Places Not Found</option>
-                            <option value="general_feedback">General Feedback</option>
-                        </select>
-                        <select id="filter-source">
-                            <option value="">All sources</option>
-                            <option value="telegram_bot">Telegram Bot</option>
-                            <option value="mini_app">Mini App</option>
-                        </select>
-                        <input id="filter-search" type="search" placeholder="Search text or link">
-                    </div>
-                </div>
-
-                <div class="content-grid">
-                    <div class="report-list-wrap">
-                        <div id="feedback-summary" class="summary"></div>
-                        <div id="report-list" class="report-list"></div>
+                <!-- Feedback tab -->
+                <section class="tab-panel" data-panel="feedback">
+                    <div class="panel-header">
+                        <h2>Feedback Inbox</h2>
+                        <div class="filters">
+                            <select id="filter-status">
+                                <option value="">All statuses</option>
+                                <option value="new">New</option>
+                                <option value="triaged">Triaged</option>
+                                <option value="in_progress">In Progress</option>
+                                <option value="resolved">Resolved</option>
+                                <option value="wont_fix">Won't Fix</option>
+                            </select>
+                            <select id="filter-category">
+                                <option value="">All categories</option>
+                                <option value="bug">Bug</option>
+                                <option value="feature_request">Feature Request</option>
+                                <option value="places_not_found">Places Not Found</option>
+                                <option value="general_feedback">General Feedback</option>
+                            </select>
+                            <select id="filter-source">
+                                <option value="">All sources</option>
+                                <option value="telegram_bot">Telegram Bot</option>
+                                <option value="mini_app">Mini App</option>
+                            </select>
+                            <input id="filter-search" type="search" placeholder="Search text or link">
+                        </div>
                     </div>
 
-                    <div id="report-detail" class="report-detail empty">
-                        <p>Select a report to inspect it.</p>
+                    <div class="content-grid">
+                        <div class="report-list-wrap">
+                            <div id="feedback-summary" class="summary"></div>
+                            <div id="report-list" class="report-list"></div>
+                        </div>
+                        <div id="report-detail" class="report-detail empty">
+                            <p>Select a report to inspect it.</p>
+                        </div>
                     </div>
-                </div>
-            </section>
+                </section>
 
-            <!-- Users tab -->
-            <section class="tab-panel hidden" data-panel="users">
-                <div class="panel-header">
-                    <h2>Users</h2>
-                    <button id="users-refresh-btn">Refresh</button>
-                </div>
-                <div id="users-summary" class="summary"></div>
-                <table class="failed-table">
-                    <thead>
-                        <tr>
-                            <th>User</th>
-                            <th>ID</th>
-                            <th>Places</th>
-                            <th>Reviews</th>
-                            <th>Joined</th>
-                        </tr>
-                    </thead>
-                    <tbody id="users-tbody"></tbody>
-                </table>
-                <div id="users-empty" class="empty-state hidden">No users yet.</div>
-            </section>
-
-            <!-- Places tab -->
-            <section class="tab-panel hidden" data-panel="places">
-                <div class="panel-header">
-                    <h2>Recently Saved Places</h2>
-                    <div class="filters">
-                        <select id="places-filter-platform">
-                            <option value="">All platforms</option>
-                            <option value="instagram">Instagram</option>
-                            <option value="tiktok">TikTok</option>
-                        </select>
-                        <button id="places-refresh-btn">Refresh</button>
+                <!-- Users tab -->
+                <section class="tab-panel hidden" data-panel="users">
+                    <div class="panel-header">
+                        <h2>Users</h2>
+                        <button id="users-refresh-btn" class="secondary">Refresh</button>
                     </div>
-                </div>
-                <div id="places-summary" class="summary"></div>
-                <table class="failed-table">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Name</th>
-                            <th>Address</th>
-                            <th>Platform</th>
-                            <th>Visited</th>
-                            <th>Source</th>
-                        </tr>
-                    </thead>
-                    <tbody id="places-tbody"></tbody>
-                </table>
-                <div id="places-empty" class="empty-state hidden">No places saved yet.</div>
-                <div id="places-pagination" class="pagination"></div>
-            </section>
-
-            <section class="failed-links-panel tab-panel hidden" data-panel="failed-links">
-                <div class="panel-header">
-                    <h2>Failed Links</h2>
-                    <div class="filters">
-                        <select id="failed-filter-platform">
-                            <option value="">All platforms</option>
-                            <option value="instagram">Instagram</option>
-                            <option value="tiktok">TikTok</option>
-                            <option value="other">Other</option>
-                        </select>
-                        <button id="failed-refresh-btn">Refresh</button>
+                    <div id="users-summary" class="summary"></div>
+                    <div class="content-grid">
+                        <div class="report-list-wrap">
+                            <div id="users-list" class="report-list"></div>
+                        </div>
+                        <div id="user-detail" class="report-detail empty">
+                            <p>Select a user to see their saves.</p>
+                        </div>
                     </div>
-                </div>
-                <div id="failed-summary" class="summary"></div>
-                <table id="failed-table" class="failed-table">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Platform</th>
-                            <th>Reason</th>
-                            <th>URL</th>
-                            <th>Caption preview</th>
-                        </tr>
-                    </thead>
-                    <tbody id="failed-tbody"></tbody>
-                </table>
-                <div id="failed-empty" class="empty-state hidden">No failed extractions recorded yet.</div>
-                <div id="failed-pagination" class="pagination"></div>
-            </section>
+                    <div id="users-empty" class="empty-state hidden">No users yet.</div>
+                </section>
+
+                <!-- Places tab -->
+                <section class="tab-panel hidden" data-panel="places">
+                    <div class="panel-header">
+                        <h2>Recently Saved Places</h2>
+                        <div class="filters">
+                            <select id="places-filter-platform">
+                                <option value="">All platforms</option>
+                                <option value="instagram">Instagram</option>
+                                <option value="tiktok">TikTok</option>
+                            </select>
+                            <button id="places-refresh-btn" class="secondary">Refresh</button>
+                        </div>
+                    </div>
+                    <div id="places-summary" class="summary"></div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Name</th>
+                                <th>Address</th>
+                                <th>Platform</th>
+                                <th>Visited</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody id="places-tbody"></tbody>
+                    </table>
+                    <div id="places-empty" class="empty-state hidden">No places saved yet.</div>
+                    <div id="places-pagination" class="pagination"></div>
+                </section>
+
+                <!-- Restaurants tab -->
+                <section class="tab-panel hidden" data-panel="restaurants">
+                    <div class="panel-header">
+                        <h2>Restaurants</h2>
+                        <div class="filters">
+                            <select id="restaurants-filter-platform">
+                                <option value="">All platforms</option>
+                                <option value="instagram">Instagram</option>
+                                <option value="tiktok">TikTok</option>
+                            </select>
+                            <button id="restaurants-refresh-btn" class="secondary">Refresh</button>
+                        </div>
+                    </div>
+                    <div id="restaurants-summary" class="summary"></div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Address</th>
+                                <th>Saves</th>
+                                <th>Users</th>
+                                <th>Saved By</th>
+                                <th>Last Saved</th>
+                            </tr>
+                        </thead>
+                        <tbody id="restaurants-tbody"></tbody>
+                    </table>
+                    <div id="restaurants-empty" class="empty-state hidden">No places saved yet.</div>
+                    <div id="restaurants-pagination" class="pagination"></div>
+                </section>
+
+                <!-- Failed Links tab -->
+                <section class="tab-panel hidden" data-panel="failed-links">
+                    <div class="panel-header">
+                        <h2>Failed Links</h2>
+                        <div class="filters">
+                            <select id="failed-filter-platform">
+                                <option value="">All platforms</option>
+                                <option value="instagram">Instagram</option>
+                                <option value="tiktok">TikTok</option>
+                                <option value="other">Other</option>
+                            </select>
+                            <button id="failed-refresh-btn" class="secondary">Refresh</button>
+                        </div>
+                    </div>
+                    <div id="failed-summary" class="summary"></div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Platform</th>
+                                <th>Reason</th>
+                                <th>URL</th>
+                                <th>Caption preview</th>
+                            </tr>
+                        </thead>
+                        <tbody id="failed-tbody"></tbody>
+                    </table>
+                    <div id="failed-empty" class="empty-state hidden">No failed extractions recorded yet.</div>
+                    <div id="failed-pagination" class="pagination"></div>
+                </section>
+            </div><!-- /.tab-container -->
         </main>
     </div>
 
