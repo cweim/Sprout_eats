@@ -25,8 +25,6 @@ from services.downloader import (
     InstagramAccessError,
     InstagramCooldownError,
 )
-from services.ocr import extract_text_from_images, extract_text_from_video
-from services.transcriber import transcribe_audio
 from services.places import search_place
 from services.place_pipeline import (
     build_runtime_metadata_record,
@@ -618,20 +616,21 @@ def _set_instagram_fallback_pending(context: ContextTypes.DEFAULT_TYPE, source_u
 
 
 async def prompt_instagram_manual_fallback(status_msg, context: ContextTypes.DEFAULT_TYPE, source_url: str, *, unresolved_candidates: list[dict] | None = None) -> None:
-    _set_instagram_fallback_pending(context, source_url)
+    context.user_data["pending_url"] = source_url
+    context.user_data["pending_platform"] = "instagram"
     if unresolved_candidates:
         context.user_data["pending_unresolved_slots"] = unresolved_candidates[:6]
         await status_msg.edit_text(
             "I found possible place matches, but couldn't verify them confidently enough to auto-save.\n"
             f"{build_reviewable_candidate_message(unresolved_candidates)}\n\n"
-            "Tap a suggestion to save it, or reply with the place name, or send a screenshot of the post.",
+            "Tap a suggestion to save it, or reply with the place name.",
             reply_markup=build_reviewable_candidate_keyboard(unresolved_candidates),
         )
         return
 
     await status_msg.edit_text(
         "I couldn't reliably extract the place from this Instagram post.\n\n"
-        "Reply with the place name, or send a screenshot of the post."
+        "Reply with the place name and I'll search for it."
     )
 
 
@@ -1566,7 +1565,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if platform == "tiktok":
             await _handle_tiktok_url(update, context, text, status_msg)
             return
-        await _handle_generic_url(update, context, text, status_msg, platform)
 
     task = asyncio.create_task(_run())
     context.user_data[f'extraction_task_{task_id}'] = task
@@ -1596,346 +1594,6 @@ async def cancel_extraction_callback(update: Update, context: ContextTypes.DEFAU
             await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass
-
-
-
-async def _handle_generic_url(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, status_msg, platform: str) -> None:
-    """Handle URL extraction for non-TikTok, non-Instagram-worker platforms."""
-    user_id = update.effective_user.id
-    try:
-        # Step 1: Download
-        if platform == "instagram" and await instagram_request_will_queue():
-            active_jobs, waiting_jobs = await get_instagram_queue_status()
-            logger.info(
-                "Queueing Instagram request: active=%s waiting=%s url=%s",
-                active_jobs,
-                waiting_jobs,
-                text,
-            )
-            await status_msg.edit_text(
-                "Having trouble with Instagram right now. If you know the place name, just type it and I’ll find it."
-            )
-        else:
-            await status_msg.edit_text("Downloading video... 📥")
-        result = await download_content(text)
-
-        # Step 2: Extract source-backed place slots, then resolve each slot.
-        places = []
-        unresolved_suggestions = []
-        slots = []
-        ocr_text = ""
-        video_ocr_payload = {}
-        match_source = None
-        transcription_result = None
-        metadata_text = f"{result.title} {result.description}".strip()
-
-        def build_metadata_record():
-            return build_runtime_metadata_record(
-                title=result.title,
-                description=result.description,
-                source_url=text,
-                platform=result.platform,
-                content_type=result.content_type,
-                uploader=result.uploader,
-                duration=result.duration,
-                hashtags=result.hashtags,
-                ocr_text=ocr_text,
-                video_ocr=video_ocr_payload,
-                transcription=transcription_result,
-            )
-
-        if metadata_text:
-            await status_msg.edit_text("Reading the caption... 📝")
-            slots = extract_place_evidence_from_metadata(build_metadata_record())
-
-        # Step 3: For photo posts, OCR images only if caption/title did not yield slots.
-        if not slots and result.image_paths:
-            await status_msg.edit_text("Scanning images for text... 🖼️")
-            try:
-                ocr_text = await asyncio.to_thread(extract_text_from_images, result.image_paths)
-            except Exception as e:
-                logger.warning(f"OCR failed: {e}")
-
-            if ocr_text:
-                slots = extract_place_evidence_from_metadata(build_metadata_record())
-
-        # Step 4: For videos, OCR sampled frames only if no text/image slots were found.
-        if not slots and result.video_path and result.video_path.exists():
-            await status_msg.edit_text("Scanning video text... 🖼️")
-            try:
-                video_ocr_payload = await asyncio.to_thread(extract_text_from_video, result.video_path)
-            except Exception as e:
-                logger.warning(f"Video OCR failed: {e}")
-                video_ocr_payload = {}
-
-            if video_ocr_payload.get("combined_text"):
-                slots = extract_place_evidence_from_metadata(build_metadata_record())
-
-        # Step 5: If still no slots and audio exists, fallback to transcription.
-        if not slots and result.audio_path and result.audio_path.exists():
-            await status_msg.edit_text("Transcribing audio... 🎤")
-            try:
-                transcription_result = await transcribe_audio(result.audio_path)
-            except Exception as e:
-                logger.warning(f"Transcription failed: {e}")
-
-            if transcription_result:
-                slots = extract_place_evidence_from_metadata(build_metadata_record())
-
-        if slots:
-            await status_msg.edit_text("Resolving place names... 🔎")
-            suggestions = await resolve_place_slots(slots)
-            places, unresolved_suggestions = collect_places_from_slot_suggestions(suggestions)
-            resolved_sources = [place.matched_source_type for place in places if place.matched_source_type]
-            if resolved_sources:
-                match_source = resolved_sources[0]
-            elif slots:
-                match_source = slots[0].source
-
-        # Handle case where no location could be found
-        if not places:
-            transcript_text = transcription_result.text if transcription_result else ""
-            video_ocr_text = video_ocr_payload.get("combined_text", "") if video_ocr_payload else ""
-            combined_text = f"{metadata_text} {ocr_text} {video_ocr_text} {transcript_text}".strip()
-            if not combined_text:
-                try:
-                    repository.log_failed_extraction(user_id, text, platform=platform, caption_preview="", reason="no_slots")
-                except Exception:
-                    pass
-                await status_msg.edit_text(
-                    "I couldn't find enough text or audio to identify a place.\n\n"
-                    "Reply with the place name and I'll search for it."
-                )
-            elif unresolved_suggestions:
-                reviewable_candidates = collect_reviewable_unresolved_candidates(unresolved_suggestions)
-                if reviewable_candidates:
-                    context.user_data["pending_unresolved_slots"] = reviewable_candidates[:6]
-                    await status_msg.edit_text(
-                        "I found possible place matches, but couldn't verify them confidently enough to auto-save.\n"
-                        f"{build_reviewable_candidate_message(reviewable_candidates)}\n\n"
-                        "Tap a suggestion to save it, or reply with the exact place or branch name.",
-                        reply_markup=build_reviewable_candidate_keyboard(reviewable_candidates),
-                    )
-                else:
-                    try:
-                        repository.log_failed_extraction(user_id, text, platform=platform, caption_preview=metadata_text[:300], reason="no_google_match")
-                    except Exception:
-                        pass
-                    await status_msg.edit_text(
-                        "I found some possible place names, but none could be verified against Google Places.\n\n"
-                        "Reply with the exact place or branch name and I'll search for it."
-                    )
-            else:
-                checked_sources = []
-                if metadata_text:
-                    checked_sources.append("caption")
-                if ocr_text:
-                    checked_sources.append("image text")
-                if video_ocr_text:
-                    checked_sources.append("video text")
-                if transcript_text:
-                    checked_sources.append("audio")
-                checked_text = ", ".join(checked_sources) if checked_sources else "the post"
-                reason = "no_slots" if not slots else "no_google_match"
-                try:
-                    repository.log_failed_extraction(user_id, text, platform=platform, caption_preview=metadata_text[:300], reason=reason)
-                except Exception:
-                    pass
-                await status_msg.edit_text(
-                    "I couldn't confidently identify a specific food place.\n\n"
-                    f"I checked the {checked_text}, but there wasn't a clear match.\n\n"
-                    "Reply with the place name and I'll search for it."
-                )
-            context.user_data["pending_url"] = text
-            context.user_data["pending_platform"] = result.platform
-            cleanup_files(result.video_path, result.audio_path, *result.image_paths)
-            return
-
-        # Extract video metadata for storage
-        source_title = result.title
-        source_uploader = result.uploader
-        source_duration = result.duration
-        source_hashtags = ",".join(result.hashtags) if result.hashtags else None
-
-        # Step 4: Handle results based on count
-        if len(places) == 1 and not unresolved_suggestions:
-            # Single place: auto-save (backward compatible behavior)
-            place = places[0]
-            saved_place = repository.add_place(
-                user_id=user_id,
-                name=place.name,
-                address=place.address,
-                latitude=place.latitude,
-                longitude=place.longitude,
-                google_place_id=place.place_id,
-                source_url=text,
-                source_platform=result.platform,
-                source_title=source_title,
-                source_uploader=source_uploader,
-                source_duration=source_duration,
-                source_hashtags=source_hashtags,
-                place_types=",".join(place.types) if place.types else None,
-                place_rating=place.rating,
-                place_rating_count=place.rating_count,
-                place_price_level=place.price_level,
-                place_opening_hours=place.opening_hours,
-                source_language=transcription_result.language if transcription_result else None,
-                source_transcript=transcription_result.text if transcription_result else None,
-                source_transcript_en=(
-                    (transcription_result.preferred_text or transcription_result.english_text)
-                    if transcription_result else None
-                ),
-            )
-
-            await status_msg.delete()
-
-            # Send location pin
-            await update.message.reply_location(
-                latitude=place.latitude,
-                longitude=place.longitude,
-            )
-
-            confirmation = build_saved_place_message(place, source_url=text)
-
-            saved_place_id = get_saved_place_id(saved_place)
-            keyboard_rows = []
-            if config.WEBAPP_URL:
-                keyboard_rows.append([
-                    InlineKeyboardButton("🗺️ View on Map", web_app=WebAppInfo(url=config.WEBAPP_URL))
-                ])
-            if saved_place_id:
-                keyboard_rows.append([
-                    InlineKeyboardButton("This is incorrect", callback_data=f"incorrect_place_{saved_place_id}")
-                ])
-                # Store alt candidates (suggestions[0].candidates excluding winner) for correction flow
-                alt_candidates = []
-                if suggestions:
-                    for c in suggestions[0].candidates[1:4]:
-                        alt_candidates.append({
-                            "name": c.name, "address": c.address,
-                            "latitude": c.latitude, "longitude": c.longitude,
-                            "place_id": c.place_id, "types": c.types,
-                            "rating": c.rating, "rating_count": c.rating_count,
-                            "price_level": c.price_level, "opening_hours": c.opening_hours,
-                            "confidence_score": c.confidence_score,
-                            "matched_source_type": c.matched_source_type,
-                        })
-                context.user_data["correction_place_context"] = {
-                    "place_id": saved_place_id,
-                    "source_url": text,
-                    "source_platform": result.platform,
-                    "candidates": alt_candidates,
-                }
-            reply_markup = InlineKeyboardMarkup(keyboard_rows) if keyboard_rows else None
-
-            await update.message.reply_text(
-                confirmation,
-                reply_markup=reply_markup,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-        else:
-            # Multiple places: show selection keyboard
-            # Store places in user_data for callback (include metadata)
-            context.user_data["pending_places"] = [
-                {
-                    "name": p.name,
-                    "address": p.address,
-                    "latitude": p.latitude,
-                    "longitude": p.longitude,
-                    "place_id": p.place_id,
-                    "types": p.types,
-                    "rating": p.rating,
-                    "rating_count": p.rating_count,
-                    "price_level": p.price_level,
-                    "opening_hours": p.opening_hours,
-                    "confidence_score": p.confidence_score,
-                    "confidence_label": p.confidence_label,
-                    "confidence_reason": p.confidence_reason,
-                    "matched_query": p.matched_query,
-                    "matched_source_type": p.matched_source_type,
-                }
-                for p in places
-            ]
-            context.user_data["pending_url"] = text
-            context.user_data["pending_platform"] = result.platform
-            # Store video metadata for later (including language info)
-            context.user_data["pending_video_meta"] = {
-                "source_title": source_title,
-                "source_uploader": source_uploader,
-                "source_duration": source_duration,
-                "source_hashtags": source_hashtags,
-                "source_language": transcription_result.language if transcription_result else None,
-                "source_transcript": transcription_result.text if transcription_result else None,
-                "source_transcript_en": (
-                    (transcription_result.preferred_text or transcription_result.english_text)
-                    if transcription_result else None
-                ),
-                "match_source": match_source,
-                "unresolved_message": build_unresolved_slot_message(unresolved_suggestions),
-            }
-
-            # Preselect every high-confidence result; otherwise fall back to the top-ranked result.
-            high_confidence_indices = {
-                i for i, place in enumerate(context.user_data["pending_places"])
-                if place.get("confidence_label") == "high"
-            }
-            context.user_data["selected_indices"] = high_confidence_indices or {0}
-            _persist_place_session(context, user_id)
-
-            selected = context.user_data["selected_indices"]
-            keyboard = build_selection_keyboard(context.user_data["pending_places"], selected)
-            review_text = build_selection_message(
-                context.user_data["pending_places"],
-                selected,
-                context.user_data["pending_video_meta"],
-            )
-
-            await status_msg.edit_text(
-                review_text,
-                reply_markup=keyboard,
-            )
-
-        # Cleanup temp files
-        cleanup_files(result.video_path, result.audio_path, *result.image_paths)
-
-    except DownloadTimeoutError:
-        logger.error("Download timed out")
-        await safe_edit_status(
-            status_msg,
-            "This video is taking too long to process. Try a shorter clip, or just type the place name."
-        )
-    except VideoTooLongError as e:
-        logger.warning(f"Video too long: {e}")
-        await safe_edit_status(
-            status_msg,
-            f"This video is too long (max {config.MAX_VIDEO_DURATION // 60} min). Try a shorter clip, or just type the place name."
-        )
-    except InstagramCooldownError as e:
-        logger.warning("Instagram retrieval cooling down: %s", e)
-        context.user_data["pending_url"] = text
-        context.user_data["pending_platform"] = "instagram"
-        await safe_edit_status(
-            status_msg,
-            "Having trouble with Instagram right now. If you know the place name, just type it and I’ll find it."
-        )
-    except InstagramNoCookieCooldownError as e:
-        logger.warning("Instagram no-cookie pipeline cooling down: %s", e)
-        await prompt_instagram_manual_fallback(status_msg, context, text)
-    except InstagramAccessError as e:
-        logger.error("Instagram access error: %s", e)
-        context.user_data["pending_url"] = text
-        context.user_data["pending_platform"] = "instagram"
-        await safe_edit_status(
-            status_msg,
-            "Can’t access this post — it may be private or geo-restricted. Type the place name and I’ll search for it."
-        )
-    except Exception as e:
-        logger.error(f"Error processing URL: {e}")
-        await safe_edit_status(
-            status_msg,
-            "Something went wrong on my end. Try again, or type the place name to search manually."
-        )
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2005,86 +1663,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(
             "Hmm, couldn't find that one. Try a different name?"
         )
-
-
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Route Telegram photos to Instagram fallback OCR or review-photo upload."""
-    instagram_fallback = context.user_data.get("instagram_fallback_pending")
-    if instagram_fallback and update.message and update.message.photo:
-        status_msg = await update.message.reply_text("Reading the screenshot... 🖼️")
-        temp_path = None
-        try:
-            telegram_photo = update.message.photo[-1]
-            telegram_file = await telegram_photo.get_file()
-            temp_path = config.TEMP_DIR / f"instagram_fallback_{telegram_photo.file_unique_id}.jpg"
-            await telegram_file.download_to_drive(custom_path=str(temp_path))
-            ocr_text = await asyncio.to_thread(extract_text_from_images, [temp_path])
-            if not ocr_text.strip():
-                await status_msg.edit_text(
-                    "I couldn't read a place from that screenshot.\n\n"
-                    "Reply with the place name, or send another screenshot."
-                )
-                return
-
-            runtime_record = build_runtime_metadata_record(
-                source_url=instagram_fallback["source_url"],
-                platform="instagram",
-                ocr_text=ocr_text,
-            )
-            slots = extract_place_evidence_from_metadata(runtime_record)
-            suggestions = await resolve_place_slots(slots) if slots else []
-            places, unresolved_suggestions = collect_places_from_slot_suggestions(suggestions)
-
-            if not places:
-                reviewable_candidates = collect_reviewable_unresolved_candidates(unresolved_suggestions)
-                if reviewable_candidates:
-                    context.user_data["pending_unresolved_slots"] = reviewable_candidates[:6]
-                    await status_msg.edit_text(
-                        "I found possible place matches in the screenshot, but couldn't verify them confidently enough to auto-save.\n"
-                        f"{build_reviewable_candidate_message(reviewable_candidates)}\n\n"
-                        "Tap a suggestion to save it, or reply with the place name, or send another screenshot.",
-                        reply_markup=build_reviewable_candidate_keyboard(reviewable_candidates),
-                    )
-                else:
-                    await status_msg.edit_text(
-                        "I still couldn't verify a place from that screenshot.\n\n"
-                        "Reply with the place name, or send another screenshot."
-                    )
-                return
-
-            await status_msg.delete()
-            if len(places) == 1 and not unresolved_suggestions:
-                await _save_single_place_result(
-                    update,
-                    context,
-                    user_id=update.effective_user.id,
-                    place=places[0],
-                    source_url=instagram_fallback["source_url"],
-                    source_platform="instagram",
-                )
-            else:
-                resolved_sources = [place.matched_source_type for place in places if place.matched_source_type]
-                match_source = resolved_sources[0] if resolved_sources else (slots[0].source if slots else None)
-                await _start_multi_place_selection(
-                    context,
-                    status_msg=await update.message.reply_text("Choose the place(s) you want to save."),
-                    places=places,
-                    source_url=instagram_fallback["source_url"],
-                    source_platform="instagram",
-                    match_source=match_source,
-                    unresolved_message=build_unresolved_slot_message(unresolved_suggestions),
-                )
-            _clear_instagram_fallback_pending(context)
-            return
-        except Exception as exc:
-            logger.error("Instagram fallback screenshot processing failed: %s", exc)
-            await status_msg.edit_text(
-                "I couldn't process that screenshot.\n\n"
-                "Reply with the place name, or send another screenshot."
-            )
-            return
-        finally:
-            cleanup_files(temp_path)
 
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

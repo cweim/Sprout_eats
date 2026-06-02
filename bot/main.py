@@ -13,7 +13,6 @@ from telegram.ext import (
 
 import config
 from database import supabase_repository as repository
-from services.transcriber import preload_model
 from bot.handlers import (
     start_command,
     places_command,
@@ -34,7 +33,6 @@ from bot.handlers import (
     unresolved_pick_callback,
     cancel_extraction_callback,
     handle_text,
-    handle_photo,
     handle_location,
     handle_remind_later,
     handle_remind_stop,
@@ -189,11 +187,6 @@ def main():
     if not _validate_config():
         return
 
-    # Pre-load Whisper model (takes a few seconds)
-    logger.info("Loading Whisper model...")
-    preload_model()
-    logger.info("Whisper model ready")
-
     # Create application
     app = (
         Application.builder()
@@ -234,9 +227,6 @@ def main():
 
     # Feedback conversation handler must be before generic message handlers
     app.add_handler(feedback_conversation_handler)
-
-    # Photos (Instagram fallback screenshots)
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     # Handle text messages (URLs and place name responses)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
