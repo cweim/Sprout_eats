@@ -156,11 +156,11 @@ def get_place_count(user_id: int) -> int:
 
 
 def get_group_places(group_id: int, limit: Optional[int] = None, offset: int = 0) -> List[Dict[str, Any]]:
-    """Get all active places for a group, ordered newest first with vote counts."""
+    """Get all active places for a group, ordered newest first with vote counts and attribution."""
     supabase = get_supabase()
     query = (
         supabase.table("places")
-        .select("*, saved_by_user:saved_by_user_id(id, username, first_name), vote_count:place_votes(count)")
+        .select("*")
         .eq("group_id", group_id)
         .is_("deleted_at", "null")
         .order("created_at", desc=True)
@@ -169,13 +169,42 @@ def get_group_places(group_id: int, limit: Optional[int] = None, offset: int = 0
         query = query.range(offset, offset + limit - 1)
     result = query.execute()
     places = result.data or []
-    # Normalize vote_count from [{count: N}] to integer
+
+    # Batch-fetch user info for attribution
+    user_ids = list({p["saved_by_user_id"] for p in places if p.get("saved_by_user_id")})
+    user_map: Dict[int, Dict] = {}
+    if user_ids:
+        users_result = (
+            supabase.table("users")
+            .select("id, username, first_name")
+            .in_("id", user_ids)
+            .execute()
+        )
+        for u in (users_result.data or []):
+            user_map[u["id"]] = u
+
+    # Batch-fetch vote counts
+    place_ids = [p["id"] for p in places]
+    vote_map: Dict[int, int] = {}
+    if place_ids:
+        votes_result = (
+            supabase.table("place_votes")
+            .select("place_id")
+            .in_("place_id", place_ids)
+            .execute()
+        )
+        for v in (votes_result.data or []):
+            vote_map[v["place_id"]] = vote_map.get(v["place_id"], 0) + 1
+
     for p in places:
-        vc = p.get("vote_count")
-        if isinstance(vc, list) and vc:
-            p["vote_count"] = vc[0].get("count", 0)
+        uid = p.get("saved_by_user_id")
+        u = user_map.get(uid) if uid else None
+        if u:
+            p["saved_by_user"] = u
         else:
-            p["vote_count"] = 0
+            p["saved_by_user"] = None
+        p["vote_count"] = vote_map.get(p["id"], 0)
+
     return places
 
 
