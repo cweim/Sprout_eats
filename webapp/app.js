@@ -1252,10 +1252,14 @@ function createPlaceCard(place) {
     }
     metaHtml += '</div>';
 
-    // Attribution (group map only)
-    const attributionHtml = IS_GROUP_MAP && place.saved_by
-        ? `<div class="place-attribution">Added by ${escapeHtml(place.saved_by)}</div>`
-        : '';
+    // Attribution + vote count (group map only)
+    let attributionHtml = '';
+    if (IS_GROUP_MAP) {
+        const byLine = place.saved_by ? `Added by ${escapeHtml(place.saved_by)}` : '';
+        const votes = place.vote_count > 0 ? `👍 ${place.vote_count}` : '';
+        const parts = [byLine, votes].filter(Boolean).join(' · ');
+        if (parts) attributionHtml = `<div class="place-attribution">${parts}</div>`;
+    }
 
     // Distance + visited toggle row (personal map only)
     const distance = getPlaceDistance(place);

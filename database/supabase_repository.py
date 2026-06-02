@@ -156,11 +156,11 @@ def get_place_count(user_id: int) -> int:
 
 
 def get_group_places(group_id: int, limit: Optional[int] = None, offset: int = 0) -> List[Dict[str, Any]]:
-    """Get all active places for a group, ordered newest first."""
+    """Get all active places for a group, ordered newest first with vote counts."""
     supabase = get_supabase()
     query = (
         supabase.table("places")
-        .select("*, saved_by_user:saved_by_user_id(id, username, first_name)")
+        .select("*, saved_by_user:saved_by_user_id(id, username, first_name), vote_count:place_votes(count)")
         .eq("group_id", group_id)
         .is_("deleted_at", "null")
         .order("created_at", desc=True)
@@ -168,7 +168,15 @@ def get_group_places(group_id: int, limit: Optional[int] = None, offset: int = 0
     if limit is not None:
         query = query.range(offset, offset + limit - 1)
     result = query.execute()
-    return result.data or []
+    places = result.data or []
+    # Normalize vote_count from [{count: N}] to integer
+    for p in places:
+        vc = p.get("vote_count")
+        if isinstance(vc, list) and vc:
+            p["vote_count"] = vc[0].get("count", 0)
+        else:
+            p["vote_count"] = 0
+    return places
 
 
 def get_group_place_count(group_id: int) -> int:
@@ -179,6 +187,44 @@ def get_group_place_count(group_id: int) -> int:
         .select("id", count="exact")
         .eq("group_id", group_id)
         .is_("deleted_at", "null")
+        .execute()
+    )
+    return result.count or 0
+
+
+def toggle_place_vote(place_id: int, user_id: int) -> Dict[str, Any]:
+    """Toggle a vote on a group place. Returns {voted: bool, count: int}."""
+    supabase = get_supabase()
+    # Check if already voted
+    existing = (
+        supabase.table("place_votes")
+        .select("id")
+        .eq("place_id", place_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if existing.data:
+        supabase.table("place_votes").delete().eq("id", existing.data[0]["id"]).execute()
+        voted = False
+    else:
+        supabase.table("place_votes").insert({"place_id": place_id, "user_id": user_id}).execute()
+        voted = True
+    count_result = (
+        supabase.table("place_votes")
+        .select("id", count="exact")
+        .eq("place_id", place_id)
+        .execute()
+    )
+    return {"voted": voted, "count": count_result.count or 0}
+
+
+def get_place_vote_count(place_id: int) -> int:
+    """Get vote count for a place."""
+    supabase = get_supabase()
+    result = (
+        supabase.table("place_votes")
+        .select("id", count="exact")
+        .eq("place_id", place_id)
         .execute()
     )
     return result.count or 0

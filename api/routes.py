@@ -114,8 +114,9 @@ async def get_places(
 
 
 def group_place_to_dict(place: dict) -> dict:
-    """Convert group place dict for JSON response, including attribution."""
+    """Convert group place dict for JSON response, including attribution and vote count."""
     base = place_to_dict(place)
+    base["vote_count"] = place.get("vote_count", 0)
     saved_by = place.get("saved_by_user") or {}
     if isinstance(saved_by, dict):
         uname = saved_by.get("username")

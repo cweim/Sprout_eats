@@ -42,8 +42,7 @@ from bot.handlers import (
     feedback_conversation_handler,
     handle_group_welcome,
     handle_group_url,
-    save_to_group_map_callback,
-    grp_already_saved_callback,
+    vote_group_place_callback,
 )
 
 # Configure logging
@@ -235,8 +234,7 @@ def main():
 
     # Group map handlers
     app.add_handler(ChatMemberHandler(handle_group_welcome, ChatMemberHandler.MY_CHAT_MEMBER))
-    app.add_handler(CallbackQueryHandler(save_to_group_map_callback, pattern=r"^grp_save_"))
-    app.add_handler(CallbackQueryHandler(grp_already_saved_callback, pattern=r"^grp_already_saved$"))
+    app.add_handler(CallbackQueryHandler(vote_group_place_callback, pattern=r"^grp_vote_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS, handle_group_url))
 
     # Handle text messages (URLs and place name responses)
