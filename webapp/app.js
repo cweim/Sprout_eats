@@ -1256,8 +1256,12 @@ function createPlaceCard(place) {
     let attributionHtml = '';
     if (IS_GROUP_MAP) {
         const byLine = place.saved_by ? `Added by ${escapeHtml(place.saved_by)}` : '';
-        const votes = place.vote_count > 0 ? `👍 ${place.vote_count}` : '';
-        const parts = [byLine, votes].filter(Boolean).join(' · ');
+        const voterNames = (place.voters || []).join(', ');
+        const votes = place.vote_count > 0
+            ? `👍 ${place.vote_count}${voterNames ? ` (${escapeHtml(voterNames)})` : ''}`
+            : '';
+        const visits = place.visit_count > 0 ? `✅ ${place.visit_count} visited` : '';
+        const parts = [byLine, votes, visits].filter(Boolean).join(' · ');
         if (parts) attributionHtml = `<div class="place-attribution">${parts}</div>`;
     }
 
@@ -1287,6 +1291,15 @@ function createPlaceCard(place) {
                 <span class="notes-placeholder">Add notes...</span>
             </div>`;
         }
+    }
+
+    // Reviews section (group map only)
+    let reviewsHtml = '';
+    if (IS_GROUP_MAP) {
+        reviewsHtml = `<div class="group-reviews-section" data-place-id="${place.id}" data-loaded="false">
+            <div class="group-reviews-toggle" onclick="event.stopPropagation(); toggleGroupReviews(this, ${place.id})">📝 Reviews</div>
+            <div class="group-reviews-list"></div>
+        </div>`;
     }
 
     // Action buttons (Review, Maps, Reel - delete moved to menu)
@@ -1321,7 +1334,7 @@ function createPlaceCard(place) {
 
     actionsHtml += '</div>';
 
-    card.innerHTML = headerHtml + addressHtml + attributionHtml + metaHtml + distanceHtml + notesHtml + actionsHtml;
+    card.innerHTML = headerHtml + addressHtml + attributionHtml + metaHtml + distanceHtml + notesHtml + reviewsHtml + actionsHtml;
 
     // Click handler - show on map
     card.addEventListener('click', (e) => {
@@ -1336,6 +1349,50 @@ function createPlaceCard(place) {
 }
 
 // Share a place via native share sheet or Telegram share URL
+async function toggleGroupReviews(toggleEl, placeId) {
+    const section = toggleEl.closest('.group-reviews-section');
+    const listEl = section.querySelector('.group-reviews-list');
+    const isOpen = section.dataset.open === 'true';
+
+    if (isOpen) {
+        listEl.style.display = 'none';
+        section.dataset.open = 'false';
+        toggleEl.textContent = '📝 Reviews';
+        return;
+    }
+
+    // Fetch reviews lazily
+    if (section.dataset.loaded !== 'true') {
+        toggleEl.textContent = '📝 Loading...';
+        try {
+            const res = await fetch(`/api/groups/${GROUP_ID}/places/${placeId}/reviews`);
+            const data = await res.json();
+            const reviews = data.reviews || [];
+            if (reviews.length === 0) {
+                listEl.innerHTML = '<div class="group-review-item" style="color:var(--hint-color)">No reviews yet.</div>';
+            } else {
+                listEl.innerHTML = reviews.map(r => {
+                    const stars = '⭐'.repeat(Math.round(r.overall_rating || 0));
+                    const remark = r.overall_remarks ? `"${escapeHtml(r.overall_remarks)}"` : '';
+                    const author = r.reviewer_name ? `— ${escapeHtml(r.reviewer_name)}` : '';
+                    return `<div class="group-review-item">
+                        <span>${stars} ${remark}</span>
+                        <div class="group-review-author">${author}</div>
+                    </div>`;
+                }).join('');
+            }
+            section.dataset.loaded = 'true';
+        } catch (e) {
+            listEl.innerHTML = '<div class="group-review-item" style="color:var(--hint-color)">Failed to load.</div>';
+        }
+    }
+
+    listEl.style.display = 'block';
+    section.dataset.open = 'true';
+    toggleEl.textContent = '📝 Hide reviews';
+}
+
+
 function sharePlace(placeId) {
     const place = places.find(p => p.id === placeId);
     if (!place) return;

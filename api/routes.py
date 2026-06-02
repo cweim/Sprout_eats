@@ -117,6 +117,7 @@ def group_place_to_dict(place: dict) -> dict:
     """Convert group place dict for JSON response, including attribution and vote count."""
     base = place_to_dict(place)
     base["vote_count"] = place.get("vote_count", 0)
+    base["visit_count"] = place.get("visit_count", 0)
     saved_by = place.get("saved_by_user") or {}
     if isinstance(saved_by, dict):
         uname = saved_by.get("username")
@@ -124,6 +125,12 @@ def group_place_to_dict(place: dict) -> dict:
         base["saved_by"] = f"@{uname}" if uname else (fname or "")
     else:
         base["saved_by"] = ""
+    # voters: list of display names (capped at 3 with "+N more")
+    voters_raw = place.get("voters", [])
+    if len(voters_raw) <= 3:
+        base["voters"] = voters_raw
+    else:
+        base["voters"] = voters_raw[:3] + [f"+{len(voters_raw) - 3} more"]
     return base
 
 
@@ -147,6 +154,14 @@ async def get_group_places(
         "has_more": (offset + len(places)) < total,
         "group_id": group_id,
     }
+
+
+@router.get("/groups/{group_id}/places/{place_id}/reviews")
+@limiter.limit("120/minute")
+async def get_group_place_reviews(request: Request, group_id: int, place_id: int):
+    """Get all reviews for a group place."""
+    reviews = repository.get_group_place_reviews(place_id)
+    return {"reviews": reviews, "total": len(reviews)}
 
 
 @router.get("/places/nearby")

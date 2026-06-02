@@ -2194,6 +2194,124 @@ async def handle_group_welcome(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
+def _build_group_card_keyboard(
+    place_id: int,
+    source_url: str,
+    google_place_id: str,
+    lat,
+    lng,
+    vote_count: int,
+    visit_count: int,
+    group_map_url: str,
+) -> InlineKeyboardMarkup:
+    """Build the 2-row inline keyboard for a group place card."""
+    vote_label = f"👍 {vote_count}" if vote_count > 0 else "👍"
+    row1 = [InlineKeyboardButton(vote_label, callback_data=f"grp_vote_{place_id}")]
+    if group_map_url:
+        row1.append(InlineKeyboardButton("🗺️ View Group Map", url=group_map_url))
+
+    row2 = []
+    if google_place_id:
+        row2.append(InlineKeyboardButton("📍 Maps", url=f"https://www.google.com/maps/place/?q=place_id:{google_place_id}"))
+    elif lat and lng:
+        row2.append(InlineKeyboardButton("📍 Maps", url=f"https://www.google.com/maps?q={lat},{lng}"))
+    if source_url:
+        row2.append(InlineKeyboardButton("▶️ Reel", url=source_url))
+    visit_label = f"✅ {visit_count} visited" if visit_count > 0 else "✅ I've been here"
+    row2.append(InlineKeyboardButton(visit_label, callback_data=f"grp_visit_{place_id}"))
+
+    rows = [row1, row2]
+    return InlineKeyboardMarkup(rows)
+
+
+async def _save_and_post_group_place(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    name: str,
+    address: str,
+    lat,
+    lng,
+    google_place_id: str,
+    source_url: str,
+    source_platform: str,
+    source_uploader: str,
+    source_title: str,
+    source_duration,
+    source_hashtags: str,
+    types,
+    rating,
+    rating_count,
+    price_level,
+    opening_hours,
+):
+    """Save a place to group map and post the card. Returns True if posted."""
+    chat = update.effective_chat
+    sharer_id = update.effective_user.id
+    sharer_name = update.effective_user.username or update.effective_user.first_name or "someone"
+
+    saved = repository.add_place(
+        user_id=sharer_id,
+        name=name,
+        address=address,
+        latitude=lat,
+        longitude=lng,
+        google_place_id=google_place_id,
+        source_url=source_url,
+        source_platform=source_platform,
+        source_uploader=source_uploader,
+        source_title=source_title,
+        source_duration=source_duration,
+        source_hashtags=source_hashtags,
+        place_types=",".join(types) if types else None,
+        place_rating=rating,
+        place_rating_count=rating_count,
+        place_price_level=price_level,
+        place_opening_hours=opening_hours,
+        group_id=chat.id,
+        saved_by_user_id=sharer_id,
+    )
+    if not saved:
+        return False
+    place_id = saved["id"]
+
+    meta_parts = []
+    if address:
+        city = address.split(",")[0].strip()
+        meta_parts.append(f"📍 {html.escape(city)}")
+    if rating:
+        meta_parts.append(f"⭐ {rating}")
+    if price_level:
+        dollar_map = {"INEXPENSIVE": "$", "MODERATE": "$$", "EXPENSIVE": "$$$", "VERY_EXPENSIVE": "$$$$"}
+        symbol = dollar_map.get(price_level, "")
+        if symbol:
+            meta_parts.append(symbol)
+    meta_line = " · ".join(meta_parts)
+    card_text = (
+        f"<b>{html.escape(name)}</b>\n"
+        f"{meta_line}\n"
+        f"Shared by @{html.escape(sharer_name)}"
+    )
+
+    group_map_url = f"{config.WEBAPP_URL}?group_id={chat.id}" if config.WEBAPP_URL else None
+    keyboard = _build_group_card_keyboard(
+        place_id=place_id,
+        source_url=source_url,
+        google_place_id=google_place_id,
+        lat=lat,
+        lng=lng,
+        vote_count=0,
+        visit_count=0,
+        group_map_url=group_map_url,
+    )
+    await update.message.reply_text(
+        card_text,
+        parse_mode="HTML",
+        reply_markup=keyboard,
+        disable_web_page_preview=True,
+    )
+    return True
+
+
 async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Detect food URLs in group messages, auto-save, and post a place card with vote button."""
     if not update.message or not update.message.text:
@@ -2204,6 +2322,46 @@ async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text.strip()
+
+    # Check if this is a reply to a pending name request
+    reply_to = update.message.reply_to_message
+    if reply_to:
+        pending = context.chat_data.get("pending_name_requests", {}).get(reply_to.message_id)
+        if pending and pending["sharer_user_id"] == update.effective_user.id:
+            # User replied with a place name — search and save
+            ensure_bot_user(update)
+            searching_msg = await update.message.reply_text("Searching for that place... 🔍")
+            place_results = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: search_place(text)
+            )
+            if not place_results:
+                await searching_msg.edit_text("Couldn't find that place. Try a more specific name.")
+                return
+            place = place_results[0] if isinstance(place_results, list) else place_results
+            await searching_msg.delete()
+            await _save_and_post_group_place(
+                update=update,
+                context=context,
+                name=place.name if hasattr(place, "name") else place.get("name", text),
+                address=place.address if hasattr(place, "address") else place.get("address", ""),
+                lat=place.latitude if hasattr(place, "latitude") else place.get("latitude"),
+                lng=place.longitude if hasattr(place, "longitude") else place.get("longitude"),
+                google_place_id=place.place_id if hasattr(place, "place_id") else place.get("place_id") or place.get("google_place_id"),
+                source_url=pending["source_url"],
+                source_platform=pending["source_platform"],
+                source_uploader=None,
+                source_title=None,
+                source_duration=None,
+                source_hashtags=None,
+                types=place.types if hasattr(place, "types") else place.get("types"),
+                rating=place.rating if hasattr(place, "rating") else place.get("rating"),
+                rating_count=place.rating_count if hasattr(place, "rating_count") else place.get("rating_count"),
+                price_level=place.price_level if hasattr(place, "price_level") else place.get("price_level"),
+                opening_hours=place.opening_hours if hasattr(place, "opening_hours") else place.get("opening_hours"),
+            )
+            context.chat_data.get("pending_name_requests", {}).pop(reply_to.message_id, None)
+            return
+
     if not is_valid_url(text):
         return
 
@@ -2232,9 +2390,19 @@ async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if pipeline.get("status") == "failed" or not pipeline.get("places"):
-            await status_msg.edit_text(
-                "Couldn't extract a place from that link. Try a clearer food video."
+            # Ask for place name instead of silently failing
+            ask_msg = await status_msg.edit_text(
+                "Couldn't find a place in that link. What's it called?\n"
+                "(Reply to this message with the name)",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Cancel", callback_data=f"grp_cancel_name_{status_msg.message_id}")
+                ]]),
             )
+            context.chat_data.setdefault("pending_name_requests", {})[ask_msg.message_id] = {
+                "sharer_user_id": sharer_id,
+                "source_url": text,
+                "source_platform": platform,
+            }
             return
 
         places = pipeline.get("places", [])
@@ -2247,72 +2415,25 @@ async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await status_msg.delete()
         for place in places:
-            name = place.name if hasattr(place, "name") else place.get("name", "")
-            address = place.address if hasattr(place, "address") else place.get("address", "")
-            rating = place.rating if hasattr(place, "rating") else place.get("rating")
-            price_level = place.price_level if hasattr(place, "price_level") else place.get("price_level")
-            lat = place.latitude if hasattr(place, "latitude") else place.get("latitude")
-            lng = place.longitude if hasattr(place, "longitude") else place.get("longitude")
-            google_place_id = place.place_id if hasattr(place, "place_id") else place.get("place_id") or place.get("google_place_id")
-            types = place.types if hasattr(place, "types") else place.get("types")
-            rating_count = place.rating_count if hasattr(place, "rating_count") else place.get("rating_count")
-            opening_hours = place.opening_hours if hasattr(place, "opening_hours") else place.get("opening_hours")
-
-            # Auto-save to group map immediately
-            saved = repository.add_place(
-                user_id=sharer_id,
-                name=name,
-                address=address,
-                latitude=lat,
-                longitude=lng,
-                google_place_id=google_place_id,
+            await _save_and_post_group_place(
+                update=update,
+                context=context,
+                name=place.name if hasattr(place, "name") else place.get("name", ""),
+                address=place.address if hasattr(place, "address") else place.get("address", ""),
+                lat=place.latitude if hasattr(place, "latitude") else place.get("latitude"),
+                lng=place.longitude if hasattr(place, "longitude") else place.get("longitude"),
+                google_place_id=place.place_id if hasattr(place, "place_id") else place.get("place_id") or place.get("google_place_id"),
                 source_url=text,
                 source_platform=platform,
                 source_uploader=source_uploader,
                 source_title=source_title,
                 source_duration=source_duration,
                 source_hashtags=source_hashtags,
-                place_types=",".join(types) if types else None,
-                place_rating=rating,
-                place_rating_count=rating_count,
-                place_price_level=price_level,
-                place_opening_hours=opening_hours,
-                group_id=chat.id,
-                saved_by_user_id=sharer_id,
-            )
-            if not saved:
-                continue
-            place_id = saved["id"]
-
-            # Build card text
-            meta_parts = []
-            if address:
-                city = address.split(",")[0].strip()
-                meta_parts.append(f"📍 {html.escape(city)}")
-            if rating:
-                meta_parts.append(f"⭐ {rating}")
-            if price_level:
-                dollar_map = {"INEXPENSIVE": "$", "MODERATE": "$$", "EXPENSIVE": "$$$", "VERY_EXPENSIVE": "$$$$"}
-                symbol = dollar_map.get(price_level, "")
-                if symbol:
-                    meta_parts.append(symbol)
-            meta_line = " · ".join(meta_parts)
-            card_text = (
-                f"<b>{html.escape(name)}</b>\n"
-                f"{meta_line}\n"
-                f"Shared by @{html.escape(sharer_name)}"
-            )
-
-            group_map_url = f"{config.WEBAPP_URL}?group_id={chat.id}" if config.WEBAPP_URL else None
-            keyboard_row = [InlineKeyboardButton("👍 0", callback_data=f"grp_vote_{place_id}")]
-            if group_map_url:
-                keyboard_row.append(InlineKeyboardButton("🗺️ View Group Map", url=group_map_url))
-
-            await update.message.reply_text(
-                card_text,
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([keyboard_row]),
-                disable_web_page_preview=True,
+                types=place.types if hasattr(place, "types") else place.get("types"),
+                rating=place.rating if hasattr(place, "rating") else place.get("rating"),
+                rating_count=place.rating_count if hasattr(place, "rating_count") else place.get("rating_count"),
+                price_level=place.price_level if hasattr(place, "price_level") else place.get("price_level"),
+                opening_hours=place.opening_hours if hasattr(place, "opening_hours") else place.get("opening_hours"),
             )
 
     task = asyncio.create_task(_run())
@@ -2328,6 +2449,74 @@ async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop(f'extraction_task_{task_id}', None)
 
 
+async def grp_cancel_name_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle cancel button on the 'What's it called?' prompt."""
+    query = update.callback_query
+    msg_id = int(query.data.replace("grp_cancel_name_", ""))
+    context.chat_data.get("pending_name_requests", {}).pop(msg_id, None)
+    try:
+        await query.edit_message_text("Cancelled.", reply_markup=None)
+    except Exception:
+        pass
+    await query.answer()
+
+
+async def visit_group_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle tap on '✅ I've been here' button for a group place."""
+    query = update.callback_query
+    ensure_bot_user(update)
+
+    place_id = int(query.data.replace("grp_visit_", ""))
+    user_id = update.effective_user.id
+    username = update.effective_user.username or update.effective_user.first_name or "someone"
+
+    result = repository.toggle_group_visit(place_id, user_id)
+    place = repository.get_group_place_by_id(place_id)
+
+    if result["visited"]:
+        await query.answer("Marked as visited! ✅")
+        place_name = place["name"] if place else "that place"
+        await query.message.reply_text(f"🎉 @{username} has been to {html.escape(place_name)}!")
+        # DM user with review button (WebApp allowed in DMs)
+        if config.WEBAPP_URL and place:
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"How was *{html.escape(place_name)}*? Leave a review!",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton(
+                            "⭐ Write Review →",
+                            web_app=WebAppInfo(url=f"{config.WEBAPP_URL}?startapp=review_{place_id}")
+                        )
+                    ]]),
+                )
+            except Exception:
+                pass  # User may not have started the bot in DM
+    else:
+        await query.answer("Visit removed")
+
+    # Rebuild full 2-row keyboard
+    vote_count = repository.get_place_vote_count(place_id)
+    visit_count = result["count"]
+    group_id = query.message.chat.id
+    group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}" if config.WEBAPP_URL else None
+    keyboard = _build_group_card_keyboard(
+        place_id=place_id,
+        source_url=place.get("source_url") if place else None,
+        google_place_id=place.get("google_place_id") if place else None,
+        lat=place.get("latitude") if place else None,
+        lng=place.get("longitude") if place else None,
+        vote_count=vote_count,
+        visit_count=visit_count,
+        group_map_url=group_map_url,
+    )
+    try:
+        await query.edit_message_reply_markup(reply_markup=keyboard)
+    except Exception:
+        pass
+
+
 async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle tap on 👍 vote button for a group place."""
     query = update.callback_query
@@ -2335,18 +2524,25 @@ async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAUL
 
     place_id = int(query.data.replace("grp_vote_", ""))
     result = repository.toggle_place_vote(place_id, update.effective_user.id)
-    count = result["count"]
+    vote_count = result["count"]
 
     await query.answer("👍 Nice!" if result["voted"] else "Vote removed")
 
+    place = repository.get_group_place_by_id(place_id)
+    visit_count = repository.get_group_visit_count(place_id)
     group_id = query.message.chat.id
     group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}" if config.WEBAPP_URL else None
-    vote_label = f"👍 {count}" if count > 0 else "👍"
-    new_row = [InlineKeyboardButton(vote_label, callback_data=f"grp_vote_{place_id}")]
-    if group_map_url:
-        new_row.append(InlineKeyboardButton("🗺️ View Group Map", url=group_map_url))
-
+    keyboard = _build_group_card_keyboard(
+        place_id=place_id,
+        source_url=place.get("source_url") if place else None,
+        google_place_id=place.get("google_place_id") if place else None,
+        lat=place.get("latitude") if place else None,
+        lng=place.get("longitude") if place else None,
+        vote_count=vote_count,
+        visit_count=visit_count,
+        group_map_url=group_map_url,
+    )
     try:
-        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([new_row]))
+        await query.edit_message_reply_markup(reply_markup=keyboard)
     except Exception:
         pass

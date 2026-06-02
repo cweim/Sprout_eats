@@ -183,27 +183,61 @@ def get_group_places(group_id: int, limit: Optional[int] = None, offset: int = 0
         for u in (users_result.data or []):
             user_map[u["id"]] = u
 
-    # Batch-fetch vote counts
+    # Batch-fetch votes (user_id per vote for names + count)
     place_ids = [p["id"] for p in places]
-    vote_map: Dict[int, int] = {}
+    vote_rows: List[Dict] = []
     if place_ids:
         votes_result = (
             supabase.table("place_votes")
+            .select("place_id, user_id")
+            .in_("place_id", place_ids)
+            .execute()
+        )
+        vote_rows = votes_result.data or []
+
+    # Collect all voter user_ids for name lookup
+    voter_user_ids = list({v["user_id"] for v in vote_rows} - set(user_ids))
+    if voter_user_ids:
+        voter_users_result = (
+            supabase.table("users")
+            .select("id, username, first_name")
+            .in_("id", voter_user_ids)
+            .execute()
+        )
+        for u in (voter_users_result.data or []):
+            user_map[u["id"]] = u
+
+    # Build per-place vote count + voter names
+    vote_count_map: Dict[int, int] = {}
+    vote_names_map: Dict[int, List[str]] = {}
+    for v in vote_rows:
+        pid = v["place_id"]
+        vote_count_map[pid] = vote_count_map.get(pid, 0) + 1
+        u = user_map.get(v["user_id"])
+        if u:
+            name = f"@{u['username']}" if u.get("username") else (u.get("first_name") or "")
+            vote_names_map.setdefault(pid, []).append(name)
+
+    # Batch-fetch visit counts
+    visit_count_map: Dict[int, int] = {}
+    if place_ids:
+        visits_result = (
+            supabase.table("group_place_visits")
             .select("place_id")
             .in_("place_id", place_ids)
             .execute()
         )
-        for v in (votes_result.data or []):
-            vote_map[v["place_id"]] = vote_map.get(v["place_id"], 0) + 1
+        for v in (visits_result.data or []):
+            visit_count_map[v["place_id"]] = visit_count_map.get(v["place_id"], 0) + 1
 
     for p in places:
         uid = p.get("saved_by_user_id")
         u = user_map.get(uid) if uid else None
-        if u:
-            p["saved_by_user"] = u
-        else:
-            p["saved_by_user"] = None
-        p["vote_count"] = vote_map.get(p["id"], 0)
+        p["saved_by_user"] = u
+        pid = p["id"]
+        p["vote_count"] = vote_count_map.get(pid, 0)
+        p["voters"] = vote_names_map.get(pid, [])
+        p["visit_count"] = visit_count_map.get(pid, 0)
 
     return places
 
@@ -257,6 +291,128 @@ def get_place_vote_count(place_id: int) -> int:
         .execute()
     )
     return result.count or 0
+
+
+def get_group_visit_count(place_id: int) -> int:
+    """Get visit count for a group place."""
+    supabase = get_supabase()
+    result = (
+        supabase.table("group_place_visits")
+        .select("id", count="exact")
+        .eq("place_id", place_id)
+        .execute()
+    )
+    return result.count or 0
+
+
+def get_group_place_by_id(place_id: int) -> Optional[Dict[str, Any]]:
+    """Get a group place by ID without user ownership check."""
+    supabase = get_supabase()
+    result = (
+        supabase.table("places")
+        .select("*")
+        .eq("id", place_id)
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def toggle_group_visit(place_id: int, user_id: int) -> Dict[str, Any]:
+    """Toggle a visit on a group place. Returns {visited: bool, count: int}."""
+    supabase = get_supabase()
+    existing = (
+        supabase.table("group_place_visits")
+        .select("id")
+        .eq("place_id", place_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if existing.data:
+        supabase.table("group_place_visits").delete().eq("id", existing.data[0]["id"]).execute()
+        visited = False
+    else:
+        supabase.table("group_place_visits").insert({"place_id": place_id, "user_id": user_id}).execute()
+        visited = True
+    count_result = (
+        supabase.table("group_place_visits")
+        .select("id", count="exact")
+        .eq("place_id", place_id)
+        .execute()
+    )
+    return {"visited": visited, "count": count_result.count or 0}
+
+
+def get_group_place_reviews(place_id: int) -> List[Dict[str, Any]]:
+    """Get all reviews for a group place from any user, with reviewer names."""
+    supabase = get_supabase()
+    result = (
+        supabase.table("reviews")
+        .select("*")
+        .eq("place_id", place_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    reviews = result.data or []
+    if not reviews:
+        return []
+
+    review_ids = [r["id"] for r in reviews]
+
+    # Batch-fetch dishes
+    dishes_result = (
+        supabase.table("review_dishes")
+        .select("*")
+        .in_("review_id", review_ids)
+        .order("id")
+        .execute()
+    )
+    dishes_by_review: Dict[int, List] = {}
+    for d in (dishes_result.data or []):
+        dishes_by_review.setdefault(d["review_id"], []).append(d)
+
+    # Batch-fetch photos
+    photos_result = (
+        supabase.table("review_photos")
+        .select("*")
+        .in_("review_id", review_ids)
+        .order("sort_order")
+        .execute()
+    )
+    photos_by_review: Dict[int, List] = {}
+    dish_photos: Dict[int, List] = {}
+    for ph in (photos_result.data or []):
+        photos_by_review.setdefault(ph["review_id"], []).append(ph)
+        if ph.get("dish_id"):
+            dish_photos.setdefault(ph["dish_id"], []).append(ph)
+
+    # Batch-fetch reviewer names
+    reviewer_ids = list({r["user_id"] for r in reviews})
+    reviewer_map: Dict[int, Dict] = {}
+    if reviewer_ids:
+        users_result = (
+            supabase.table("users")
+            .select("id, username, first_name")
+            .in_("id", reviewer_ids)
+            .execute()
+        )
+        for u in (users_result.data or []):
+            reviewer_map[u["id"]] = u
+
+    for review in reviews:
+        rid = review["id"]
+        dishes = dishes_by_review.get(rid, [])
+        for dish in dishes:
+            dish["photos"] = dish_photos.get(dish["id"], [])
+        review["dishes"] = dishes
+        review["photos"] = photos_by_review.get(rid, [])
+        u = reviewer_map.get(review["user_id"])
+        if u:
+            review["reviewer_name"] = f"@{u['username']}" if u.get("username") else (u.get("first_name") or "")
+        else:
+            review["reviewer_name"] = ""
+
+    return reviews
 
 
 def get_most_recent_place(user_id: int) -> Optional[Dict[str, Any]]:

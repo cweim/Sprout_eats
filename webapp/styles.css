@@ -593,6 +593,30 @@ body {
     margin-bottom: 4px;
 }
 
+.group-reviews-section {
+    margin-top: 8px;
+}
+
+.group-reviews-toggle {
+    cursor: pointer;
+    color: var(--button-color);
+    font-size: 0.8rem;
+    margin-top: 4px;
+    user-select: none;
+}
+
+.group-review-item {
+    padding: 6px 0;
+    border-top: 1px solid var(--secondary-bg);
+    font-size: 0.85rem;
+}
+
+.group-review-author {
+    font-size: 0.75rem;
+    color: var(--hint-color);
+    margin-top: 2px;
+}
+
 /* Notes section in card */
 .place-card-notes {
     margin-top: 8px;
