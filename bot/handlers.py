@@ -2179,7 +2179,7 @@ async def handle_group_welcome(update: Update, context: ContextTypes.DEFAULT_TYP
     keyboard = []
     if group_map_url:
         keyboard.append([
-            InlineKeyboardButton("🗺️ View Group Map", web_app=WebAppInfo(url=group_map_url))
+            InlineKeyboardButton("🗺️ View Group Map", url=group_map_url)
         ])
 
     await context.bot.send_message(
@@ -2346,7 +2346,7 @@ async def _post_group_place_card(
     ]
     if group_map_url:
         keyboard_row.append(
-            InlineKeyboardButton("🗺️ View Group Map", web_app=WebAppInfo(url=group_map_url))
+            InlineKeyboardButton("🗺️ View Group Map", url=group_map_url)
         )
 
     await update.message.reply_text(
@@ -2402,7 +2402,7 @@ async def save_to_group_map_callback(update: Update, context: ContextTypes.DEFAU
     new_row = [InlineKeyboardButton(saved_label, callback_data="grp_already_saved")]
     if group_map_url:
         new_row.append(
-            InlineKeyboardButton("🗺️ View Group Map", web_app=WebAppInfo(url=group_map_url))
+            InlineKeyboardButton("🗺️ View Group Map", url=group_map_url)
         )
 
     try:

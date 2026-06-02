@@ -133,7 +133,6 @@ async def get_group_places(
     group_id: int,
     page: int = 1,
     per_page: int = 100,
-    user: TelegramUser = Depends(get_current_user),
 ):
     """Get saved places for a Telegram group map."""
     total = repository.get_group_place_count(group_id)
