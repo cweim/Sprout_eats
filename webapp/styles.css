@@ -585,6 +585,14 @@ body {
     opacity: 1;
 }
 
+/* Group map attribution */
+.place-attribution {
+    font-size: 0.75rem;
+    color: var(--hint-color);
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+
 /* Notes section in card */
 .place-card-notes {
     margin-top: 8px;

@@ -1,6 +1,11 @@
 // Configuration
 const API_URL = ''; // Set to your API URL, e.g., 'http://localhost:8000'
 
+// Group map context — set when mini app is opened with ?group_id=<chat_id>
+const _urlParams = new URLSearchParams(window.location.search);
+const GROUP_ID = _urlParams.get('group_id') ? parseInt(_urlParams.get('group_id'), 10) : null;
+const IS_GROUP_MAP = !!GROUP_ID;
+
 // Escape user-controlled strings before injecting into innerHTML
 function escapeHtml(str) {
     return String(str ?? '')
@@ -193,6 +198,12 @@ function initTelegram() {
         console.log('User:', tg.initDataUnsafe.user);
         console.log('Theme:', tg.themeParams);
 
+        // Update header for group map context
+        if (IS_GROUP_MAP) {
+            const h1 = document.querySelector('.app-header h1');
+            if (h1) h1.textContent = '🗺️ Group Map';
+        }
+
         // Update CSS variables with Telegram theme
         document.documentElement.style.setProperty('--tg-viewport-height', `${tg.viewportHeight}px`);
 
@@ -231,7 +242,9 @@ function applyTheme() {
 // Fetch places from API with timeout and retry
 async function fetchPlaces(retries = 3) {
     const TIMEOUT_MS = 10000; // 10 second timeout
-    const url = `${API_URL}/api/places?page=1&per_page=${PLACES_PER_PAGE}`;
+    const url = IS_GROUP_MAP
+        ? `${API_URL}/api/groups/${GROUP_ID}/places?page=1&per_page=${PLACES_PER_PAGE}`
+        : `${API_URL}/api/places?page=1&per_page=${PLACES_PER_PAGE}`;
 
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
@@ -304,7 +317,10 @@ async function loadMorePlaces() {
 
     const nextPage = currentPlacesPage + 1;
     try {
-        const response = await fetch(`${API_URL}/api/places?page=${nextPage}&per_page=${PLACES_PER_PAGE}`, {
+        const endpoint = IS_GROUP_MAP
+            ? `${API_URL}/api/groups/${GROUP_ID}/places?page=${nextPage}&per_page=${PLACES_PER_PAGE}`
+            : `${API_URL}/api/places?page=${nextPage}&per_page=${PLACES_PER_PAGE}`;
+        const response = await fetch(endpoint, {
             headers: getAuthHeaders()
         });
         if (!response.ok) throw new Error('Failed to load more');
@@ -371,7 +387,12 @@ function clearSkeletonCards() {
 
 // Show empty state
 function showEmptyState() {
-    document.getElementById('empty-state').style.display = 'flex';
+    const emptyState = document.getElementById('empty-state');
+    if (IS_GROUP_MAP) {
+        const hint = emptyState.querySelector('p') || emptyState.querySelector('.hint');
+        if (hint) hint.textContent = 'Share a food video in the group and tap Save to Group Map.';
+    }
+    emptyState.style.display = 'flex';
     document.getElementById('map-view').classList.remove('active');
     document.getElementById('list-view').classList.remove('active');
 }
@@ -1202,13 +1223,15 @@ function createPlaceCard(place) {
     // Header with sprout icon, name, and more button
     let headerHtml = `<div class="place-card-header">`;
     headerHtml += `<span class="sprout-icon"><img src="${sproutImg}" alt="${place.is_visited ? 'Visited' : 'To visit'}"></span>`;
-    // Add review badge if exists
-    const review = getPlaceReview(place.id);
+    // Add review badge if exists (personal map only)
+    const review = IS_GROUP_MAP ? null : getPlaceReview(place.id);
     const reviewBadge = review
         ? `<span class="place-review-badge">✍️ ${'⭐'.repeat(review.overall_rating)}</span>`
         : '';
     headerHtml += `<span class="place-card-name">${escapeHtml(place.name)} ${reviewBadge}</span>`;
-    headerHtml += `<button class="more-btn" onclick="event.stopPropagation(); openPlaceMenu(${place.id}, '${place.name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" aria-label="More options">···</button>`;
+    if (!IS_GROUP_MAP) {
+        headerHtml += `<button class="more-btn" onclick="event.stopPropagation(); openPlaceMenu(${place.id}, '${place.name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" aria-label="More options">···</button>`;
+    }
     headerHtml += `</div>`;
 
     // Address
@@ -1229,35 +1252,49 @@ function createPlaceCard(place) {
     }
     metaHtml += '</div>';
 
-    // Distance + visited toggle row (same line)
-    const visitedClass = place.is_visited ? ' active' : '';
-    const visitedText = place.is_visited ? '✓ Visited' : 'Mark as visited';
-    const visitedToggleBtn = `<button class="visited-toggle-btn card-visited-toggle${visitedClass}" onclick="event.stopPropagation(); toggleVisitedFromCard(${place.id})" aria-label="${place.is_visited ? 'Mark as unvisited' : 'Mark as visited'}">${visitedText}</button>`;
+    // Attribution (group map only)
+    const attributionHtml = IS_GROUP_MAP && place.saved_by
+        ? `<div class="place-attribution">Added by ${escapeHtml(place.saved_by)}</div>`
+        : '';
+
+    // Distance + visited toggle row (personal map only)
     const distance = getPlaceDistance(place);
     const distanceText = distance !== null ? `<span class="place-card-distance">📍 ${formatDistance(distance)} away</span>` : '';
-    const distanceHtml = `<div class="place-card-distance-row">${distanceText}${visitedToggleBtn}</div>`;
+    let distanceHtml = '';
+    if (!IS_GROUP_MAP) {
+        const visitedClass = place.is_visited ? ' active' : '';
+        const visitedText = place.is_visited ? '✓ Visited' : 'Mark as visited';
+        const visitedToggleBtn = `<button class="visited-toggle-btn card-visited-toggle${visitedClass}" onclick="event.stopPropagation(); toggleVisitedFromCard(${place.id})" aria-label="${place.is_visited ? 'Mark as unvisited' : 'Mark as visited'}">${visitedText}</button>`;
+        distanceHtml = `<div class="place-card-distance-row">${distanceText}${visitedToggleBtn}</div>`;
+    } else if (distanceText) {
+        distanceHtml = `<div class="place-card-distance-row">${distanceText}</div>`;
+    }
 
-    // Notes section - inline editable
+    // Notes section - inline editable (personal map only)
     let notesHtml = '';
-    if (place.notes) {
-        notesHtml = `<div class="place-card-notes has-notes" onclick="event.stopPropagation(); startInlineNoteEdit(${place.id}, this)">
-            <span class="notes-text">${escapeHtml(place.notes)}</span>
-        </div>`;
-    } else {
-        notesHtml = `<div class="place-card-notes empty" onclick="event.stopPropagation(); startInlineNoteEdit(${place.id}, this)">
-            <span class="notes-icon">✏️</span>
-            <span class="notes-placeholder">Add notes...</span>
-        </div>`;
+    if (!IS_GROUP_MAP) {
+        if (place.notes) {
+            notesHtml = `<div class="place-card-notes has-notes" onclick="event.stopPropagation(); startInlineNoteEdit(${place.id}, this)">
+                <span class="notes-text">${escapeHtml(place.notes)}</span>
+            </div>`;
+        } else {
+            notesHtml = `<div class="place-card-notes empty" onclick="event.stopPropagation(); startInlineNoteEdit(${place.id}, this)">
+                <span class="notes-icon">✏️</span>
+                <span class="notes-placeholder">Add notes...</span>
+            </div>`;
+        }
     }
 
     // Action buttons (Review, Maps, Reel - delete moved to menu)
     let actionsHtml = '<div class="place-card-actions">';
 
-    // Review button (disabled if not visited)
-    if (place.is_visited) {
-        actionsHtml += `<button class="card-action-btn review-btn" onclick="event.stopPropagation(); openReviewSheet(${place.id})" aria-label="Write review">⭐ Review</button>`;
-    } else {
-        actionsHtml += `<button class="card-action-btn review-btn disabled" onclick="event.stopPropagation(); showVisitFirstNudge()" aria-label="Mark as visited first to review">⭐ Review</button>`;
+    // Review button (personal map only)
+    if (!IS_GROUP_MAP) {
+        if (place.is_visited) {
+            actionsHtml += `<button class="card-action-btn review-btn" onclick="event.stopPropagation(); openReviewSheet(${place.id})" aria-label="Write review">⭐ Review</button>`;
+        } else {
+            actionsHtml += `<button class="card-action-btn review-btn disabled" onclick="event.stopPropagation(); showVisitFirstNudge()" aria-label="Mark as visited first to review">⭐ Review</button>`;
+        }
     }
 
     // Google Maps link
@@ -1280,7 +1317,7 @@ function createPlaceCard(place) {
 
     actionsHtml += '</div>';
 
-    card.innerHTML = headerHtml + addressHtml + metaHtml + distanceHtml + notesHtml + actionsHtml;
+    card.innerHTML = headerHtml + addressHtml + attributionHtml + metaHtml + distanceHtml + notesHtml + actionsHtml;
 
     // Click handler - show on map
     card.addEventListener('click', (e) => {

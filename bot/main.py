@@ -7,6 +7,7 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
+    ChatMemberHandler,
     ContextTypes,
     filters,
 )
@@ -39,6 +40,10 @@ from bot.handlers import (
     handle_dismiss,
     handle_review_callback,
     feedback_conversation_handler,
+    handle_group_welcome,
+    handle_group_url,
+    save_to_group_map_callback,
+    grp_already_saved_callback,
 )
 
 # Configure logging
@@ -228,6 +233,12 @@ def main():
     # Feedback conversation handler must be before generic message handlers
     app.add_handler(feedback_conversation_handler)
 
+    # Group map handlers
+    app.add_handler(ChatMemberHandler(handle_group_welcome, ChatMemberHandler.MY_CHAT_MEMBER))
+    app.add_handler(CallbackQueryHandler(save_to_group_map_callback, pattern=r"^grp_save_"))
+    app.add_handler(CallbackQueryHandler(grp_already_saved_callback, pattern=r"^grp_already_saved$"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS, handle_group_url))
+
     # Handle text messages (URLs and place name responses)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
@@ -236,7 +247,7 @@ def main():
     app.add_error_handler(handle_bot_error)
 
     logger.info("🗺️ Discovery Bot is ready!")
-    app.run_polling(allowed_updates=["message", "callback_query"])
+    app.run_polling(allowed_updates=["message", "callback_query", "my_chat_member"])
 
 
 if __name__ == "__main__":

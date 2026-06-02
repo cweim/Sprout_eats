@@ -72,21 +72,25 @@ def add_place(
     source_language: Optional[str] = None,
     source_transcript: Optional[str] = None,
     source_transcript_en: Optional[str] = None,
+    group_id: Optional[int] = None,
+    saved_by_user_id: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Add a new place for a user."""
+    """Add a new place for a user or group."""
     supabase = get_supabase()
 
-    # Check for duplicate by google_place_id for this user (ignore soft-deleted rows so
-    # a user can re-save a place they previously deleted).
+    # Deduplicate by google_place_id scoped to the correct map (personal or group).
     if google_place_id:
-        existing = (
+        query = (
             supabase.table("places")
             .select("*")
-            .eq("user_id", user_id)
             .eq("google_place_id", google_place_id)
             .is_("deleted_at", "null")
-            .execute()
         )
+        if group_id is not None:
+            query = query.eq("group_id", group_id)
+        else:
+            query = query.eq("user_id", user_id).is_("group_id", "null")
+        existing = query.execute()
         if existing.data:
             return existing.data[0]
 
@@ -111,6 +115,8 @@ def add_place(
         "source_language": source_language,
         "source_transcript": source_transcript,
         "source_transcript_en": source_transcript_en,
+        "group_id": group_id,
+        "saved_by_user_id": saved_by_user_id,
     }).execute()
 
     return result.data[0] if result.data else None
@@ -146,6 +152,35 @@ def get_place_count(user_id: int) -> int:
         .execute()
     )
 
+    return result.count or 0
+
+
+def get_group_places(group_id: int, limit: Optional[int] = None, offset: int = 0) -> List[Dict[str, Any]]:
+    """Get all active places for a group, ordered newest first."""
+    supabase = get_supabase()
+    query = (
+        supabase.table("places")
+        .select("*, saved_by_user:saved_by_user_id(id, username, first_name)")
+        .eq("group_id", group_id)
+        .is_("deleted_at", "null")
+        .order("created_at", desc=True)
+    )
+    if limit is not None:
+        query = query.range(offset, offset + limit - 1)
+    result = query.execute()
+    return result.data or []
+
+
+def get_group_place_count(group_id: int) -> int:
+    """Get count of active places for a group."""
+    supabase = get_supabase()
+    result = (
+        supabase.table("places")
+        .select("id", count="exact")
+        .eq("group_id", group_id)
+        .is_("deleted_at", "null")
+        .execute()
+    )
     return result.count or 0
 
 

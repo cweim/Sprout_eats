@@ -113,6 +113,42 @@ async def get_places(
     }
 
 
+def group_place_to_dict(place: dict) -> dict:
+    """Convert group place dict for JSON response, including attribution."""
+    base = place_to_dict(place)
+    saved_by = place.get("saved_by_user") or {}
+    if isinstance(saved_by, dict):
+        uname = saved_by.get("username")
+        fname = saved_by.get("first_name")
+        base["saved_by"] = f"@{uname}" if uname else (fname or "")
+    else:
+        base["saved_by"] = ""
+    return base
+
+
+@router.get("/groups/{group_id}/places")
+@limiter.limit("120/minute")
+async def get_group_places(
+    request: Request,
+    group_id: int,
+    page: int = 1,
+    per_page: int = 100,
+    user: TelegramUser = Depends(get_current_user),
+):
+    """Get saved places for a Telegram group map."""
+    total = repository.get_group_place_count(group_id)
+    offset = (page - 1) * per_page
+    places = repository.get_group_places(group_id, limit=per_page, offset=offset)
+    return {
+        "places": [group_place_to_dict(p) for p in places],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "has_more": (offset + len(places)) < total,
+        "group_id": group_id,
+    }
+
+
 @router.get("/places/nearby")
 async def get_nearby_places(
     lat: float,
