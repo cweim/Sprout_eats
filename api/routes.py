@@ -490,7 +490,7 @@ async def create_or_update_review(
     user: TelegramUser = Depends(get_current_user)
 ):
     """Create or update review for a place."""
-    place = repository.get_place_by_id(user.id, place_id)
+    place = repository.get_place_by_id(user.id, place_id) or repository.get_group_place_by_id(place_id)
     if not place:
         raise HTTPException(status_code=404, detail="Place not found")
 

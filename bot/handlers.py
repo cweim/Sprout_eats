@@ -300,6 +300,28 @@ def ensure_bot_user(update: Update):
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Handle group review deep link
+    if context.args and context.args[0].startswith("grpreview_"):
+        try:
+            place_id = int(context.args[0].replace("grpreview_", ""))
+        except ValueError:
+            return
+        ensure_bot_user(update)
+        place = repository.get_group_place_by_id(place_id)
+        if place and config.WEBAPP_URL:
+            place_name = place.get("name", "")
+            review_url = f"{config.WEBAPP_URL}?startapp=review_{place_id}&pn={quote(place_name)}"
+            await update.message.reply_text(
+                f"How was <b>{html.escape(place_name)}</b>? Leave a review 👇",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("⭐ Write Review", web_app=WebAppInfo(url=review_url))
+                ]]),
+            )
+        else:
+            await update.message.reply_text("Couldn't find that place.")
+        return
+
     user_id = update.effective_user.id
     ensure_bot_user(update)
 
@@ -2290,7 +2312,11 @@ async def _save_and_post_group_place(
         f"Shared by @{html.escape(sharer_name)}"
     )
 
-    group_map_url = f"{config.WEBAPP_URL}?group_id={chat.id}" if config.WEBAPP_URL else None
+    group_map_url = None
+    if config.WEBAPP_URL:
+        group_map_url = f"{config.WEBAPP_URL}?group_id={chat.id}"
+        if config.TELEGRAM_BOT_USERNAME:
+            group_map_url += f"&bot={config.TELEGRAM_BOT_USERNAME}"
     keyboard = _build_group_card_keyboard(
         place_id=place_id,
         place_name=name,
@@ -2472,7 +2498,11 @@ async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAUL
 
     place = repository.get_group_place_by_id(place_id)
     group_id = query.message.chat.id
-    group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}" if config.WEBAPP_URL else None
+    group_map_url = None
+    if config.WEBAPP_URL:
+        group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}"
+        if config.TELEGRAM_BOT_USERNAME:
+            group_map_url += f"&bot={config.TELEGRAM_BOT_USERNAME}"
     keyboard = _build_group_card_keyboard(
         place_id=place_id,
         place_name=place.get("name", "") if place else "",

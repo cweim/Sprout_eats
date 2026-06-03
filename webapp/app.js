@@ -4,6 +4,7 @@ const API_URL = ''; // Set to your API URL, e.g., 'http://localhost:8000'
 // Group map context — set when mini app is opened with ?group_id=<chat_id>
 const _urlParams = new URLSearchParams(window.location.search);
 const GROUP_ID = _urlParams.get('group_id') ? parseInt(_urlParams.get('group_id'), 10) : null;
+const BOT_USERNAME = _urlParams.get('bot') || '';
 const IS_GROUP_MAP = !!GROUP_ID;
 
 // Escape user-controlled strings before injecting into innerHTML
@@ -1363,6 +1364,11 @@ async function toggleGroupVisitedFromCard(placeId, btn) {
         // Update local cache
         const place = places.find(p => p.id === placeId);
         if (place) place.is_visited = isVisited;
+        // After marking visited, nudge for review
+        if (isVisited && BOT_USERNAME) {
+            const placeName = place ? place.name : '';
+            showToast(`✅ Marked! <a href="https://t.me/${BOT_USERNAME}?start=grpreview_${placeId}" target="_blank" style="color:var(--button-color)">Write a review →</a>`, 5000);
+        }
     } catch (e) {
         // silently fail
     }
@@ -1388,8 +1394,11 @@ async function toggleGroupReviews(toggleEl, placeId) {
             const res = await fetch(`/api/groups/${GROUP_ID}/places/${placeId}/reviews`);
             const data = await res.json();
             const reviews = data.reviews || [];
+            const writeLink = BOT_USERNAME
+                ? `<a href="https://t.me/${BOT_USERNAME}?start=grpreview_${placeId}" target="_blank" class="group-reviews-write-link">✏️ Write a review →</a>`
+                : '';
             if (reviews.length === 0) {
-                listEl.innerHTML = '<div class="group-review-item" style="color:var(--hint-color)">No reviews yet.</div>';
+                listEl.innerHTML = `<div class="group-review-item" style="color:var(--hint-color)">No reviews yet.</div>${writeLink}`;
             } else {
                 listEl.innerHTML = reviews.map(r => {
                     const stars = '⭐'.repeat(Math.round(r.overall_rating || 0));
@@ -1399,7 +1408,7 @@ async function toggleGroupReviews(toggleEl, placeId) {
                         <span>${stars} ${remark}</span>
                         <div class="group-review-author">${author}</div>
                     </div>`;
-                }).join('');
+                }).join('') + writeLink;
             }
             section.dataset.loaded = 'true';
         } catch (e) {
@@ -3460,7 +3469,9 @@ async function flushPendingReviewPhotos(reviewId) {
 async function openReviewSheet(placeId) {
     resetPendingReviewPhotos();
     currentReviewPlaceId = placeId;
-    const place = places.find(p => p.id === placeId);
+    const pnParam = new URLSearchParams(window.location.search).get('pn');
+    const place = places.find(p => p.id === placeId)
+        || (pnParam ? { id: placeId, name: decodeURIComponent(pnParam) } : null);
     if (!place) return;
 
     document.getElementById('review-sheet-title').textContent = 'Review';
