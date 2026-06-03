@@ -44,7 +44,6 @@ from bot.handlers import (
     handle_group_url,
     vote_group_place_callback,
     grp_cancel_name_callback,
-    visit_group_place_callback,
 )
 
 # Configure logging
@@ -237,7 +236,6 @@ def main():
     # Group map handlers
     app.add_handler(ChatMemberHandler(handle_group_welcome, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(CallbackQueryHandler(grp_cancel_name_callback, pattern=r"^grp_cancel_name_"))
-    app.add_handler(CallbackQueryHandler(visit_group_place_callback, pattern=r"^grp_visit_"))
     app.add_handler(CallbackQueryHandler(vote_group_place_callback, pattern=r"^grp_vote_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS, handle_group_url))
 

@@ -218,17 +218,39 @@ def get_group_places(group_id: int, limit: Optional[int] = None, offset: int = 0
             name = f"@{u['username']}" if u.get("username") else (u.get("first_name") or "")
             vote_names_map.setdefault(pid, []).append(name)
 
-    # Batch-fetch visit counts
-    visit_count_map: Dict[int, int] = {}
+    # Batch-fetch visits (user_id per visit for names + count)
+    visit_rows: List[Dict] = []
     if place_ids:
         visits_result = (
             supabase.table("group_place_visits")
-            .select("place_id")
+            .select("place_id, user_id")
             .in_("place_id", place_ids)
             .execute()
         )
-        for v in (visits_result.data or []):
-            visit_count_map[v["place_id"]] = visit_count_map.get(v["place_id"], 0) + 1
+        visit_rows = visits_result.data or []
+
+    # Collect visitor user_ids not yet in user_map
+    visitor_user_ids = list({v["user_id"] for v in visit_rows} - set(user_map.keys()))
+    if visitor_user_ids:
+        visitor_users_result = (
+            supabase.table("users")
+            .select("id, username, first_name")
+            .in_("id", visitor_user_ids)
+            .execute()
+        )
+        for u in (visitor_users_result.data or []):
+            user_map[u["id"]] = u
+
+    # Build per-place visit count + visitor names
+    visit_count_map: Dict[int, int] = {}
+    visit_names_map: Dict[int, List[str]] = {}
+    for v in visit_rows:
+        pid = v["place_id"]
+        visit_count_map[pid] = visit_count_map.get(pid, 0) + 1
+        u = user_map.get(v["user_id"])
+        if u:
+            name = f"@{u['username']}" if u.get("username") else (u.get("first_name") or "")
+            visit_names_map.setdefault(pid, []).append(name)
 
     for p in places:
         uid = p.get("saved_by_user_id")
@@ -238,6 +260,7 @@ def get_group_places(group_id: int, limit: Optional[int] = None, offset: int = 0
         p["vote_count"] = vote_count_map.get(pid, 0)
         p["voters"] = vote_names_map.get(pid, [])
         p["visit_count"] = visit_count_map.get(pid, 0)
+        p["visited_by"] = visit_names_map.get(pid, [])
 
     return places
 

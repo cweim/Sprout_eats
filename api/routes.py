@@ -127,10 +127,10 @@ def group_place_to_dict(place: dict) -> dict:
         base["saved_by"] = ""
     # voters: list of display names (capped at 3 with "+N more")
     voters_raw = place.get("voters", [])
-    if len(voters_raw) <= 3:
-        base["voters"] = voters_raw
-    else:
-        base["voters"] = voters_raw[:3] + [f"+{len(voters_raw) - 3} more"]
+    base["voters"] = voters_raw[:3] + ([f"+{len(voters_raw) - 3} more"] if len(voters_raw) > 3 else [])
+    # visited_by: who marked this place as visited
+    visited_by_raw = place.get("visited_by", [])
+    base["visited_by"] = visited_by_raw[:3] + ([f"+{len(visited_by_raw) - 3} more"] if len(visited_by_raw) > 3 else [])
     return base
 
 

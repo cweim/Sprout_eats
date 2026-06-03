@@ -299,7 +299,46 @@ def ensure_bot_user(update: Update):
     )
 
 
+async def _handle_grpvisit_deeplink(update: Update, context: ContextTypes.DEFAULT_TYPE, arg: str):
+    """Handle /start grpvisit_{place_id} deep link — toggle group visit with attribution."""
+    try:
+        place_id = int(arg.replace("grpvisit_", ""))
+    except ValueError:
+        return
+
+    ensure_bot_user(update)
+    user_id = update.effective_user.id
+    username = update.effective_user.username or update.effective_user.first_name or "someone"
+
+    place = repository.get_group_place_by_id(place_id)
+    if not place or not place.get("group_id"):
+        await update.message.reply_text("Couldn't find that place.")
+        return
+
+    group_id = place["group_id"]
+    place_name = place["name"]
+
+    result = repository.toggle_group_visit(place_id, user_id)
+    if result["visited"]:
+        await update.message.reply_text(f"✅ Marked as visited! The group will be notified.")
+        try:
+            await context.bot.send_message(
+                chat_id=group_id,
+                text=f"🎉 @{html.escape(username)} has been to <b>{html.escape(place_name)}</b>!",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+    else:
+        await update.message.reply_text(f"Visit removed for {html.escape(place_name)}.")
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Handle deep link for group visit
+    if context.args and context.args[0].startswith("grpvisit_"):
+        await _handle_grpvisit_deeplink(update, context, context.args[0])
+        return
+
     user_id = update.effective_user.id
     ensure_bot_user(update)
 
@@ -2202,7 +2241,6 @@ def _build_group_card_keyboard(
     lat,
     lng,
     vote_count: int,
-    visit_count: int,
     group_map_url: str,
 ) -> InlineKeyboardMarkup:
     """Build the 2-row inline keyboard for a group place card."""
@@ -2218,10 +2256,8 @@ def _build_group_card_keyboard(
         row2.append(InlineKeyboardButton("📍 Maps", url=maps_url))
     if source_url:
         row2.append(InlineKeyboardButton("▶️ Reel", url=source_url))
-    visit_label = f"✅ {visit_count} visited" if visit_count > 0 else "✅ I've been here"
-    row2.append(InlineKeyboardButton(visit_label, callback_data=f"grp_visit_{place_id}"))
 
-    rows = [row1, row2]
+    rows = [row1] + ([row2] if row2 else [])
     return InlineKeyboardMarkup(rows)
 
 
@@ -2293,7 +2329,11 @@ async def _save_and_post_group_place(
         f"Shared by @{html.escape(sharer_name)}"
     )
 
-    group_map_url = f"{config.WEBAPP_URL}?group_id={chat.id}" if config.WEBAPP_URL else None
+    group_map_url = None
+    if config.WEBAPP_URL:
+        group_map_url = f"{config.WEBAPP_URL}?group_id={chat.id}"
+        if config.TELEGRAM_BOT_USERNAME:
+            group_map_url += f"&bot={config.TELEGRAM_BOT_USERNAME}"
     keyboard = _build_group_card_keyboard(
         place_id=place_id,
         place_name=name,
@@ -2302,7 +2342,6 @@ async def _save_and_post_group_place(
         lat=lat,
         lng=lng,
         vote_count=0,
-        visit_count=0,
         group_map_url=group_map_url,
     )
     await update.message.reply_text(
@@ -2463,69 +2502,6 @@ async def grp_cancel_name_callback(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
 
 
-async def visit_group_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle tap on '✅ I've been here' button for a group place."""
-    query = update.callback_query
-    try:
-        ensure_bot_user(update)
-
-        place_id = int(query.data.replace("grp_visit_", ""))
-        user_id = update.effective_user.id
-        username = update.effective_user.username or update.effective_user.first_name or "someone"
-
-        result = repository.toggle_group_visit(place_id, user_id)
-        place = repository.get_group_place_by_id(place_id)
-        place_name = place["name"] if place else "that place"
-
-        if result["visited"]:
-            await query.answer("Marked as visited! ✅")
-            await query.message.reply_text(f"🎉 @{username} has been to {html.escape(place_name)}!")
-            # DM user with review button (WebApp allowed in DMs)
-            if config.WEBAPP_URL and place:
-                try:
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text=f"How was {place_name}? Leave a review!",
-                        reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton(
-                                "⭐ Write Review →",
-                                web_app=WebAppInfo(url=f"{config.WEBAPP_URL}?startapp=review_{place_id}")
-                            )
-                        ]]),
-                    )
-                except Exception:
-                    pass  # User may not have started the bot in DM
-        else:
-            await query.answer("Visit removed")
-
-        # Rebuild full 2-row keyboard
-        vote_count = repository.get_place_vote_count(place_id)
-        visit_count = result["count"]
-        group_id = query.message.chat.id
-        group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}" if config.WEBAPP_URL else None
-        keyboard = _build_group_card_keyboard(
-            place_id=place_id,
-            place_name=place_name,
-            source_url=place.get("source_url") if place else None,
-            google_place_id=place.get("google_place_id") if place else None,
-            lat=place.get("latitude") if place else None,
-            lng=place.get("longitude") if place else None,
-            vote_count=vote_count,
-            visit_count=visit_count,
-            group_map_url=group_map_url,
-        )
-        try:
-            await query.edit_message_reply_markup(reply_markup=keyboard)
-        except Exception:
-            pass
-    except Exception as e:
-        logger.exception("visit_group_place_callback error: %s", e)
-        try:
-            await query.answer("Something went wrong, try again.")
-        except Exception:
-            pass
-
-
 async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle tap on 👍 vote button for a group place."""
     query = update.callback_query
@@ -2538,9 +2514,12 @@ async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAUL
     await query.answer("👍 Nice!" if result["voted"] else "Vote removed")
 
     place = repository.get_group_place_by_id(place_id)
-    visit_count = repository.get_group_visit_count(place_id)
     group_id = query.message.chat.id
-    group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}" if config.WEBAPP_URL else None
+    group_map_url = None
+    if config.WEBAPP_URL:
+        group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}"
+        if config.TELEGRAM_BOT_USERNAME:
+            group_map_url += f"&bot={config.TELEGRAM_BOT_USERNAME}"
     keyboard = _build_group_card_keyboard(
         place_id=place_id,
         place_name=place.get("name", "") if place else "",
@@ -2549,7 +2528,6 @@ async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAUL
         lat=place.get("latitude") if place else None,
         lng=place.get("longitude") if place else None,
         vote_count=vote_count,
-        visit_count=visit_count,
         group_map_url=group_map_url,
     )
     try:
