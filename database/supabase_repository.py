@@ -328,6 +328,18 @@ def get_group_visit_count(place_id: int) -> int:
     return result.count or 0
 
 
+def toggle_group_place_visited(place_id: int) -> Dict[str, Any]:
+    """Toggle is_visited on a group place (no user auth). Returns {is_visited: bool}."""
+    supabase = get_supabase()
+    result = supabase.table("places").select("is_visited").eq("id", place_id).execute()
+    if not result.data:
+        return {"is_visited": False}
+    current = result.data[0].get("is_visited") or False
+    new_state = not current
+    supabase.table("places").update({"is_visited": new_state}).eq("id", place_id).execute()
+    return {"is_visited": new_state}
+
+
 def get_group_place_by_id(place_id: int) -> Optional[Dict[str, Any]]:
     """Get a group place by ID without user ownership check."""
     supabase = get_supabase()

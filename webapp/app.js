@@ -4,7 +4,6 @@ const API_URL = ''; // Set to your API URL, e.g., 'http://localhost:8000'
 // Group map context — set when mini app is opened with ?group_id=<chat_id>
 const _urlParams = new URLSearchParams(window.location.search);
 const GROUP_ID = _urlParams.get('group_id') ? parseInt(_urlParams.get('group_id'), 10) : null;
-const BOT_USERNAME = _urlParams.get('bot') || '';
 const IS_GROUP_MAP = !!GROUP_ID;
 
 // Escape user-controlled strings before injecting into innerHTML
@@ -1261,15 +1260,11 @@ function createPlaceCard(place) {
         const votes = place.vote_count > 0
             ? `👍 ${place.vote_count}${voterNames ? ` (${escapeHtml(voterNames)})` : ''}`
             : '';
-        const visitedBy = (place.visited_by || []);
-        const visits = visitedBy.length > 0
-            ? `✅ Visited by ${escapeHtml(visitedBy.join(', '))}`
-            : '';
-        const parts = [byLine, votes, visits].filter(Boolean).join(' · ');
+        const parts = [byLine, votes].filter(Boolean).join(' · ');
         if (parts) attributionHtml = `<div class="place-attribution">${parts}</div>`;
     }
 
-    // Distance + visited toggle row (personal map only)
+    // Distance + visited toggle row
     const distance = getPlaceDistance(place);
     const distanceText = distance !== null ? `<span class="place-card-distance">📍 ${formatDistance(distance)} away</span>` : '';
     let distanceHtml = '';
@@ -1279,14 +1274,11 @@ function createPlaceCard(place) {
         const visitedToggleBtn = `<button class="visited-toggle-btn card-visited-toggle${visitedClass}" onclick="event.stopPropagation(); toggleVisitedFromCard(${place.id})" aria-label="${place.is_visited ? 'Mark as unvisited' : 'Mark as visited'}">${visitedText}</button>`;
         distanceHtml = `<div class="place-card-distance-row">${distanceText}${visitedToggleBtn}</div>`;
     } else {
-        // Group map — show "Mark as visited" deep-link button only if not yet visited
-        const alreadyVisited = (place.visited_by || []).length > 0;
-        const visitBtn = BOT_USERNAME && !alreadyVisited
-            ? `<a href="https://t.me/${BOT_USERNAME}?start=grpvisit_${place.id}" class="visited-toggle-btn card-visited-toggle" onclick="event.stopPropagation()" target="_blank">✅ Mark as visited</a>`
-            : '';
-        if (distanceText || visitBtn) {
-            distanceHtml = `<div class="place-card-distance-row">${distanceText}${visitBtn}</div>`;
-        }
+        // Group map — same visited toggle, calls group API
+        const visitedClass = place.is_visited ? ' active' : '';
+        const visitedText = place.is_visited ? '✓ Visited' : 'Mark as visited';
+        const visitedToggleBtn = `<button class="visited-toggle-btn card-visited-toggle${visitedClass}" onclick="event.stopPropagation(); toggleGroupVisitedFromCard(${place.id}, this)" aria-label="${place.is_visited ? 'Mark as unvisited' : 'Mark as visited'}">${visitedText}</button>`;
+        distanceHtml = `<div class="place-card-distance-row">${distanceText}${visitedToggleBtn}</div>`;
     }
 
     // Notes section - inline editable (personal map only)
@@ -1360,6 +1352,23 @@ function createPlaceCard(place) {
 }
 
 // Share a place via native share sheet or Telegram share URL
+async function toggleGroupVisitedFromCard(placeId, btn) {
+    try {
+        const res = await fetch(`${API_URL}/api/groups/${GROUP_ID}/places/${placeId}/visited`, { method: 'PATCH' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const isVisited = data.is_visited;
+        btn.classList.toggle('active', isVisited);
+        btn.textContent = isVisited ? '✓ Visited' : 'Mark as visited';
+        // Update local cache
+        const place = places.find(p => p.id === placeId);
+        if (place) place.is_visited = isVisited;
+    } catch (e) {
+        // silently fail
+    }
+}
+
+
 async function toggleGroupReviews(toggleEl, placeId) {
     const section = toggleEl.closest('.group-reviews-section');
     const listEl = section.querySelector('.group-reviews-list');

@@ -299,46 +299,7 @@ def ensure_bot_user(update: Update):
     )
 
 
-async def _handle_grpvisit_deeplink(update: Update, context: ContextTypes.DEFAULT_TYPE, arg: str):
-    """Handle /start grpvisit_{place_id} deep link — toggle group visit with attribution."""
-    try:
-        place_id = int(arg.replace("grpvisit_", ""))
-    except ValueError:
-        return
-
-    ensure_bot_user(update)
-    user_id = update.effective_user.id
-    username = update.effective_user.username or update.effective_user.first_name or "someone"
-
-    place = repository.get_group_place_by_id(place_id)
-    if not place or not place.get("group_id"):
-        await update.message.reply_text("Couldn't find that place.")
-        return
-
-    group_id = place["group_id"]
-    place_name = place["name"]
-
-    result = repository.toggle_group_visit(place_id, user_id)
-    if result["visited"]:
-        await update.message.reply_text(f"✅ Marked as visited! The group will be notified.")
-        try:
-            await context.bot.send_message(
-                chat_id=group_id,
-                text=f"🎉 @{html.escape(username)} has been to <b>{html.escape(place_name)}</b>!",
-                parse_mode="HTML",
-            )
-        except Exception:
-            pass
-    else:
-        await update.message.reply_text(f"Visit removed for {html.escape(place_name)}.")
-
-
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Handle deep link for group visit
-    if context.args and context.args[0].startswith("grpvisit_"):
-        await _handle_grpvisit_deeplink(update, context, context.args[0])
-        return
-
     user_id = update.effective_user.id
     ensure_bot_user(update)
 
@@ -2329,11 +2290,7 @@ async def _save_and_post_group_place(
         f"Shared by @{html.escape(sharer_name)}"
     )
 
-    group_map_url = None
-    if config.WEBAPP_URL:
-        group_map_url = f"{config.WEBAPP_URL}?group_id={chat.id}"
-        if config.TELEGRAM_BOT_USERNAME:
-            group_map_url += f"&bot={config.TELEGRAM_BOT_USERNAME}"
+    group_map_url = f"{config.WEBAPP_URL}?group_id={chat.id}" if config.WEBAPP_URL else None
     keyboard = _build_group_card_keyboard(
         place_id=place_id,
         place_name=name,
@@ -2515,11 +2472,7 @@ async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAUL
 
     place = repository.get_group_place_by_id(place_id)
     group_id = query.message.chat.id
-    group_map_url = None
-    if config.WEBAPP_URL:
-        group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}"
-        if config.TELEGRAM_BOT_USERNAME:
-            group_map_url += f"&bot={config.TELEGRAM_BOT_USERNAME}"
+    group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}" if config.WEBAPP_URL else None
     keyboard = _build_group_card_keyboard(
         place_id=place_id,
         place_name=place.get("name", "") if place else "",

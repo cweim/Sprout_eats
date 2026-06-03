@@ -128,9 +128,6 @@ def group_place_to_dict(place: dict) -> dict:
     # voters: list of display names (capped at 3 with "+N more")
     voters_raw = place.get("voters", [])
     base["voters"] = voters_raw[:3] + ([f"+{len(voters_raw) - 3} more"] if len(voters_raw) > 3 else [])
-    # visited_by: who marked this place as visited
-    visited_by_raw = place.get("visited_by", [])
-    base["visited_by"] = visited_by_raw[:3] + ([f"+{len(visited_by_raw) - 3} more"] if len(visited_by_raw) > 3 else [])
     return base
 
 
@@ -162,6 +159,14 @@ async def get_group_place_reviews(request: Request, group_id: int, place_id: int
     """Get all reviews for a group place."""
     reviews = repository.get_group_place_reviews(place_id)
     return {"reviews": reviews, "total": len(reviews)}
+
+
+@router.patch("/groups/{group_id}/places/{place_id}/visited")
+@limiter.limit("60/minute")
+async def toggle_group_place_visited(request: Request, group_id: int, place_id: int):
+    """Toggle visited status for a group place (no auth — group_id acts as access token)."""
+    result = repository.toggle_group_place_visited(place_id)
+    return result
 
 
 @router.get("/places/nearby")
