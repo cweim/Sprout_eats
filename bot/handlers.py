@@ -267,10 +267,10 @@ def build_saved_place_message(place, source_url: str | None = None) -> str:
         lines.append(" · ".join(meta_parts))
 
     links = [
-        f'<a href="{html.escape(build_google_maps_url(place), quote=True)}">Google Maps</a>'
+        f'<a href="{build_google_maps_url(place)}">Google Maps</a>'
     ]
     if source_url:
-        links.append(f'<a href="{html.escape(source_url, quote=True)}">Original</a>')
+        links.append(f'<a href="{source_url}">Original</a>')
     lines.append("🔗 " + " · ".join(links))
 
     return "\n".join(lines)
@@ -1971,10 +1971,10 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Build line with clickable links
         text += f"<b>{html.escape(place['name'])}</b> ({dist_str})\n"
         links = [
-            f'<a href="{html.escape(build_google_maps_url(place), quote=True)}">Google Maps</a>'
+            f'<a href="{build_google_maps_url(place)}">Google Maps</a>'
         ]
         if place.get('source_url'):
-            links.append(f'<a href="{html.escape(place["source_url"], quote=True)}">Original</a>')
+            links.append(f'<a href="{place["source_url"]}">Original</a>')
         text += " · ".join(links) + "\n\n"
 
     total = len(places_with_dist)
@@ -2196,6 +2196,7 @@ async def handle_group_welcome(update: Update, context: ContextTypes.DEFAULT_TYP
 
 def _build_group_card_keyboard(
     place_id: int,
+    place_name: str,
     source_url: str,
     google_place_id: str,
     lat,
@@ -2211,10 +2212,10 @@ def _build_group_card_keyboard(
         row1.append(InlineKeyboardButton("🗺️ View Group Map", url=group_map_url))
 
     row2 = []
-    if google_place_id:
-        row2.append(InlineKeyboardButton("📍 Maps", url=f"https://www.google.com/maps/place/?q=place_id:{google_place_id}"))
-    elif lat and lng:
-        row2.append(InlineKeyboardButton("📍 Maps", url=f"https://www.google.com/maps?q={lat},{lng}"))
+    maps_place = {"name": place_name, "google_place_id": google_place_id, "latitude": lat, "longitude": lng}
+    maps_url = build_google_maps_url(maps_place)
+    if maps_url:
+        row2.append(InlineKeyboardButton("📍 Maps", url=maps_url))
     if source_url:
         row2.append(InlineKeyboardButton("▶️ Reel", url=source_url))
     visit_label = f"✅ {visit_count} visited" if visit_count > 0 else "✅ I've been here"
@@ -2295,6 +2296,7 @@ async def _save_and_post_group_place(
     group_map_url = f"{config.WEBAPP_URL}?group_id={chat.id}" if config.WEBAPP_URL else None
     keyboard = _build_group_card_keyboard(
         place_id=place_id,
+        place_name=name,
         source_url=source_url,
         google_place_id=google_place_id,
         lat=lat,
@@ -2464,57 +2466,64 @@ async def grp_cancel_name_callback(update: Update, context: ContextTypes.DEFAULT
 async def visit_group_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle tap on '✅ I've been here' button for a group place."""
     query = update.callback_query
-    ensure_bot_user(update)
-
-    place_id = int(query.data.replace("grp_visit_", ""))
-    user_id = update.effective_user.id
-    username = update.effective_user.username or update.effective_user.first_name or "someone"
-
-    result = repository.toggle_group_visit(place_id, user_id)
-    place = repository.get_group_place_by_id(place_id)
-
-    if result["visited"]:
-        await query.answer("Marked as visited! ✅")
-        place_name = place["name"] if place else "that place"
-        await query.message.reply_text(f"🎉 @{username} has been to {html.escape(place_name)}!")
-        # DM user with review button (WebApp allowed in DMs)
-        if config.WEBAPP_URL and place:
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"How was *{html.escape(place_name)}*? Leave a review!",
-                    parse_mode="Markdown",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton(
-                            "⭐ Write Review →",
-                            web_app=WebAppInfo(url=f"{config.WEBAPP_URL}?startapp=review_{place_id}")
-                        )
-                    ]]),
-                )
-            except Exception:
-                pass  # User may not have started the bot in DM
-    else:
-        await query.answer("Visit removed")
-
-    # Rebuild full 2-row keyboard
-    vote_count = repository.get_place_vote_count(place_id)
-    visit_count = result["count"]
-    group_id = query.message.chat.id
-    group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}" if config.WEBAPP_URL else None
-    keyboard = _build_group_card_keyboard(
-        place_id=place_id,
-        source_url=place.get("source_url") if place else None,
-        google_place_id=place.get("google_place_id") if place else None,
-        lat=place.get("latitude") if place else None,
-        lng=place.get("longitude") if place else None,
-        vote_count=vote_count,
-        visit_count=visit_count,
-        group_map_url=group_map_url,
-    )
     try:
-        await query.edit_message_reply_markup(reply_markup=keyboard)
-    except Exception:
-        pass
+        ensure_bot_user(update)
+
+        place_id = int(query.data.replace("grp_visit_", ""))
+        user_id = update.effective_user.id
+        username = update.effective_user.username or update.effective_user.first_name or "someone"
+
+        result = repository.toggle_group_visit(place_id, user_id)
+        place = repository.get_group_place_by_id(place_id)
+        place_name = place["name"] if place else "that place"
+
+        if result["visited"]:
+            await query.answer("Marked as visited! ✅")
+            await query.message.reply_text(f"🎉 @{username} has been to {html.escape(place_name)}!")
+            # DM user with review button (WebApp allowed in DMs)
+            if config.WEBAPP_URL and place:
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=f"How was {place_name}? Leave a review!",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton(
+                                "⭐ Write Review →",
+                                web_app=WebAppInfo(url=f"{config.WEBAPP_URL}?startapp=review_{place_id}")
+                            )
+                        ]]),
+                    )
+                except Exception:
+                    pass  # User may not have started the bot in DM
+        else:
+            await query.answer("Visit removed")
+
+        # Rebuild full 2-row keyboard
+        vote_count = repository.get_place_vote_count(place_id)
+        visit_count = result["count"]
+        group_id = query.message.chat.id
+        group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}" if config.WEBAPP_URL else None
+        keyboard = _build_group_card_keyboard(
+            place_id=place_id,
+            place_name=place_name,
+            source_url=place.get("source_url") if place else None,
+            google_place_id=place.get("google_place_id") if place else None,
+            lat=place.get("latitude") if place else None,
+            lng=place.get("longitude") if place else None,
+            vote_count=vote_count,
+            visit_count=visit_count,
+            group_map_url=group_map_url,
+        )
+        try:
+            await query.edit_message_reply_markup(reply_markup=keyboard)
+        except Exception:
+            pass
+    except Exception as e:
+        logger.exception("visit_group_place_callback error: %s", e)
+        try:
+            await query.answer("Something went wrong, try again.")
+        except Exception:
+            pass
 
 
 async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2534,6 +2543,7 @@ async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAUL
     group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}" if config.WEBAPP_URL else None
     keyboard = _build_group_card_keyboard(
         place_id=place_id,
+        place_name=place.get("name", "") if place else "",
         source_url=place.get("source_url") if place else None,
         google_place_id=place.get("google_place_id") if place else None,
         lat=place.get("latitude") if place else None,
