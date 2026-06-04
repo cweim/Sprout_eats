@@ -2529,7 +2529,7 @@ async def sharemap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     first_name = update.effective_user.first_name or "my"
     token = repository.get_or_create_map_share(user_id)
     share_url = f"{config.WEBAPP_URL}?share={token}"
-    share_text = quote(f"🌱 Check out {first_name}'s food map on Sprout!")
+    share_text = quote(f"🌱 Check out {first_name}'s food map on Sprout!\nDiscover where they eat 👇\n\nBuild yours: @sprout_eats_bot")
     tg_share_url = f"https://t.me/share/url?url={quote(share_url)}&text={share_text}"
     await update.message.reply_text(
         f"🌱 <b>Your Sprout map is ready to share!</b>\n\n"

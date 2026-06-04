@@ -1531,13 +1531,13 @@ async function shareMyMap() {
         if (!shareUrl) throw new Error('No URL');
 
         const ownerName = window.Telegram?.WebApp?.initDataUnsafe?.user?.first_name || 'my';
-        const shareText = `🌱 Check out ${ownerName}'s food map on Sprout!`;
+        const shareText = `🌱 Check out ${ownerName}'s food map on Sprout!\nDiscover where they eat 👇\n\nBuild yours: @sprout_eats_bot`;
         const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
 
         if (window.Telegram?.WebApp?.openTelegramLink) {
             window.Telegram.WebApp.openTelegramLink(tgShareUrl);
         } else if (navigator.share) {
-            await navigator.share({ title: 'My Sprout Map', url: shareUrl, text: shareText });
+            await navigator.share({ title: `${ownerName}'s Sprout Map`, url: shareUrl, text: shareText });
         } else {
             await navigator.clipboard.writeText(shareUrl);
             showToast('Link copied! Share it anywhere 🌱');
@@ -1551,31 +1551,26 @@ function sharePlace(placeId) {
     const place = places.find(p => p.id === placeId);
     if (!place) return;
 
-    // Build Google Maps URL
+    // URL shown as rich preview (no raw link in text body)
     const mapsUrl = place.google_place_id
         ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}&query_place_id=${place.google_place_id}`
         : `https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`;
 
-    // Build share message
-    const lines = [`Check out ${place.name}! 🍽️`];
-    if (place.address) lines.push(place.address);
+    // Clean caption — no raw URLs
+    const lines = [`🍽️ ${place.name}`];
+    if (place.address) lines.push(`📍 ${place.address}`);
     lines.push('');
-    lines.push(`📍 ${mapsUrl}`);
-    if (place.source_url) lines.push(`🎬 ${place.source_url}`);
-    lines.push('');
-    lines.push('Saved via @sprout_eats_bot on Telegram');
+    lines.push('Saved on Sprout 🌱 | @sprout_eats_bot');
     const text = lines.join('\n');
 
-    if (navigator.share) {
-        navigator.share({ title: place.name, text }).catch(() => {});
-    } else {
-        // Fallback: open Telegram share dialog
+    if (window.Telegram?.WebApp?.openTelegramLink) {
         const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(mapsUrl)}&text=${encodeURIComponent(text)}`;
-        if (window.Telegram?.WebApp?.openTelegramLink) {
-            window.Telegram.WebApp.openTelegramLink(tgUrl);
-        } else {
-            window.open(tgUrl, '_blank');
-        }
+        window.Telegram.WebApp.openTelegramLink(tgUrl);
+    } else if (navigator.share) {
+        navigator.share({ title: place.name, text, url: mapsUrl }).catch(() => {});
+    } else {
+        const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(mapsUrl)}&text=${encodeURIComponent(text)}`;
+        window.open(tgUrl, '_blank');
     }
 }
 
