@@ -2533,7 +2533,7 @@ async def sharemap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tg_share_url = f"https://t.me/share/url?url={quote(share_url)}&text={share_text}"
     await update.message.reply_text(
         f"🌱 <b>Your Sprout map is ready to share!</b>\n\n"
-        f"<code>{share_url}</code>\n\n"
+        f"<a href=\"{share_url}\">🗺️ View {html.escape(first_name)}'s map</a>\n\n"
         "Anyone with this link can explore your saved spots — no sign-up needed.",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([[

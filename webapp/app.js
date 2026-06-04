@@ -3270,11 +3270,6 @@ async function initApp() {
         showShareBanner();
     }
 
-    // Personal map: show share-map button in header
-    if (!IS_GROUP_MAP && !IS_SHARE_MAP) {
-        const shareBtn = document.getElementById('btn-share-map');
-        if (shareBtn) shareBtn.style.display = '';
-    }
 
     // Show map view by default
     switchView('map');
