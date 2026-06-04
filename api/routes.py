@@ -169,6 +169,48 @@ async def toggle_group_place_visited(request: Request, group_id: int, place_id: 
     return result
 
 
+@router.get("/shares/{token}/places")
+@limiter.limit("60/minute")
+async def get_shared_places(request: Request, token: str, page: int = 1, per_page: int = 50):
+    """Return places for a shared map (no auth — token acts as access key)."""
+    user_id = repository.get_map_share_owner(token)
+    if not user_id:
+        raise HTTPException(status_code=404, detail="Share not found")
+    offset = (page - 1) * per_page
+    places = repository.get_all_places(user_id, limit=per_page, offset=offset)
+    total = repository.count_user_places(user_id)
+    owner = repository.get_user_by_id(user_id) or {}
+    return {
+        "places": [place_to_dict(p) for p in places],
+        "total": total,
+        "has_more": (offset + per_page) < total,
+        "owner_name": owner.get("first_name", ""),
+        "owner_username": owner.get("username", ""),
+    }
+
+
+@router.get("/shares/{token}/reviews")
+@limiter.limit("60/minute")
+async def get_all_shared_reviews(request: Request, token: str):
+    """Return all owner's reviews for a shared map."""
+    user_id = repository.get_map_share_owner(token)
+    if not user_id:
+        raise HTTPException(status_code=404, detail="Share not found")
+    reviews = repository.get_all_reviews(user_id)
+    return {"reviews": reviews, "total": len(reviews)}
+
+
+@router.get("/shares/{token}/places/{place_id}/reviews")
+@limiter.limit("60/minute")
+async def get_shared_place_reviews(request: Request, token: str, place_id: int):
+    """Return owner's reviews for a single place in a shared map."""
+    user_id = repository.get_map_share_owner(token)
+    if not user_id:
+        raise HTTPException(status_code=404, detail="Share not found")
+    reviews = repository.get_place_reviews(user_id, place_id)
+    return {"reviews": reviews, "total": len(reviews)}
+
+
 @router.get("/places/nearby")
 async def get_nearby_places(
     lat: float,

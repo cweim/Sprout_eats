@@ -7,6 +7,12 @@ const GROUP_ID = _urlParams.get('group_id') ? parseInt(_urlParams.get('group_id'
 const BOT_USERNAME = _urlParams.get('bot') || '';
 const IS_GROUP_MAP = !!GROUP_ID;
 
+// Shared map context — set when opened with ?share=<token> (read-only view of another user's map)
+const SHARE_TOKEN = _urlParams.get('share') || '';
+const IS_SHARE_MAP = !!SHARE_TOKEN;
+let shareOwnerName = '';
+let shareOwnerUsername = '';
+
 // Escape user-controlled strings before injecting into innerHTML
 function escapeHtml(str) {
     return String(str ?? '')
@@ -55,8 +61,8 @@ function getAuthHeaders() {
         'ngrok-skip-browser-warning': 'true'
     };
 
-    // Add Telegram initData for authentication
-    if (window.Telegram?.WebApp?.initData) {
+    // Share map has no Telegram context — skip auth header
+    if (!IS_SHARE_MAP && window.Telegram?.WebApp?.initData) {
         headers['X-Telegram-Init-Data'] = window.Telegram.WebApp.initData;
     }
 
@@ -204,6 +210,11 @@ function initTelegram() {
             const h1 = document.querySelector('.app-header h1');
             if (h1) h1.textContent = '🗺️ Group Map';
         }
+        // Update header for share map context
+        if (IS_SHARE_MAP) {
+            const h1 = document.querySelector('.app-header h1');
+            if (h1) h1.textContent = '🗺️ Shared Map';
+        }
 
         // Update CSS variables with Telegram theme
         document.documentElement.style.setProperty('--tg-viewport-height', `${tg.viewportHeight}px`);
@@ -243,9 +254,10 @@ function applyTheme() {
 // Fetch places from API with timeout and retry
 async function fetchPlaces(retries = 3) {
     const TIMEOUT_MS = 10000; // 10 second timeout
-    const url = IS_GROUP_MAP
-        ? `${API_URL}/api/groups/${GROUP_ID}/places?page=1&per_page=${PLACES_PER_PAGE}`
-        : `${API_URL}/api/places?page=1&per_page=${PLACES_PER_PAGE}`;
+    let url;
+    if (IS_GROUP_MAP) url = `${API_URL}/api/groups/${GROUP_ID}/places?page=1&per_page=${PLACES_PER_PAGE}`;
+    else if (IS_SHARE_MAP) url = `${API_URL}/api/shares/${SHARE_TOKEN}/places?page=1&per_page=${PLACES_PER_PAGE}`;
+    else url = `${API_URL}/api/places?page=1&per_page=${PLACES_PER_PAGE}`;
 
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
@@ -284,6 +296,10 @@ async function fetchPlaces(retries = 3) {
             }
             const data = await response.json();
             console.log('Fetched places:', data.places?.length || 0, 'of', data.total || 0);
+            if (IS_SHARE_MAP) {
+                shareOwnerName = data.owner_name || '';
+                shareOwnerUsername = data.owner_username || '';
+            }
             return {
                 success: true,
                 places: data.places || [],
@@ -318,9 +334,10 @@ async function loadMorePlaces() {
 
     const nextPage = currentPlacesPage + 1;
     try {
-        const endpoint = IS_GROUP_MAP
-            ? `${API_URL}/api/groups/${GROUP_ID}/places?page=${nextPage}&per_page=${PLACES_PER_PAGE}`
-            : `${API_URL}/api/places?page=${nextPage}&per_page=${PLACES_PER_PAGE}`;
+        let endpoint;
+        if (IS_GROUP_MAP) endpoint = `${API_URL}/api/groups/${GROUP_ID}/places?page=${nextPage}&per_page=${PLACES_PER_PAGE}`;
+        else if (IS_SHARE_MAP) endpoint = `${API_URL}/api/shares/${SHARE_TOKEN}/places?page=${nextPage}&per_page=${PLACES_PER_PAGE}`;
+        else endpoint = `${API_URL}/api/places?page=${nextPage}&per_page=${PLACES_PER_PAGE}`;
         const response = await fetch(endpoint, {
             headers: getAuthHeaders()
         });
@@ -384,6 +401,17 @@ function clearSkeletonCards() {
     const container = document.getElementById('places-list');
     if (!container) return;
     container.querySelectorAll('.skeleton-card').forEach(el => el.remove());
+}
+
+// Show shared map owner banner (injected below the header)
+function showShareBanner() {
+    if (document.getElementById('share-map-banner')) return;
+    const displayName = shareOwnerUsername ? `@${shareOwnerUsername}` : (shareOwnerName || 'someone');
+    const banner = document.createElement('div');
+    banner.id = 'share-map-banner';
+    banner.className = 'share-map-banner';
+    banner.textContent = `👁 Viewing ${displayName}'s map`;
+    document.querySelector('.app-header').after(banner);
 }
 
 // Show empty state
@@ -592,13 +620,23 @@ function createPopupContent(place) {
         html += `<div class="place-popup-meta">${metaHtml}</div>`;
     }
 
-    // Visited toggle (full width, like list view)
+    // Visited toggle (full width, like list view) — read-only on share map
     const visitedClass = place.is_visited ? ' active' : '';
     const visitedText = place.is_visited ? '✓ Visited' : 'Mark as visited';
-    html += `<button class="visited-toggle-btn popup-visited${visitedClass}" onclick="toggleVisited(${place.id})">${visitedText}</button>`;
+    if (IS_SHARE_MAP) {
+        if (place.is_visited) {
+            html += `<button class="visited-toggle-btn popup-visited active" style="pointer-events:none">✓ Visited</button>`;
+        }
+    } else {
+        html += `<button class="visited-toggle-btn popup-visited${visitedClass}" onclick="toggleVisited(${place.id})">${visitedText}</button>`;
+    }
 
-    // Notes section (inline editing like list view)
-    if (place.notes) {
+    // Notes section — read-only on share map
+    if (IS_SHARE_MAP) {
+        if (place.notes) {
+            html += `<div class="popup-notes has-notes"><span class="notes-text">${escapeHtml(place.notes)}</span></div>`;
+        }
+    } else if (place.notes) {
         html += `<div class="popup-notes has-notes" onclick="event.stopPropagation(); startPopupNoteEdit(${place.id}, this)">
             <span class="notes-text">${escapeHtml(place.notes)}</span>
         </div>`;
@@ -612,12 +650,14 @@ function createPopupContent(place) {
     // Action buttons
     html += '<div class="place-popup-actions">';
 
-    // Review button
-    if (place.is_visited) {
-        const reviewAriaLabel = `Write review for ${escapeHtml(place.name)}`;
-        html += `<button class="card-action-btn review-btn" onclick="openReviewSheet(${place.id})" title="Write Review" aria-label="${reviewAriaLabel}">Review</button>`;
-    } else {
-        html += `<button class="card-action-btn review-btn disabled" onclick="showVisitFirstNudge()" aria-label="Mark as visited first to review">Review</button>`;
+    // Review button (personal map only)
+    if (!IS_SHARE_MAP) {
+        if (place.is_visited) {
+            const reviewAriaLabel = `Write review for ${escapeHtml(place.name)}`;
+            html += `<button class="card-action-btn review-btn" onclick="openReviewSheet(${place.id})" title="Write Review" aria-label="${reviewAriaLabel}">Review</button>`;
+        } else {
+            html += `<button class="card-action-btn review-btn disabled" onclick="showVisitFirstNudge()" aria-label="Mark as visited first to review">Review</button>`;
+        }
     }
 
     // Google Maps link
@@ -636,10 +676,12 @@ function createPopupContent(place) {
         html += `<a href="${safeUrl(place.source_url)}" target="_blank" class="card-action-btn external-btn" title="View Original Reel" aria-label="View original reel">Reel</a>`;
     }
 
-    // Delete button
-    const escapedName = place.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
-    const deleteAriaLabel = `Delete ${escapeHtml(place.name)}`;
-    html += `<button class="card-action-btn delete-btn" onclick="confirmDeletePlace(${place.id}, '${escapedName}')" title="Delete Place" aria-label="${deleteAriaLabel}">Delete</button>`;
+    // Delete button (personal map only)
+    if (!IS_SHARE_MAP) {
+        const escapedName = place.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+        const deleteAriaLabel = `Delete ${escapeHtml(place.name)}`;
+        html += `<button class="card-action-btn delete-btn" onclick="confirmDeletePlace(${place.id}, '${escapedName}')" title="Delete Place" aria-label="${deleteAriaLabel}">Delete</button>`;
+    }
 
     html += '</div></div>';
 
@@ -1225,12 +1267,12 @@ function createPlaceCard(place) {
     let headerHtml = `<div class="place-card-header">`;
     headerHtml += `<span class="sprout-icon"><img src="${sproutImg}" alt="${place.is_visited ? 'Visited' : 'To visit'}"></span>`;
     // Add review badge if exists (personal map only)
-    const review = IS_GROUP_MAP ? null : getPlaceReview(place.id);
+    const review = (IS_GROUP_MAP || IS_SHARE_MAP) ? null : getPlaceReview(place.id);
     const reviewBadge = review
         ? `<span class="place-review-badge">✍️ ${'⭐'.repeat(review.overall_rating)}</span>`
         : '';
     headerHtml += `<span class="place-card-name">${escapeHtml(place.name)} ${reviewBadge}</span>`;
-    if (!IS_GROUP_MAP) {
+    if (!IS_GROUP_MAP && !IS_SHARE_MAP) {
         headerHtml += `<button class="more-btn" onclick="event.stopPropagation(); openPlaceMenu(${place.id}, '${place.name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" aria-label="More options">···</button>`;
     }
     headerHtml += `</div>`;
@@ -1269,7 +1311,11 @@ function createPlaceCard(place) {
     const distance = getPlaceDistance(place);
     const distanceText = distance !== null ? `<span class="place-card-distance">📍 ${formatDistance(distance)} away</span>` : '';
     let distanceHtml = '';
-    if (!IS_GROUP_MAP) {
+    if (IS_SHARE_MAP) {
+        // Read-only: show visited badge, no toggle
+        const visitedBadge = place.is_visited ? `<span class="visited-toggle-btn card-visited-toggle active" style="pointer-events:none">✓ Visited</span>` : '';
+        distanceHtml = `<div class="place-card-distance-row">${distanceText}${visitedBadge}</div>`;
+    } else if (!IS_GROUP_MAP) {
         const visitedClass = place.is_visited ? ' active' : '';
         const visitedText = place.is_visited ? '✓ Visited' : 'Mark as visited';
         const visitedToggleBtn = `<button class="visited-toggle-btn card-visited-toggle${visitedClass}" onclick="event.stopPropagation(); toggleVisitedFromCard(${place.id})" aria-label="${place.is_visited ? 'Mark as unvisited' : 'Mark as visited'}">${visitedText}</button>`;
@@ -1282,9 +1328,15 @@ function createPlaceCard(place) {
         distanceHtml = `<div class="place-card-distance-row">${distanceText}${visitedToggleBtn}</div>`;
     }
 
-    // Notes section - inline editable (personal map only)
+    // Notes section - inline editable (personal map only); read-only on share map
     let notesHtml = '';
-    if (!IS_GROUP_MAP) {
+    if (IS_SHARE_MAP) {
+        if (place.notes) {
+            notesHtml = `<div class="place-card-notes has-notes">
+                <span class="notes-text">${escapeHtml(place.notes)}</span>
+            </div>`;
+        }
+    } else if (!IS_GROUP_MAP) {
         if (place.notes) {
             notesHtml = `<div class="place-card-notes has-notes" onclick="event.stopPropagation(); startInlineNoteEdit(${place.id}, this)">
                 <span class="notes-text">${escapeHtml(place.notes)}</span>
@@ -1297,11 +1349,16 @@ function createPlaceCard(place) {
         }
     }
 
-    // Reviews section (group map only)
+    // Reviews section (group map and share map)
     let reviewsHtml = '';
     if (IS_GROUP_MAP) {
         reviewsHtml = `<div class="group-reviews-section" data-place-id="${place.id}" data-loaded="false">
             <div class="group-reviews-toggle" onclick="event.stopPropagation(); toggleGroupReviews(this, ${place.id})">📝 Reviews</div>
+            <div class="group-reviews-list"></div>
+        </div>`;
+    } else if (IS_SHARE_MAP) {
+        reviewsHtml = `<div class="group-reviews-section" data-place-id="${place.id}" data-loaded="false">
+            <div class="group-reviews-toggle" onclick="event.stopPropagation(); toggleShareReviews(this, ${place.id})">📝 Reviews</div>
             <div class="group-reviews-list"></div>
         </div>`;
     }
@@ -1310,7 +1367,7 @@ function createPlaceCard(place) {
     let actionsHtml = '<div class="place-card-actions">';
 
     // Review button (personal map only)
-    if (!IS_GROUP_MAP) {
+    if (!IS_GROUP_MAP && !IS_SHARE_MAP) {
         if (place.is_visited) {
             actionsHtml += `<button class="card-action-btn review-btn" onclick="event.stopPropagation(); openReviewSheet(${place.id})" aria-label="Write review">⭐ Review</button>`;
         } else {
@@ -1333,8 +1390,10 @@ function createPlaceCard(place) {
         actionsHtml += `<a href="${safeUrl(place.source_url)}" target="_blank" class="card-action-btn external-btn" onclick="event.stopPropagation()" aria-label="View original reel">▶️ Reel</a>`;
     }
 
-    // Share button
-    actionsHtml += `<button class="card-action-btn share-btn" onclick="event.stopPropagation(); sharePlace(${place.id})" aria-label="Share this place">↗ Share</button>`;
+    // Share button (not shown when viewing someone else's map)
+    if (!IS_SHARE_MAP) {
+        actionsHtml += `<button class="card-action-btn share-btn" onclick="event.stopPropagation(); sharePlace(${place.id})" aria-label="Share this place">↗ Share</button>`;
+    }
 
     actionsHtml += '</div>';
 
@@ -1409,6 +1468,47 @@ async function toggleGroupReviews(toggleEl, placeId) {
                         <div class="group-review-author">${author}</div>
                     </div>`;
                 }).join('') + writeLink;
+            }
+            section.dataset.loaded = 'true';
+        } catch (e) {
+            listEl.innerHTML = '<div class="group-review-item" style="color:var(--hint-color)">Failed to load.</div>';
+        }
+    }
+
+    listEl.style.display = 'block';
+    section.dataset.open = 'true';
+    toggleEl.textContent = '📝 Hide reviews';
+}
+
+
+async function toggleShareReviews(toggleEl, placeId) {
+    const section = toggleEl.closest('.group-reviews-section');
+    const listEl = section.querySelector('.group-reviews-list');
+    const isOpen = section.dataset.open === 'true';
+
+    if (isOpen) {
+        listEl.style.display = 'none';
+        section.dataset.open = 'false';
+        toggleEl.textContent = '📝 Reviews';
+        return;
+    }
+
+    if (section.dataset.loaded !== 'true') {
+        toggleEl.textContent = '📝 Loading...';
+        try {
+            const res = await fetch(`/api/shares/${SHARE_TOKEN}/places/${placeId}/reviews`);
+            const data = await res.json();
+            const reviews = data.reviews || [];
+            if (reviews.length === 0) {
+                listEl.innerHTML = `<div class="group-review-item" style="color:var(--hint-color)">No reviews yet.</div>`;
+            } else {
+                listEl.innerHTML = reviews.map(r => {
+                    const stars = '⭐'.repeat(Math.round(r.overall_rating || 0));
+                    const remark = r.overall_remarks ? `"${escapeHtml(r.overall_remarks)}"` : '';
+                    return `<div class="group-review-item">
+                        <span>${stars} ${remark}</span>
+                    </div>`;
+                }).join('');
             }
             section.dataset.loaded = 'true';
         } catch (e) {
@@ -3138,6 +3238,13 @@ async function initApp() {
     updateMapFilterCounts();
     updateVisitedChipCounts();
 
+    // Share map: show owner banner, hide add/discover FAB
+    if (IS_SHARE_MAP) {
+        const fab = document.getElementById('fab-discover');
+        if (fab) fab.style.display = 'none';
+        showShareBanner();
+    }
+
     // Show map view by default
     switchView('map');
 
@@ -4134,7 +4241,10 @@ function getPlaceReview(placeId) {
 // Load reviews from API
 async function loadReviews() {
     try {
-        const response = await fetch(`${API_URL}/api/reviews`, {
+        const endpoint = IS_SHARE_MAP
+            ? `${API_URL}/api/shares/${SHARE_TOKEN}/reviews`
+            : `${API_URL}/api/reviews`;
+        const response = await fetch(endpoint, {
             headers: getAuthHeaders()
         });
         if (response.ok) {

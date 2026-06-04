@@ -2517,3 +2517,22 @@ async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_reply_markup(reply_markup=keyboard)
     except Exception:
         pass
+
+
+async def sharemap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate (or retrieve) a permanent share link for the user's map."""
+    if not config.WEBAPP_URL:
+        await update.message.reply_text("Mini App not configured.")
+        return
+    ensure_bot_user(update)
+    user_id = update.effective_user.id
+    token = repository.get_or_create_map_share(user_id)
+    share_url = f"{config.WEBAPP_URL}?share={token}"
+    await update.message.reply_text(
+        f"🗺️ Your shared map link:\n\n<code>{share_url}</code>\n\n"
+        "Anyone with this link can view your saved places (read-only).",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("Preview →", url=share_url)
+        ]]),
+    )

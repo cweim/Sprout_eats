@@ -44,6 +44,7 @@ from bot.handlers import (
     handle_group_url,
     vote_group_place_callback,
     grp_cancel_name_callback,
+    sharemap_command,
 )
 
 # Configure logging
@@ -164,6 +165,7 @@ async def post_init(application):
     await application.bot.set_my_commands([
         BotCommand("start", "👋 Start here"),
         BotCommand("viewer", "🗺️ Open my map"),
+        BotCommand("sharemap", "🔗 Share your map with friends"),
         BotCommand("nearby", "📍 Find places near me"),
         BotCommand("feedback", "🛠️ Send feedback or report a bug"),
     ])
@@ -206,6 +208,7 @@ def main():
 
     # Add handlers
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("sharemap", sharemap_command))
     app.add_handler(CommandHandler("places", places_command))
     app.add_handler(CommandHandler("map", map_command))
     app.add_handler(CommandHandler("viewer", viewer_command))

@@ -1594,4 +1594,108 @@ def list_places_grouped_by_restaurant(
         del g["_saves"]
         del g["_user_ids"]
 
+
+# =============================================================================
+# Map Share Operations
+# =============================================================================
+
+
+def get_or_create_map_share(user_id: int) -> str:
+    """Return existing share token for user, or create a new one."""
+    import uuid
+    supabase = get_supabase()
+    result = supabase.table("map_shares").select("token").eq("user_id", user_id).execute()
+    if result.data:
+        return result.data[0]["token"]
+    token = str(uuid.uuid4())
+    supabase.table("map_shares").insert({"token": token, "user_id": user_id}).execute()
+    return token
+
+
+def get_map_share_owner(token: str) -> Optional[int]:
+    """Return user_id for a share token, or None if invalid."""
+    supabase = get_supabase()
+    result = supabase.table("map_shares").select("user_id").eq("token", token).execute()
+    return result.data[0]["user_id"] if result.data else None
+
+
+def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
+    """Return user row (first_name, username, etc.) or None."""
+    supabase = get_supabase()
+    result = supabase.table("users").select("id, username, first_name, last_name").eq("id", user_id).execute()
+    return result.data[0] if result.data else None
+
+
+def count_user_places(user_id: int) -> int:
+    """Return total non-deleted place count for a user."""
+    supabase = get_supabase()
+    result = (
+        supabase.table("places")
+        .select("id", count="exact")
+        .eq("user_id", user_id)
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    return result.count or 0
+
+
+def get_place_reviews(user_id: int, place_id: int) -> List[Dict[str, Any]]:
+    """Get all reviews by a user for a specific place, with dishes and photos."""
+    supabase = get_supabase()
+
+    result = (
+        supabase.table("reviews")
+        .select("*, places(name)")
+        .eq("user_id", user_id)
+        .eq("place_id", place_id)
+        .order("updated_at", desc=True)
+        .execute()
+    )
+    reviews = result.data or []
+    if not reviews:
+        return []
+
+    review_ids = [r["id"] for r in reviews]
+
+    dishes_result = (
+        supabase.table("review_dishes")
+        .select("*")
+        .in_("review_id", review_ids)
+        .order("id")
+        .execute()
+    )
+    dishes_by_review: Dict[int, List] = {}
+    for dish in (dishes_result.data or []):
+        dishes_by_review.setdefault(dish["review_id"], []).append(dish)
+
+    photos_result = (
+        supabase.table("review_photos")
+        .select("*")
+        .in_("review_id", review_ids)
+        .order("sort_order")
+        .execute()
+    )
+    photos_by_review: Dict[int, List] = {}
+    for photo in (photos_result.data or []):
+        photos_by_review.setdefault(photo["review_id"], []).append(photo)
+
+    for review in reviews:
+        review_id = review["id"]
+        review["dishes"] = dishes_by_review.get(review_id, [])
+        review["photos"] = photos_by_review.get(review_id, [])
+
+        dish_photos: Dict[int, List] = {}
+        for photo in review["photos"]:
+            dish_id = photo.get("dish_id")
+            if dish_id:
+                dish_photos.setdefault(dish_id, []).append(photo)
+        for dish in review["dishes"]:
+            dish["photos"] = dish_photos.get(dish["id"], [])
+
+        if review.get("places"):
+            review["place_name"] = review["places"]["name"]
+            del review["places"]
+
+    return reviews
+
     return page, total
