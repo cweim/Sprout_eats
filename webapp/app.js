@@ -1522,6 +1522,31 @@ async function toggleShareReviews(toggleEl, placeId) {
 }
 
 
+async function shareMyMap() {
+    try {
+        const res = await fetch(`${API_URL}/api/my-share`, { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error('Failed');
+        const data = await res.json();
+        const shareUrl = data.share_url;
+        if (!shareUrl) throw new Error('No URL');
+
+        const ownerName = window.Telegram?.WebApp?.initDataUnsafe?.user?.first_name || 'my';
+        const shareText = `🌱 Check out ${ownerName}'s food map on Sprout!`;
+        const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`;
+
+        if (window.Telegram?.WebApp?.openTelegramLink) {
+            window.Telegram.WebApp.openTelegramLink(tgShareUrl);
+        } else if (navigator.share) {
+            await navigator.share({ title: 'My Sprout Map', url: shareUrl, text: shareText });
+        } else {
+            await navigator.clipboard.writeText(shareUrl);
+            showToast('Link copied! Share it anywhere 🌱');
+        }
+    } catch (e) {
+        showToast('Could not generate share link');
+    }
+}
+
 function sharePlace(placeId) {
     const place = places.find(p => p.id === placeId);
     if (!place) return;
@@ -3243,6 +3268,12 @@ async function initApp() {
         const fab = document.getElementById('fab-discover');
         if (fab) fab.style.display = 'none';
         showShareBanner();
+    }
+
+    // Personal map: show share-map button in header
+    if (!IS_GROUP_MAP && !IS_SHARE_MAP) {
+        const shareBtn = document.getElementById('btn-share-map');
+        if (shareBtn) shareBtn.style.display = '';
     }
 
     // Show map view by default

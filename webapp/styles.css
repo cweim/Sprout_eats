@@ -101,6 +101,34 @@ body {
     letter-spacing: -0.3px;
 }
 
+/* Header right-side actions (share btn + view toggle) */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.header-share-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: var(--secondary-bg);
+    color: var(--sprout-purple);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.header-share-btn:active {
+    background: var(--sprout-purple);
+    color: #fff;
+}
+
 /* View Toggle */
 .view-toggle {
     display: flex;

@@ -2526,13 +2526,18 @@ async def sharemap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     ensure_bot_user(update)
     user_id = update.effective_user.id
+    first_name = update.effective_user.first_name or "my"
     token = repository.get_or_create_map_share(user_id)
     share_url = f"{config.WEBAPP_URL}?share={token}"
+    share_text = quote(f"🌱 Check out {first_name}'s food map on Sprout!")
+    tg_share_url = f"https://t.me/share/url?url={quote(share_url)}&text={share_text}"
     await update.message.reply_text(
-        f"🗺️ Your shared map link:\n\n<code>{share_url}</code>\n\n"
-        "Anyone with this link can view your saved places (read-only).",
+        f"🌱 <b>Your Sprout map is ready to share!</b>\n\n"
+        f"<code>{share_url}</code>\n\n"
+        "Anyone with this link can explore your saved spots — no sign-up needed.",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("Preview →", url=share_url)
+            InlineKeyboardButton("📤 Share to Telegram", url=tg_share_url),
+            InlineKeyboardButton("Preview →", url=share_url),
         ]]),
     )

@@ -10,6 +10,7 @@ from api.limiter import limiter
 from database import supabase_repository as repository
 from database.supabase_client import upload_photo as storage_upload_photo, delete_photo as storage_delete_photo
 from services.places import search_place
+import config as app_config
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,15 @@ async def toggle_group_place_visited(request: Request, group_id: int, place_id: 
     """Toggle visited status for a group place (no auth — group_id acts as access token)."""
     result = repository.toggle_group_place_visited(place_id)
     return result
+
+
+@router.get("/my-share")
+@limiter.limit("30/minute")
+async def get_my_share(request: Request, user: TelegramUser = Depends(get_current_user)):
+    """Return (or create) the authenticated user's permanent share token and URL."""
+    token = repository.get_or_create_map_share(user.id)
+    share_url = f"{app_config.WEBAPP_URL}?share={token}" if app_config.WEBAPP_URL else ""
+    return {"token": token, "share_url": share_url}
 
 
 @router.get("/shares/{token}/places")
