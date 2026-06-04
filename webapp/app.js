@@ -1551,25 +1551,24 @@ function sharePlace(placeId) {
     const place = places.find(p => p.id === placeId);
     if (!place) return;
 
-    // URL shown as rich preview (no raw link in text body)
+    // mapsUrl is the `url` param — Telegram renders it as a link preview above the text
     const mapsUrl = place.google_place_id
         ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}&query_place_id=${place.google_place_id}`
         : `https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`;
 
-    // Clean caption — no raw URLs
     const lines = [`🍽️ ${place.name}`];
     if (place.address) lines.push(`📍 ${place.address}`);
+    if (place.source_url) lines.push(`🎬 ${place.source_url}`);
     lines.push('');
     lines.push('Saved on Sprout 🌱 | @sprout_eats_bot');
     const text = lines.join('\n');
 
+    const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(mapsUrl)}&text=${encodeURIComponent(text)}`;
     if (window.Telegram?.WebApp?.openTelegramLink) {
-        const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(mapsUrl)}&text=${encodeURIComponent(text)}`;
         window.Telegram.WebApp.openTelegramLink(tgUrl);
     } else if (navigator.share) {
         navigator.share({ title: place.name, text, url: mapsUrl }).catch(() => {});
     } else {
-        const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(mapsUrl)}&text=${encodeURIComponent(text)}`;
         window.open(tgUrl, '_blank');
     }
 }
