@@ -14,7 +14,7 @@
 
 
     <!-- App styles - Playful & Warm theme -->
-    <link rel="stylesheet" href="styles.css?v=46">
+    <link rel="stylesheet" href="styles.css?v=47">
 </head>
 <body>
     <header class="app-header">
@@ -36,6 +36,7 @@
                     <button class="map-filter-chip active" data-filter="all" aria-pressed="true">All</button>
                     <button class="map-filter-chip" data-filter="unvisited" aria-pressed="false">To Visit</button>
                     <button class="map-filter-chip" data-filter="visited" aria-pressed="false">Visited ✓</button>
+                    <button class="map-filter-chip" id="open-now-chip" onclick="toggleOpenNow()" aria-pressed="false">🕐 Open Now</button>
                 </div>
                 <div id="map-cuisine-wrap" class="map-cuisine-select-wrap" style="display:none">
                     <select id="map-cuisine-filter" class="map-cuisine-select">
@@ -236,6 +237,26 @@
                         <button class="filter-option" data-sort="name">Name A-Z</button>
                         <button class="filter-option" data-sort="rating">Top Rated</button>
                         <button class="filter-option" data-sort="distance">Nearest</button>
+                    </div>
+                </div>
+                <div class="filter-section">
+                    <label class="filter-label">Min Rating</label>
+                    <div class="filter-options" id="rating-filter-chips">
+                        <button class="filter-option active" data-rating="0">Any</button>
+                        <button class="filter-option" data-rating="3">3+ ⭐</button>
+                        <button class="filter-option" data-rating="3.5">3.5+ ⭐</button>
+                        <button class="filter-option" data-rating="4">4+ ⭐</button>
+                        <button class="filter-option" data-rating="4.5">4.5+ ⭐</button>
+                    </div>
+                </div>
+                <div class="filter-section">
+                    <label class="filter-label">Price</label>
+                    <div class="filter-options" id="price-filter-chips">
+                        <button class="filter-option active" data-price="">Any</button>
+                        <button class="filter-option" data-price="INEXPENSIVE">💰</button>
+                        <button class="filter-option" data-price="MODERATE">💰💰</button>
+                        <button class="filter-option" data-price="EXPENSIVE">💰💰💰</button>
+                        <button class="filter-option" data-price="VERY_EXPENSIVE">💰💰💰💰</button>
                     </div>
                 </div>
                 <div class="filter-section" id="country-section">

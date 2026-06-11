@@ -4357,3 +4357,16 @@ button:disabled,
 .sheet-btn.secondary:active {
     background: var(--border-color);
 }
+
+
+/* Editorial summary / description below place address */
+.place-description {
+    font-size: 0.78rem;
+    color: var(--hint-color);
+    margin: 3px 0 5px;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}

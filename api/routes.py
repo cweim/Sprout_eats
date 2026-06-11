@@ -85,6 +85,7 @@ def place_to_dict(place: dict) -> dict:
         "place_rating_count": place.get("place_rating_count"),
         "place_price_level": place.get("place_price_level"),
         "place_opening_hours": place.get("place_opening_hours"),
+        "place_description": place.get("place_description"),
         "source_language": place.get("source_language"),
         "source_transcript": place.get("source_transcript"),
         "source_transcript_en": place.get("source_transcript_en"),

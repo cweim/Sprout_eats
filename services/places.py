@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import re
 import time
@@ -512,7 +513,8 @@ class PlaceResult:
     rating: Optional[float] = None  # 1.0-5.0
     rating_count: Optional[int] = None
     price_level: Optional[str] = None  # "FREE", "INEXPENSIVE", etc.
-    opening_hours: Optional[str] = None  # First line of weekday descriptions
+    opening_hours: Optional[str] = None  # JSON array of 7 weekday description strings
+    description: Optional[str] = None   # Editorial summary from Google Places
     confidence_score: int = 0
     confidence_label: str = "possible"
     confidence_reason: Optional[str] = None
@@ -559,7 +561,7 @@ async def search_place(
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": config.GOOGLE_API_KEY,
-        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location,places.id,places.types,places.rating,places.userRatingCount,places.priceLevel,places.regularOpeningHours",
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location,places.id,places.types,places.rating,places.userRatingCount,places.priceLevel,places.regularOpeningHours,places.editorialSummary",
     }
 
     body = {
@@ -620,10 +622,14 @@ async def search_place(
                 raw_price = place.get("priceLevel", "")
                 price_level = raw_price.replace("PRICE_LEVEL_", "") if raw_price else None
 
-                # Parse opening hours (first line of weekday descriptions)
+                # Parse opening hours (store full JSON array of all 7 days)
                 hours_data = place.get("regularOpeningHours", {})
                 weekday_desc = hours_data.get("weekdayDescriptions", [])
-                opening_hours = weekday_desc[0] if weekday_desc else None
+                opening_hours = json.dumps(weekday_desc) if weekday_desc else None
+
+                # Parse editorial summary
+                editorial = place.get("editorialSummary", {})
+                description = editorial.get("text") if isinstance(editorial, dict) else None
 
                 results.append(
                     PlaceResult(
@@ -637,6 +643,7 @@ async def search_place(
                         rating_count=place.get("userRatingCount"),
                         price_level=price_level,
                         opening_hours=opening_hours,
+                        description=description,
                     )
                 )
 

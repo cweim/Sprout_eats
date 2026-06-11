@@ -100,7 +100,17 @@ let sortBy = localStorage.getItem('sortBy') || 'distance';
 let visitedFilter = localStorage.getItem('visitedFilter') || 'all';  // 'all', 'visited', 'unvisited'
 let countryFilter = '';  // Country filter (empty = all)
 let mapCuisineFilter = '';  // Cuisine filter for map view
+let ratingFilter = 0;       // 0 = any; minimum rating threshold (3 / 3.5 / 4 / 4.5)
+let priceLevelFilter = '';  // '' = any; INEXPENSIVE / MODERATE / EXPENSIVE / VERY_EXPENSIVE
+let openNowFilter = false;  // false = no filter; true = open now only
 let searchDebounceTimer = null;
+
+const PRICE_LABELS = {
+    INEXPENSIVE: '💰',
+    MODERATE: '💰💰',
+    EXPENSIVE: '💰💰💰',
+    VERY_EXPENSIVE: '💰💰💰💰',
+};
 
 // Pagination state
 let totalPlaces = 0;
@@ -600,11 +610,20 @@ function createPopupContent(place) {
         html += `<div class="popup-review">✍️ ${'⭐'.repeat(review.overall_rating)} ${review.overall_rating}/5</div>`;
     }
 
-    // Meta info (rating, types, distance)
+    // Description (editorial summary)
+    if (place.place_description) {
+        html += `<div class="place-description">${escapeHtml(place.place_description)}</div>`;
+    }
+
+    // Meta info (rating, price, types, distance)
     let metaHtml = '';
     if (place.place_rating) {
         const ratingCount = place.place_rating_count ? ` (${place.place_rating_count})` : '';
         metaHtml += `<span>⭐ ${place.place_rating}/5${ratingCount}</span>`;
+    }
+    if (place.place_price_level && PRICE_LABELS[place.place_price_level]) {
+        if (metaHtml) metaHtml += ' · ';
+        metaHtml += `<span>${PRICE_LABELS[place.place_price_level]}</span>`;
     }
     const types = formatPlaceTypes(place.place_types);
     if (types) {
@@ -886,6 +905,9 @@ function displayPlacesOnMap(fitBounds = true) {
             return category === mapCuisineFilter;
         });
     }
+
+    // Apply open now filter for map
+    filteredPlaces = filterByOpenNow(filteredPlaces);
 
     // Update cuisine dropdown options
     populateCuisineDropdown();
@@ -1283,11 +1305,20 @@ function createPlaceCard(place) {
         addressHtml = `<div class="place-card-address">${escapeHtml(place.address)}</div>`;
     }
 
-    // Meta row: rating and types
+    // Description (editorial summary)
+    let descriptionHtml = '';
+    if (place.place_description) {
+        descriptionHtml = `<div class="place-description">${escapeHtml(place.place_description)}</div>`;
+    }
+
+    // Meta row: rating, price level, and types
     let metaHtml = '<div class="place-card-meta">';
     if (place.place_rating) {
         const count = place.place_rating_count ? ` (${place.place_rating_count})` : '';
         metaHtml += `<span class="place-card-rating">⭐ ${place.place_rating}${count}</span>`;
+    }
+    if (place.place_price_level && PRICE_LABELS[place.place_price_level]) {
+        metaHtml += `<span class="place-card-price">${PRICE_LABELS[place.place_price_level]}</span>`;
     }
     const types = formatPlaceTypes(place.place_types);
     if (types) {
@@ -1397,7 +1428,7 @@ function createPlaceCard(place) {
 
     actionsHtml += '</div>';
 
-    card.innerHTML = headerHtml + addressHtml + attributionHtml + metaHtml + distanceHtml + notesHtml + reviewsHtml + actionsHtml;
+    card.innerHTML = headerHtml + addressHtml + descriptionHtml + attributionHtml + metaHtml + distanceHtml + notesHtml + reviewsHtml + actionsHtml;
 
     // Click handler - show on map
     card.addEventListener('click', (e) => {
@@ -1838,6 +1869,57 @@ function sortPlaces(placesToSort) {
 }
 
 // Apply all filters and re-render list
+function filterByRating(placesArr) {
+    if (!ratingFilter) return placesArr;
+    return placesArr.filter(p => p.place_rating && p.place_rating >= ratingFilter);
+}
+
+function filterByPriceLevel(placesArr) {
+    if (!priceLevelFilter) return placesArr;
+    return placesArr.filter(p => p.place_price_level === priceLevelFilter);
+}
+
+function isOpenNow(place) {
+    if (!place.place_opening_hours) return null;
+    let hours;
+    try { hours = JSON.parse(place.place_opening_hours); } catch { return null; }
+    if (!Array.isArray(hours)) return null;
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const todayStr = hours.find(h => h.startsWith(dayNames[new Date().getDay()]));
+    if (!todayStr) return null;
+    if (todayStr.includes('Open 24 hours')) return true;
+    if (todayStr.includes('Closed')) return false;
+    const match = todayStr.match(/(\d+:\d+ [AP]M)\s*[–\-]\s*(\d+:\d+ [AP]M)/);
+    if (!match) return null;
+    const toMin = s => {
+        const [time, mer] = s.split(' ');
+        let [h, m] = time.split(':').map(Number);
+        if (mer === 'PM' && h !== 12) h += 12;
+        if (mer === 'AM' && h === 12) h = 0;
+        return h * 60 + m;
+    };
+    const cur = new Date().getHours() * 60 + new Date().getMinutes();
+    let open = toMin(match[1]), close = toMin(match[2]);
+    if (close < open) close += 1440; // overnight
+    return cur >= open && cur <= close;
+}
+
+function filterByOpenNow(placesArr) {
+    if (!openNowFilter) return placesArr;
+    return placesArr.filter(p => isOpenNow(p) === true);
+}
+
+function toggleOpenNow() {
+    openNowFilter = !openNowFilter;
+    const chip = document.getElementById('open-now-chip');
+    if (chip) {
+        chip.classList.toggle('active', openNowFilter);
+        chip.setAttribute('aria-pressed', String(openNowFilter));
+    }
+    applyFilters();
+    displayPlacesOnMap(false);
+}
+
 function applyFilters() {
     let filtered = [...places];
 
@@ -1852,6 +1934,15 @@ function applyFilters() {
 
     // Apply category filter
     filtered = filterByCategory(filtered);
+
+    // Apply rating filter
+    filtered = filterByRating(filtered);
+
+    // Apply price level filter
+    filtered = filterByPriceLevel(filtered);
+
+    // Apply open now filter
+    filtered = filterByOpenNow(filtered);
 
     // Apply sort
     filtered = sortPlaces(filtered);
@@ -2895,12 +2986,16 @@ function setupSearchModal() {
 let drawerSort = 'distance';
 let drawerCountry = '';
 let drawerType = '';
+let drawerRating = 0;
+let drawerPriceLevel = '';
 
 function openFilterDrawer() {
     // Initialize drawer state from current filters
     drawerSort = sortBy;
     drawerCountry = countryFilter;
     drawerType = activeCategory;
+    drawerRating = ratingFilter;
+    drawerPriceLevel = priceLevelFilter;
 
     // Populate options
     populateFilterDrawerOptions();
@@ -2963,6 +3058,16 @@ function populateFilterDrawerOptions() {
     });
     typeContainer.innerHTML = typeHtml;
 
+    // Rating options
+    document.querySelectorAll('#rating-filter-chips .filter-option').forEach(btn => {
+        btn.classList.toggle('active', parseFloat(btn.dataset.rating) === drawerRating);
+    });
+
+    // Price options
+    document.querySelectorAll('#price-filter-chips .filter-option').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.price === drawerPriceLevel);
+    });
+
     // Add click handlers
     setupFilterDrawerClicks();
 }
@@ -2994,6 +3099,24 @@ function setupFilterDrawerClicks() {
             drawerType = btn.dataset.type;
         });
     });
+
+    // Rating options
+    document.querySelectorAll('#rating-filter-chips .filter-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#rating-filter-chips .filter-option').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            drawerRating = parseFloat(btn.dataset.rating);
+        });
+    });
+
+    // Price options
+    document.querySelectorAll('#price-filter-chips .filter-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#price-filter-chips .filter-option').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            drawerPriceLevel = btn.dataset.price;
+        });
+    });
 }
 
 function applyFilterDrawer() {
@@ -3001,6 +3124,8 @@ function applyFilterDrawer() {
     localStorage.setItem('sortBy', sortBy);
     countryFilter = drawerCountry;
     activeCategory = drawerType;
+    ratingFilter = drawerRating;
+    priceLevelFilter = drawerPriceLevel;
 
     closeFilterDrawer();
     applyFilters();
@@ -3013,6 +3138,8 @@ function clearAllFilters() {
     drawerSort = 'distance';
     drawerCountry = '';
     drawerType = '';
+    drawerRating = 0;
+    drawerPriceLevel = '';
     populateFilterDrawerOptions();
 }
 
@@ -3039,6 +3166,8 @@ function updateFilterButton() {
     if (sortBy !== 'distance') count++;
     if (countryFilter) count++;
     if (activeCategory) count++;
+    if (ratingFilter) count++;
+    if (priceLevelFilter) count++;
 
     if (count > 0) {
         btn.classList.add('has-filters');
@@ -3077,6 +3206,20 @@ function renderActiveFilterPills() {
         </span>`;
     }
 
+    if (ratingFilter) {
+        html += `<span class="filter-pill">
+            ${ratingFilter}+ ⭐
+            <button class="filter-pill-remove" onclick="removeFilter('rating')">×</button>
+        </span>`;
+    }
+
+    if (priceLevelFilter) {
+        html += `<span class="filter-pill">
+            ${PRICE_LABELS[priceLevelFilter] || priceLevelFilter}
+            <button class="filter-pill-remove" onclick="removeFilter('price')">×</button>
+        </span>`;
+    }
+
     container.innerHTML = html;
 }
 
@@ -3084,6 +3227,8 @@ function removeFilter(type) {
     if (type === 'country') countryFilter = '';
     if (type === 'type') activeCategory = '';
     if (type === 'sort') sortBy = 'distance';
+    if (type === 'rating') ratingFilter = 0;
+    if (type === 'price') priceLevelFilter = '';
 
     applyFilters();
     displayPlacesOnMap(false);

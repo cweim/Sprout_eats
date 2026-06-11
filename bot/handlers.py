@@ -691,6 +691,7 @@ async def _save_single_place_result(
         place_rating_count=place.rating_count,
         place_price_level=place.price_level,
         place_opening_hours=place.opening_hours,
+        place_description=place.description,
         source_language=source_language,
         source_transcript=source_transcript,
         source_transcript_en=source_transcript_en,
