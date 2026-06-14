@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -55,4 +56,17 @@ if admin_path.exists():
 # Serve webapp static files (must be after API routes)
 webapp_path = Path(__file__).parent.parent / "webapp"
 if webapp_path.exists():
+    # Serve index.html with no-cache headers so Telegram WebView always fetches fresh HTML
+    @app.get("/", include_in_schema=False)
+    @app.get("/index.html", include_in_schema=False)
+    async def serve_index():
+        return FileResponse(
+            webapp_path / "index.html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
     app.mount("/", StaticFiles(directory=webapp_path, html=True), name="webapp")
