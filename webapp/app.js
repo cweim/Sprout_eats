@@ -105,7 +105,7 @@ let priceLevelFilter = '';  // '' = any; INEXPENSIVE / MODERATE / EXPENSIVE / VE
 let openNowFilter = false;  // false = no filter; true = open now only
 let searchDebounceTimer = null;
 
-const PRICE_LABELS = {
+const PLACE_PRICE_LABELS = {
     INEXPENSIVE: '💰',
     MODERATE: '💰💰',
     EXPENSIVE: '💰💰💰',
@@ -621,9 +621,9 @@ function createPopupContent(place) {
         const ratingCount = place.place_rating_count ? ` (${place.place_rating_count})` : '';
         metaHtml += `<span>⭐ ${place.place_rating}/5${ratingCount}</span>`;
     }
-    if (place.place_price_level && PRICE_LABELS[place.place_price_level]) {
+    if (place.place_price_level && PLACE_PRICE_LABELS[place.place_price_level]) {
         if (metaHtml) metaHtml += ' · ';
-        metaHtml += `<span>${PRICE_LABELS[place.place_price_level]}</span>`;
+        metaHtml += `<span>${PLACE_PRICE_LABELS[place.place_price_level]}</span>`;
     }
     const types = formatPlaceTypes(place.place_types);
     if (types) {
@@ -1317,8 +1317,8 @@ function createPlaceCard(place) {
         const count = place.place_rating_count ? ` (${place.place_rating_count})` : '';
         metaHtml += `<span class="place-card-rating">⭐ ${place.place_rating}${count}</span>`;
     }
-    if (place.place_price_level && PRICE_LABELS[place.place_price_level]) {
-        metaHtml += `<span class="place-card-price">${PRICE_LABELS[place.place_price_level]}</span>`;
+    if (place.place_price_level && PLACE_PRICE_LABELS[place.place_price_level]) {
+        metaHtml += `<span class="place-card-price">${PLACE_PRICE_LABELS[place.place_price_level]}</span>`;
     }
     const types = formatPlaceTypes(place.place_types);
     if (types) {
@@ -3215,7 +3215,7 @@ function renderActiveFilterPills() {
 
     if (priceLevelFilter) {
         html += `<span class="filter-pill">
-            ${PRICE_LABELS[priceLevelFilter] || priceLevelFilter}
+            ${PLACE_PRICE_LABELS[priceLevelFilter] || priceLevelFilter}
             <button class="filter-pill-remove" onclick="removeFilter('price')">×</button>
         </span>`;
     }
