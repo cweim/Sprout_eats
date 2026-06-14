@@ -206,8 +206,12 @@ body {
     padding: 6px;
     border-radius: 20px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    width: fit-content;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
 }
+.map-filter-row::-webkit-scrollbar { display: none; }
 
 .map-filter-chip {
     padding: 6px 12px;

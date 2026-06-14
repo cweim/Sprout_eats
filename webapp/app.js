@@ -2988,6 +2988,7 @@ let drawerCountry = '';
 let drawerType = '';
 let drawerRating = 0;
 let drawerPriceLevel = '';
+let drawerOpenNow = false;
 
 function openFilterDrawer() {
     // Initialize drawer state from current filters
@@ -2996,6 +2997,7 @@ function openFilterDrawer() {
     drawerType = activeCategory;
     drawerRating = ratingFilter;
     drawerPriceLevel = priceLevelFilter;
+    drawerOpenNow = openNowFilter;
 
     // Populate options
     populateFilterDrawerOptions();
@@ -3068,6 +3070,11 @@ function populateFilterDrawerOptions() {
         btn.classList.toggle('active', btn.dataset.price === drawerPriceLevel);
     });
 
+    // Open Now options
+    document.querySelectorAll('#open-now-filter-chips .filter-option').forEach(btn => {
+        btn.classList.toggle('active', (btn.dataset.openNow === 'true') === drawerOpenNow);
+    });
+
     // Add click handlers
     setupFilterDrawerClicks();
 }
@@ -3117,6 +3124,15 @@ function setupFilterDrawerClicks() {
             drawerPriceLevel = btn.dataset.price;
         });
     });
+
+    // Open Now options
+    document.querySelectorAll('#open-now-filter-chips .filter-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#open-now-filter-chips .filter-option').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            drawerOpenNow = btn.dataset.openNow === 'true';
+        });
+    });
 }
 
 function applyFilterDrawer() {
@@ -3126,6 +3142,13 @@ function applyFilterDrawer() {
     activeCategory = drawerType;
     ratingFilter = drawerRating;
     priceLevelFilter = drawerPriceLevel;
+    openNowFilter = drawerOpenNow;
+    // Sync map chip
+    const openNowChip = document.getElementById('open-now-chip');
+    if (openNowChip) {
+        openNowChip.classList.toggle('active', openNowFilter);
+        openNowChip.setAttribute('aria-pressed', String(openNowFilter));
+    }
 
     closeFilterDrawer();
     applyFilters();
@@ -3140,6 +3163,7 @@ function clearAllFilters() {
     drawerType = '';
     drawerRating = 0;
     drawerPriceLevel = '';
+    drawerOpenNow = false;
     populateFilterDrawerOptions();
 }
 
