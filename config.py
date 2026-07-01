@@ -20,10 +20,6 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 # Whisper
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
 
-# Database (SQLite - legacy, kept for migration)
-DATABASE_PATH = os.getenv("DATABASE_PATH", "discovery_bot.db")
-DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
-
 # Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
