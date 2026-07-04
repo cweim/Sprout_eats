@@ -1147,7 +1147,7 @@ body {
 /* Map controls */
 .map-controls {
     position: absolute;
-    bottom: 24px;
+    bottom: 84px;
     right: 12px;
     display: flex;
     flex-direction: column;
@@ -2483,7 +2483,7 @@ body {
 
 .fab-discover {
     position: fixed;
-    bottom: 24px;
+    bottom: 80px;
     right: 12px;
     width: 48px;
     height: 48px;
@@ -2500,7 +2500,7 @@ body {
 }
 
 .app-main[data-view="map"] .fab-discover {
-    bottom: 80px;
+    bottom: 148px;
 }
 
 .app-main[data-view="reviews"] .fab-discover {
