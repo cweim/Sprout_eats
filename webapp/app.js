@@ -3325,18 +3325,18 @@ function updateAllFilterCounts() {
     updateReviewFilterCounts();
 }
 
-// Switch view
+// Switch view (within map tab: map / list / reviews)
 function switchView(view) {
     currentView = view;
     document.querySelector('.app-main')?.setAttribute('data-view', view);
 
-    // Update toggle buttons
-    document.getElementById('btn-map').classList.toggle('active', view === 'map');
-    document.getElementById('btn-list').classList.toggle('active', view === 'list');
-    document.getElementById('btn-reviews').classList.toggle('active', view === 'reviews');
-    document.getElementById('btn-map').setAttribute('aria-pressed', String(view === 'map'));
-    document.getElementById('btn-list').setAttribute('aria-pressed', String(view === 'list'));
-    document.getElementById('btn-reviews').setAttribute('aria-pressed', String(view === 'reviews'));
+    // Update toggle buttons (may not exist in new bottom-nav UI)
+    document.getElementById('btn-map')?.classList.toggle('active', view === 'map');
+    document.getElementById('btn-list')?.classList.toggle('active', view === 'list');
+    document.getElementById('btn-reviews')?.classList.toggle('active', view === 'reviews');
+    document.getElementById('btn-map')?.setAttribute('aria-pressed', String(view === 'map'));
+    document.getElementById('btn-list')?.setAttribute('aria-pressed', String(view === 'list'));
+    document.getElementById('btn-reviews')?.setAttribute('aria-pressed', String(view === 'reviews'));
 
     // Update view visibility
     document.getElementById('map-view').classList.toggle('active', view === 'map');
@@ -3351,9 +3351,9 @@ function switchView(view) {
 
 // View toggle event listeners
 function setupViewToggle() {
-    document.getElementById('btn-map').addEventListener('click', () => switchView('map'));
-    document.getElementById('btn-list').addEventListener('click', () => switchView('list'));
-    document.getElementById('btn-reviews').addEventListener('click', () => switchView('reviews'));
+    document.getElementById('btn-map')?.addEventListener('click', () => switchView('map'));
+    document.getElementById('btn-list')?.addEventListener('click', () => switchView('list'));
+    document.getElementById('btn-reviews')?.addEventListener('click', () => switchView('reviews'));
 }
 
 // Initialize app
@@ -3442,8 +3442,11 @@ async function initApp() {
     }
 
 
-    // Show map view by default
-    switchView('map');
+    // Show map tab by default
+    switchTab('map');
+
+    // Load friend request badge in background
+    loadFriendRequests();
 
     // Handle Telegram startapp deep link param
     const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param
@@ -4750,4 +4753,455 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+// ========== BOTTOM NAV / TAB SWITCHING ==========
+
+let currentTab = 'map';
+let feedLoaded = false;
+
+function switchTab(tab) {
+    currentTab = tab;
+
+    // Update nav tab active state
+    document.querySelectorAll('.nav-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+
+    // Show/hide top-level views
+    const appMain = document.querySelector('.app-main');
+    const feedView = document.getElementById('feed-view');
+    const profileView = document.getElementById('profile-view');
+
+    if (appMain) appMain.style.display = tab === 'map' ? '' : 'none';
+    if (feedView) feedView.style.display = tab === 'feed' ? '' : 'none';
+    if (profileView) profileView.style.display = tab === 'profile' ? '' : 'none';
+
+    if (tab === 'map' && map) {
+        setTimeout(() => map.invalidateSize(), 100);
+    } else if (tab === 'feed') {
+        loadFeed();
+    } else if (tab === 'profile') {
+        loadProfile();
+    }
+}
+
+// ========== FEED ==========
+
+async function loadFeed() {
+    const list = document.getElementById('feed-list');
+    const loading = document.getElementById('feed-loading');
+    const empty = document.getElementById('feed-empty');
+    if (!list) return;
+
+    if (loading) loading.style.display = '';
+    if (empty) empty.style.display = 'none';
+    list.innerHTML = '';
+
+    try {
+        const res = await fetch('/api/feed', { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error('Failed to load feed');
+        const data = await res.json();
+        const activities = data.activities || [];
+
+        if (loading) loading.style.display = 'none';
+
+        if (activities.length === 0) {
+            if (empty) empty.style.display = '';
+            return;
+        }
+
+        list.innerHTML = activities.map(createFeedCard).join('');
+    } catch (err) {
+        console.error('loadFeed error:', err);
+        if (loading) loading.style.display = 'none';
+        if (list) list.innerHTML = '<p style="padding:16px;color:var(--hint-color)">Could not load feed.</p>';
+    }
+}
+
+function createFeedCard(activity) {
+    const timeAgo = formatTimeAgo(activity.created_at);
+    const actor = activity.actor_display_name || activity.actor_username || 'Someone';
+    const placeLink = activity.place_name
+        ? `<span class="feed-place-name">${escapeHtml(activity.place_name)}</span>`
+        : '';
+
+    let icon = '📍';
+    let action = 'did something';
+    if (activity.activity_type === 'visited') {
+        icon = '✅';
+        action = `visited ${placeLink}`;
+    } else if (activity.activity_type === 'reviewed') {
+        icon = '⭐';
+        action = `reviewed ${placeLink}`;
+    } else if (activity.activity_type === 'saved') {
+        icon = '🔖';
+        action = `saved ${placeLink}`;
+    } else if (activity.activity_type === 'friend_added') {
+        icon = '🤝';
+        action = 'made a new friend';
+    }
+
+    const reviewHtml = activity.review_text
+        ? `<p class="feed-review-text">"${escapeHtml(activity.review_text)}"</p>`
+        : '';
+
+    const ratingHtml = activity.review_rating
+        ? `<span class="feed-rating">${'⭐'.repeat(Math.round(activity.review_rating))}</span>`
+        : '';
+
+    return `
+        <div class="feed-card">
+            <div class="feed-card-icon">${icon}</div>
+            <div class="feed-card-body">
+                <p class="feed-action"><strong>${escapeHtml(actor)}</strong> ${action}</p>
+                ${ratingHtml}
+                ${reviewHtml}
+                <p class="feed-time">${timeAgo}</p>
+            </div>
+        </div>`;
+}
+
+function formatTimeAgo(isoStr) {
+    if (!isoStr) return '';
+    const diff = Date.now() - new Date(isoStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
+}
+
+// ========== PROFILE ==========
+
+let profileData = null;
+
+async function loadProfile() {
+    try {
+        const res = await fetch('/api/me', { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error('Failed to load profile');
+        profileData = await res.json();
+        renderProfile(profileData);
+        await loadFriends();
+        await loadFriendRequests();
+    } catch (err) {
+        console.error('loadProfile error:', err);
+    }
+}
+
+function renderProfile(data) {
+    const nameEl = document.getElementById('profile-display-name');
+    const userEl = document.getElementById('profile-username');
+    const bioEl = document.getElementById('profile-bio');
+    if (nameEl) nameEl.textContent = data.display_name || data.first_name || 'You';
+    if (userEl) userEl.textContent = data.username ? `@${data.username}` : '';
+    if (bioEl) bioEl.textContent = data.bio || '';
+
+    const stats = data.stats || {};
+    const savedEl = document.getElementById('stat-saved');
+    const visitedEl = document.getElementById('stat-visited');
+    const reviewsEl = document.getElementById('stat-reviews');
+    if (savedEl) savedEl.textContent = stats.saved ?? '—';
+    if (visitedEl) visitedEl.textContent = stats.visited ?? '—';
+    if (reviewsEl) reviewsEl.textContent = stats.reviews ?? '—';
+}
+
+// ========== FRIENDS ==========
+
+async function loadFriends() {
+    const listEl = document.getElementById('friends-list');
+    const emptyEl = document.getElementById('friends-empty');
+    const countEl = document.getElementById('friends-count');
+    if (!listEl) return;
+
+    try {
+        const res = await fetch('/api/friends', { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const friends = data.friends || [];
+
+        if (countEl) countEl.textContent = friends.length > 0 ? friends.length : '';
+
+        // Remove existing friend cards (keep empty message)
+        listEl.querySelectorAll('.friend-card').forEach(el => el.remove());
+
+        if (friends.length === 0) {
+            if (emptyEl) emptyEl.style.display = '';
+        } else {
+            if (emptyEl) emptyEl.style.display = 'none';
+            friends.forEach(f => {
+                const card = document.createElement('div');
+                card.className = 'friend-card';
+                card.innerHTML = `
+                    <div class="friend-info">
+                        <p class="friend-name">${escapeHtml(f.display_name || f.first_name || 'Friend')}</p>
+                        ${f.username ? `<p class="friend-username">@${escapeHtml(f.username)}</p>` : ''}
+                    </div>
+                    <button class="btn-icon-sm btn-danger-sm" onclick="removeFriend(${f.friendship_id})" aria-label="Remove friend">✕</button>`;
+                listEl.appendChild(card);
+            });
+        }
+    } catch (err) {
+        console.error('loadFriends error:', err);
+    }
+}
+
+async function loadFriendRequests() {
+    try {
+        const res = await fetch('/api/friends/requests', { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        const requests = data.requests || [];
+
+        // Update badge on profile nav tab
+        const badge = document.getElementById('nav-profile-badge');
+        if (badge) {
+            if (requests.length > 0) {
+                badge.textContent = requests.length;
+                badge.style.display = '';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // Update banner in profile view
+        const banner = document.getElementById('friend-requests-banner');
+        const label = document.getElementById('friend-requests-label');
+        if (banner && label) {
+            if (requests.length > 0) {
+                label.textContent = `${requests.length} friend request${requests.length > 1 ? 's' : ''}`;
+                banner.style.display = '';
+            } else {
+                banner.style.display = 'none';
+            }
+        }
+    } catch (err) {
+        console.error('loadFriendRequests error:', err);
+    }
+}
+
+async function removeFriend(friendshipId) {
+    if (!confirm('Remove this friend?')) return;
+    try {
+        await fetch(`/api/friends/${friendshipId}`, { method: 'DELETE', headers: getAuthHeaders() });
+        await loadFriends();
+    } catch (err) {
+        console.error('removeFriend error:', err);
+    }
+}
+
+// ========== ADD FRIEND MODAL ==========
+
+let friendSearchTimeout = null;
+
+function openAddFriendModal() {
+    const modal = document.getElementById('add-friend-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        document.getElementById('friend-search-input')?.focus();
+    }
+}
+
+function closeAddFriendModal() {
+    const modal = document.getElementById('add-friend-modal');
+    if (modal) modal.style.display = 'none';
+    const input = document.getElementById('friend-search-input');
+    if (input) input.value = '';
+    const results = document.getElementById('friend-search-results');
+    if (results) results.innerHTML = '';
+    const emptyMsg = document.getElementById('friend-search-empty');
+    if (emptyMsg) emptyMsg.style.display = 'none';
+}
+
+function searchFriends(query) {
+    clearTimeout(friendSearchTimeout);
+    if (!query || query.trim().length < 2) {
+        document.getElementById('friend-search-results').innerHTML = '';
+        document.getElementById('friend-search-empty').style.display = 'none';
+        return;
+    }
+    friendSearchTimeout = setTimeout(() => doSearchFriends(query.trim()), 400);
+}
+
+async function doSearchFriends(query) {
+    const resultsEl = document.getElementById('friend-search-results');
+    const emptyEl = document.getElementById('friend-search-empty');
+    if (!resultsEl) return;
+
+    try {
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`, { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const users = data.users || [];
+
+        if (users.length === 0) {
+            resultsEl.innerHTML = '';
+            if (emptyEl) emptyEl.style.display = '';
+            return;
+        }
+        if (emptyEl) emptyEl.style.display = 'none';
+
+        resultsEl.innerHTML = users.map(u => `
+            <div class="friend-result-card">
+                <div class="friend-info">
+                    <p class="friend-name">${escapeHtml(u.display_name || u.first_name || 'User')}</p>
+                    ${u.username ? `<p class="friend-username">@${escapeHtml(u.username)}</p>` : ''}
+                </div>
+                <button class="btn-secondary-sm" onclick="sendFriendRequest(${u.id}, this)"
+                    ${u.friendship_status ? 'disabled' : ''}>
+                    ${u.friendship_status === 'accepted' ? 'Friends' :
+                      u.friendship_status === 'pending' ? 'Requested' :
+                      u.friendship_status === 'incoming_request' ? 'Accept' : 'Add'}
+                </button>
+            </div>`).join('');
+    } catch (err) {
+        console.error('searchFriends error:', err);
+    }
+}
+
+async function sendFriendRequest(userId, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Sent'; }
+    try {
+        await fetch('/api/friends/request', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ addressee_id: userId })
+        });
+    } catch (err) {
+        console.error('sendFriendRequest error:', err);
+        if (btn) { btn.disabled = false; btn.textContent = 'Add'; }
+    }
+}
+
+// ========== FRIEND REQUESTS MODAL ==========
+
+function showFriendRequests() {
+    const modal = document.getElementById('friend-requests-modal');
+    if (modal) modal.style.display = 'flex';
+    loadFriendRequestsModal();
+}
+
+function closeFriendRequestsModal() {
+    const modal = document.getElementById('friend-requests-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function loadFriendRequestsModal() {
+    const listEl = document.getElementById('friend-requests-list');
+    if (!listEl) return;
+
+    try {
+        const res = await fetch('/api/friends/requests', { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const requests = data.requests || [];
+
+        if (requests.length === 0) {
+            listEl.innerHTML = '<p style="padding:16px;color:var(--hint-color)">No pending requests.</p>';
+            return;
+        }
+
+        listEl.innerHTML = requests.map(r => `
+            <div class="friend-request-card" id="req-${r.friendship_id}">
+                <div class="friend-info">
+                    <p class="friend-name">${escapeHtml(r.display_name || r.first_name || 'User')}</p>
+                    ${r.username ? `<p class="friend-username">@${escapeHtml(r.username)}</p>` : ''}
+                </div>
+                <div class="request-actions">
+                    <button class="btn-primary-sm" onclick="acceptFriendRequest(${r.friendship_id})">Accept</button>
+                    <button class="btn-secondary-sm" onclick="declineFriendRequest(${r.friendship_id})">Decline</button>
+                </div>
+            </div>`).join('');
+    } catch (err) {
+        console.error('loadFriendRequestsModal error:', err);
+    }
+}
+
+async function acceptFriendRequest(friendshipId) {
+    try {
+        await fetch(`/api/friends/${friendshipId}/accept`, { method: 'POST', headers: getAuthHeaders() });
+        document.getElementById(`req-${friendshipId}`)?.remove();
+        await loadFriends();
+        await loadFriendRequests();
+    } catch (err) {
+        console.error('acceptFriendRequest error:', err);
+    }
+}
+
+async function declineFriendRequest(friendshipId) {
+    try {
+        await fetch(`/api/friends/${friendshipId}`, { method: 'DELETE', headers: getAuthHeaders() });
+        document.getElementById(`req-${friendshipId}`)?.remove();
+        await loadFriendRequests();
+    } catch (err) {
+        console.error('declineFriendRequest error:', err);
+    }
+}
+
+// ========== EDIT PROFILE ==========
+
+function openEditProfile() {
+    const modal = document.getElementById('edit-profile-modal');
+    if (!modal) return;
+    if (profileData) {
+        const nameEl = document.getElementById('edit-display-name');
+        const bioEl = document.getElementById('edit-bio');
+        const publicEl = document.getElementById('edit-is-public');
+        if (nameEl) nameEl.value = profileData.display_name || '';
+        if (bioEl) bioEl.value = profileData.bio || '';
+        if (publicEl) publicEl.checked = profileData.is_public ?? true;
+    }
+    modal.style.display = 'flex';
+}
+
+function closeEditProfile() {
+    const modal = document.getElementById('edit-profile-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function saveProfile() {
+    const displayName = document.getElementById('edit-display-name')?.value.trim();
+    const bio = document.getElementById('edit-bio')?.value.trim();
+    const isPublic = document.getElementById('edit-is-public')?.checked ?? true;
+
+    try {
+        const res = await fetch('/api/me', {
+            method: 'PATCH',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ display_name: displayName, bio, is_public: isPublic })
+        });
+        if (!res.ok) throw new Error('Failed to save');
+        profileData = await res.json();
+        renderProfile(profileData);
+        closeEditProfile();
+    } catch (err) {
+        console.error('saveProfile error:', err);
+        alert('Could not save profile. Please try again.');
+    }
+}
+
+// ========== INVITE LINK ==========
+
+async function shareInviteLink() {
+    try {
+        const res = await fetch('/api/invite-link', { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const link = data.invite_link;
+
+        if (navigator.share) {
+            await navigator.share({ title: '🌱 Sprout', text: 'Add me on Sprout!', url: link });
+        } else if (navigator.clipboard) {
+            await navigator.clipboard.writeText(link);
+            alert('Invite link copied!');
+        } else {
+            prompt('Copy your invite link:', link);
+        }
+    } catch (err) {
+        console.error('shareInviteLink error:', err);
+    }
+}
+
+
 

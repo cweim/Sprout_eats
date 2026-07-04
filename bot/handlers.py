@@ -299,7 +299,75 @@ def ensure_bot_user(update: Update):
     )
 
 
+async def notify_friends_of_review(
+    context: ContextTypes.DEFAULT_TYPE,
+    reviewer_id: int,
+    place_name: str,
+    rating: int,
+    google_place_id: str,
+) -> None:
+    """Send bot notification to all friends when someone writes a review."""
+    friend_ids = repository.get_friend_ids(reviewer_id)
+    if not friend_ids:
+        return
+    reviewer = repository.get_user_by_id(reviewer_id)
+    reviewer_name = (
+        reviewer.get("display_name") or reviewer.get("first_name") or "Your friend"
+        if reviewer else "Your friend"
+    )
+    stars = "⭐" * max(1, min(5, rating))
+    text = f"🌱 *{reviewer_name}* just reviewed *{html.escape(place_name)}*\n{stars}"
+    bot_username = config.TELEGRAM_BOT_USERNAME
+    for friend_id in friend_ids:
+        try:
+            keyboard = None
+            if bot_username and google_place_id:
+                app_url = f"{config.WEBAPP_URL}?startapp=place_{google_place_id}" if config.WEBAPP_URL else None
+                if app_url:
+                    keyboard = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("See Review 👀", web_app=WebAppInfo(url=app_url))
+                    ]])
+            await context.bot.send_message(
+                chat_id=friend_id,
+                text=text,
+                parse_mode="Markdown",
+                reply_markup=keyboard,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify friend {friend_id} of review: {e}")
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Handle friend invite deep link
+    if context.args and context.args[0].startswith("addfriend_"):
+        try:
+            requester_id = int(context.args[0].replace("addfriend_", ""))
+        except ValueError:
+            return
+        ensure_bot_user(update)
+        addressee_id = update.effective_user.id
+        if requester_id == addressee_id:
+            await update.message.reply_text("That's your own invite link! Share it with friends.")
+            return
+        requester = repository.get_user_by_id(requester_id)
+        requester_name = (
+            requester.get("display_name") or requester.get("first_name") or "Someone"
+            if requester else "Someone"
+        )
+        friendship = repository.send_friend_request(requester_id, addressee_id)
+        if friendship:
+            await update.message.reply_text(
+                f"🌱 *{html.escape(requester_name)}* wants to be friends on Sprout!\n\n"
+                f"Open the app to accept their request.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Open Sprout 🌱", web_app=WebAppInfo(url=config.WEBAPP_URL))
+                ]]) if config.WEBAPP_URL else None,
+            )
+        else:
+            await update.message.reply_text("You're already connected!")
+        return
+
     # Handle group review deep link
     if context.args and context.args[0].startswith("grpreview_"):
         try:

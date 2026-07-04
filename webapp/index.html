@@ -14,15 +14,13 @@
 
 
     <!-- App styles - Playful & Warm theme -->
-    <link rel="stylesheet" href="styles.css?v=48">
+    <link rel="stylesheet" href="styles.css?v=49">
 </head>
 <body>
     <header class="app-header">
-        <h1>🌱 My Places</h1>
-        <div class="view-toggle">
-            <button id="btn-map" class="toggle-btn active" aria-pressed="true">Map</button>
-            <button id="btn-list" class="toggle-btn" aria-pressed="false">List</button>
-            <button id="btn-reviews" class="toggle-btn" aria-pressed="false">Reviews</button>
+        <h1 class="app-logo">🌱 Sprout</h1>
+        <div class="header-actions">
+            <button id="btn-header-filter" class="header-icon-btn" aria-label="Filter" style="display:none">⚙️</button>
         </div>
     </header>
 
@@ -398,6 +396,121 @@
         </div>
     </div>
 
-    <script src="app.js?v=70"></script>
+    <!-- Feed View -->
+    <div id="feed-view" class="view" style="display:none">
+        <div id="feed-list" class="feed-list"></div>
+        <div id="feed-loading" class="feed-loading" style="display:none">Loading...</div>
+        <div id="feed-empty" class="feed-empty" style="display:none">
+            <div class="feed-empty-icon">🌱</div>
+            <p class="feed-empty-title">No activity yet</p>
+            <p class="feed-empty-sub">Add friends to see their food adventures here.</p>
+            <button class="btn-primary" onclick="switchTab('profile')">Find Friends</button>
+        </div>
+    </div>
+
+    <!-- Profile View -->
+    <div id="profile-view" class="view" style="display:none">
+        <div class="profile-header">
+            <div class="profile-avatar" id="profile-avatar"></div>
+            <div class="profile-info">
+                <h2 id="profile-name" class="profile-name"></h2>
+                <p id="profile-username" class="profile-username"></p>
+                <p id="profile-bio" class="profile-bio"></p>
+            </div>
+            <button id="btn-edit-profile" class="btn-icon-sm" onclick="openEditProfile()" aria-label="Edit profile">✏️</button>
+        </div>
+        <div class="profile-stats">
+            <div class="stat-item"><span class="stat-num" id="stat-saved">—</span><span class="stat-label">Saved</span></div>
+            <div class="stat-item"><span class="stat-num" id="stat-visited">—</span><span class="stat-label">Visited</span></div>
+            <div class="stat-item"><span class="stat-num" id="stat-reviews">—</span><span class="stat-label">Reviews</span></div>
+        </div>
+
+        <!-- Friends section -->
+        <div class="profile-section">
+            <div class="profile-section-header">
+                <h3 class="profile-section-title">Friends <span id="friends-count" class="friends-count-badge"></span></h3>
+                <button class="btn-secondary-sm" onclick="openAddFriendModal()">+ Add</button>
+            </div>
+            <div id="friend-requests-banner" class="friend-requests-banner" style="display:none">
+                <span id="friend-requests-label"></span>
+                <button class="btn-text" onclick="showFriendRequests()">View</button>
+            </div>
+            <div id="friends-list" class="friends-list">
+                <p class="friends-empty" id="friends-empty" style="display:none">No friends yet. Add friends to see their reviews!</p>
+            </div>
+        </div>
+
+        <!-- Invite link -->
+        <div class="profile-section">
+            <button class="btn-full-secondary" onclick="shareInviteLink()">🔗 Invite a Friend</button>
+        </div>
+    </div>
+
+    <!-- Add Friend Modal -->
+    <div id="add-friend-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="add-friend-title">
+        <div class="modal-sheet">
+            <div class="modal-header">
+                <h3 id="add-friend-title">Add Friend</h3>
+                <button class="modal-close" onclick="closeAddFriendModal()" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="friend-search-input" class="search-input" placeholder="Search by @username..." autocomplete="off" oninput="searchFriends(this.value)">
+                <div id="friend-search-results" class="friend-search-results"></div>
+                <div id="friend-search-empty" class="friend-search-empty" style="display:none">No users found</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Friend Requests Modal -->
+    <div id="friend-requests-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true">
+        <div class="modal-sheet">
+            <div class="modal-header">
+                <h3>Friend Requests</h3>
+                <button class="modal-close" onclick="closeFriendRequestsModal()" aria-label="Close">×</button>
+            </div>
+            <div id="friend-requests-list" class="friend-requests-list"></div>
+        </div>
+    </div>
+
+    <!-- Edit Profile Modal -->
+    <div id="edit-profile-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true">
+        <div class="modal-sheet">
+            <div class="modal-header">
+                <h3>Edit Profile</h3>
+                <button class="modal-close" onclick="closeEditProfile()" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label">Display Name</label>
+                <input type="text" id="edit-display-name" class="form-input" placeholder="Your name" maxlength="50">
+                <label class="form-label">Bio</label>
+                <textarea id="edit-bio" class="form-textarea" placeholder="Food lover, explorer..." maxlength="150" rows="3"></textarea>
+                <label class="form-label form-label-check">
+                    <input type="checkbox" id="edit-is-public"> Public profile (friends can find you)
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" onclick="saveProfile()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
+        <button class="nav-tab" data-tab="feed" onclick="switchTab('feed')" aria-label="Feed">
+            <span class="nav-icon">🏠</span>
+            <span class="nav-label">Feed</span>
+        </button>
+        <button class="nav-tab active" data-tab="map" onclick="switchTab('map')" aria-label="My Map">
+            <span class="nav-icon">🗺️</span>
+            <span class="nav-label">My Map</span>
+        </button>
+        <button class="nav-tab" data-tab="profile" onclick="switchTab('profile')" aria-label="Profile">
+            <span class="nav-icon">👤</span>
+            <span class="nav-label">Profile</span>
+            <span class="nav-badge" id="nav-profile-badge" style="display:none"></span>
+        </button>
+    </nav>
+
+    <script src="app.js?v=72"></script>
 </body>
 </html>

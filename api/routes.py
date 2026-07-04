@@ -313,6 +313,20 @@ async def update_place(
             entity_id=str(place_id),
             metadata={"place_name": place.get("name")},
         )
+        # Set visited_at timestamp and log to activity feed
+        visited_at = datetime.utcnow().isoformat()
+        repository.update_place(user.id, place_id, visited_at=visited_at)
+        repository.log_activity(
+            user_id=user.id,
+            activity_type="visited",
+            place_id=place_id,
+            metadata={
+                "place_name": place.get("name"),
+                "address": place.get("address"),
+                "google_place_id": place.get("google_place_id"),
+                "place_rating": place.get("place_rating"),
+            },
+        )
 
     return {"place": place_to_dict(place)}
 
@@ -566,6 +580,21 @@ async def create_or_update_review(
         dishes=dishes_data
     )
 
+    # Log to activity feed
+    place = repository.get_place_by_id(user.id, place_id)
+    repository.log_activity(
+        user_id=user.id,
+        activity_type="reviewed",
+        place_id=place_id,
+        metadata={
+            "place_name": place.get("name") if place else None,
+            "address": place.get("address") if place else None,
+            "google_place_id": place.get("google_place_id") if place else None,
+            "rating": request.overall_rating,
+            "remarks": (request.overall_remarks or "")[:100],
+        },
+    )
+
     return {"review": review_to_dict(review), "message": "Review saved!"}
 
 
@@ -698,3 +727,152 @@ async def delete_photo(
         raise HTTPException(status_code=404, detail="Photo not found")
 
     return {"success": True, "message": "Photo deleted"}
+
+
+# =============================================================================
+# Profile Endpoints
+# =============================================================================
+
+class ProfileUpdate(BaseModel):
+    display_name: Optional[str] = None
+    bio: Optional[str] = None
+    is_public: Optional[bool] = None
+
+
+@router.get("/me")
+async def get_my_profile(user: TelegramUser = Depends(get_current_user)):
+    """Get authenticated user's own profile with stats."""
+    profile = repository.get_my_profile(user.id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return {"profile": profile}
+
+
+@router.patch("/me")
+async def update_my_profile(update: ProfileUpdate, user: TelegramUser = Depends(get_current_user)):
+    """Update display name, bio, or privacy setting."""
+    updated = repository.update_user_profile(
+        user.id,
+        display_name=update.display_name,
+        bio=update.bio,
+        is_public=update.is_public,
+    )
+    profile = repository.get_my_profile(user.id)
+    return {"profile": profile}
+
+
+@router.get("/users/search")
+async def search_users(q: str = "", user: TelegramUser = Depends(get_current_user)):
+    """Search public users by Telegram username."""
+    if len(q) < 2:
+        return {"users": []}
+    results = repository.search_users_by_username(q)
+    results = [r for r in results if r["id"] != user.id]
+    # Annotate with friendship status
+    for r in results:
+        r["friendship_status"] = repository.get_friendship_status(user.id, r["id"])
+    return {"users": results}
+
+
+@router.get("/users/{target_user_id}/profile")
+async def get_user_profile(target_user_id: int, user: TelegramUser = Depends(get_current_user)):
+    """Get another user's public profile."""
+    profile = repository.get_public_profile(target_user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found or profile is private")
+    friendship_status = repository.get_friendship_status(user.id, target_user_id)
+    return {"profile": profile, "friendship_status": friendship_status}
+
+
+# =============================================================================
+# Friends Endpoints
+# =============================================================================
+
+class FriendRequestBody(BaseModel):
+    target_user_id: int
+
+
+@router.get("/friends")
+async def list_friends(user: TelegramUser = Depends(get_current_user)):
+    """List all accepted friends."""
+    friends = repository.get_friends(user.id)
+    return {"friends": friends}
+
+
+@router.get("/friends/requests")
+async def get_friend_requests(user: TelegramUser = Depends(get_current_user)):
+    """Get pending incoming friend requests."""
+    requests = repository.get_pending_friend_requests(user.id)
+    return {"requests": requests}
+
+
+@router.post("/friends/request")
+async def send_friend_request(body: FriendRequestBody, user: TelegramUser = Depends(get_current_user)):
+    """Send a friend request to another user."""
+    if body.target_user_id == user.id:
+        raise HTTPException(status_code=400, detail="Cannot add yourself")
+    friendship = repository.send_friend_request(user.id, body.target_user_id)
+    if not friendship:
+        raise HTTPException(status_code=409, detail="Friend request already exists")
+    return {"friendship": friendship}
+
+
+@router.post("/friends/{friendship_id}/accept")
+async def accept_friend_request(friendship_id: str, user: TelegramUser = Depends(get_current_user)):
+    """Accept an incoming friend request."""
+    result = repository.accept_friend_request(friendship_id, user.id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Request not found or already handled")
+    repository.log_activity(user.id, "friend_added", metadata={"friendship_id": friendship_id})
+    return {"friendship": result}
+
+
+@router.delete("/friends/{friendship_id}")
+async def remove_or_decline_friend(friendship_id: str, user: TelegramUser = Depends(get_current_user)):
+    """Decline a pending request or remove an accepted friendship."""
+    repository.decline_or_remove_friendship(friendship_id, user.id)
+    return {"ok": True}
+
+
+# =============================================================================
+# Feed Endpoint
+# =============================================================================
+
+@router.get("/feed")
+async def get_feed(
+    page: int = 1,
+    per_page: int = 20,
+    user: TelegramUser = Depends(get_current_user),
+):
+    """Get friend activity feed."""
+    offset = (page - 1) * per_page
+    activities = repository.get_friend_feed(user.id, limit=per_page, offset=offset)
+    return {"activities": activities, "page": page, "has_more": len(activities) == per_page}
+
+
+# =============================================================================
+# Restaurant Page (friend reviews for any google_place_id)
+# =============================================================================
+
+@router.get("/restaurant/{google_place_id}/friend-reviews")
+async def get_friend_reviews_for_restaurant(
+    google_place_id: str,
+    user: TelegramUser = Depends(get_current_user),
+):
+    """Get friends' reviews for any restaurant by Google Place ID."""
+    reviews = repository.get_friend_reviews_for_place(user.id, google_place_id)
+    return {"reviews": reviews, "count": len(reviews)}
+
+
+# =============================================================================
+# Invite Link Helper
+# =============================================================================
+
+@router.get("/invite-link")
+async def get_invite_link(user: TelegramUser = Depends(get_current_user)):
+    """Generate a friend invite deeplink for this user."""
+    bot_username = app_config.TELEGRAM_BOT_USERNAME
+    if not bot_username:
+        return {"link": None, "message": "Bot username not configured"}
+    link = f"https://t.me/{bot_username}?start=addfriend_{user.id}"
+    return {"link": link, "user_id": user.id}

@@ -502,7 +502,7 @@ def update_place(user_id: int, place_id: int, **kwargs) -> Optional[Dict[str, An
     supabase = get_supabase()
 
     # Filter allowed fields
-    allowed_fields = {"is_visited", "notes", "name", "place_types"}
+    allowed_fields = {"is_visited", "notes", "name", "place_types", "visited_at"}
     update_data = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
     if not update_data:
@@ -1701,3 +1701,324 @@ def get_place_reviews(user_id: int, place_id: int) -> List[Dict[str, Any]]:
     return reviews
 
     return page, total
+
+
+# =============================================================================
+# User Profile Operations
+# =============================================================================
+
+def update_user_profile(
+    user_id: int,
+    display_name: Optional[str] = None,
+    bio: Optional[str] = None,
+    is_public: Optional[bool] = None,
+) -> Optional[Dict[str, Any]]:
+    """Update user profile fields."""
+    supabase = get_supabase()
+    update_data = {}
+    if display_name is not None:
+        update_data["display_name"] = display_name
+    if bio is not None:
+        update_data["bio"] = bio
+    if is_public is not None:
+        update_data["is_public"] = is_public
+    if not update_data:
+        return None
+    result = supabase.table("users").update(update_data).eq("id", user_id).execute()
+    return result.data[0] if result.data else None
+
+
+def _get_user_stats(user_id: int, supabase) -> Dict[str, int]:
+    """Compute profile stats for a user."""
+    saved = supabase.table("places").select("id", count="exact").eq("user_id", user_id).is_("deleted_at", "null").is_("group_id", "null").execute()
+    visited = supabase.table("places").select("id", count="exact").eq("user_id", user_id).eq("is_visited", True).is_("deleted_at", "null").is_("group_id", "null").execute()
+    reviews = supabase.table("reviews").select("id", count="exact").eq("user_id", user_id).execute()
+    return {
+        "places_saved": saved.count or 0,
+        "places_visited": visited.count or 0,
+        "reviews_written": reviews.count or 0,
+    }
+
+
+def get_my_profile(user_id: int) -> Optional[Dict[str, Any]]:
+    """Get full profile for the authenticated user (public or private)."""
+    supabase = get_supabase()
+    result = supabase.table("users").select(
+        "id, username, first_name, last_name, display_name, bio, is_public, created_at"
+    ).eq("id", user_id).execute()
+    if not result.data:
+        return None
+    user = result.data[0]
+    user["stats"] = _get_user_stats(user_id, supabase)
+    return user
+
+
+def get_public_profile(user_id: int) -> Optional[Dict[str, Any]]:
+    """Get a public profile (returns None if private)."""
+    supabase = get_supabase()
+    result = supabase.table("users").select(
+        "id, username, first_name, last_name, display_name, bio, is_public, created_at"
+    ).eq("id", user_id).execute()
+    if not result.data:
+        return None
+    user = result.data[0]
+    if not user.get("is_public"):
+        return None
+    user["stats"] = _get_user_stats(user_id, supabase)
+    return user
+
+
+def search_users_by_username(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Search public users by Telegram username."""
+    supabase = get_supabase()
+    result = supabase.table("users").select(
+        "id, username, first_name, display_name"
+    ).eq("is_public", True).ilike("username", f"%{query}%").limit(limit).execute()
+    return result.data or []
+
+
+# =============================================================================
+# Friendship Operations
+# =============================================================================
+
+def send_friend_request(requester_id: int, addressee_id: int) -> Optional[Dict[str, Any]]:
+    """Send a friend request. Returns None if one already exists."""
+    supabase = get_supabase()
+    try:
+        result = supabase.table("user_friendships").insert({
+            "requester_id": requester_id,
+            "addressee_id": addressee_id,
+            "status": "pending",
+        }).execute()
+        return result.data[0] if result.data else None
+    except Exception:
+        return None
+
+
+def accept_friend_request(friendship_id: str, addressee_id: int) -> Optional[Dict[str, Any]]:
+    """Accept a pending request (only the addressee can accept)."""
+    supabase = get_supabase()
+    result = supabase.table("user_friendships").update({
+        "status": "accepted",
+        "updated_at": "now()",
+    }).eq("id", friendship_id).eq("addressee_id", addressee_id).eq("status", "pending").execute()
+    return result.data[0] if result.data else None
+
+
+def decline_or_remove_friendship(friendship_id: str, user_id: int) -> bool:
+    """Decline a request or remove an accepted friendship (either party)."""
+    supabase = get_supabase()
+    result = supabase.table("user_friendships").delete().eq("id", friendship_id).or_(
+        f"requester_id.eq.{user_id},addressee_id.eq.{user_id}"
+    ).execute()
+    return bool(result.data)
+
+
+def get_friends(user_id: int) -> List[Dict[str, Any]]:
+    """Get all accepted friends with basic profile info."""
+    supabase = get_supabase()
+    as_req = supabase.table("user_friendships").select(
+        "id, addressee_id, created_at"
+    ).eq("requester_id", user_id).eq("status", "accepted").execute()
+    as_addr = supabase.table("user_friendships").select(
+        "id, requester_id, created_at"
+    ).eq("addressee_id", user_id).eq("status", "accepted").execute()
+
+    friend_entries = []
+    for row in (as_req.data or []):
+        friend_entries.append({"friendship_id": row["id"], "friend_user_id": row["addressee_id"]})
+    for row in (as_addr.data or []):
+        friend_entries.append({"friendship_id": row["id"], "friend_user_id": row["requester_id"]})
+
+    if not friend_entries:
+        return []
+
+    friend_ids = [e["friend_user_id"] for e in friend_entries]
+    users_result = supabase.table("users").select(
+        "id, username, first_name, display_name"
+    ).in_("id", friend_ids).execute()
+    users_map = {u["id"]: u for u in (users_result.data or [])}
+
+    out = []
+    for entry in friend_entries:
+        u = users_map.get(entry["friend_user_id"], {})
+        out.append({
+            "friendship_id": entry["friendship_id"],
+            "user_id": entry["friend_user_id"],
+            "username": u.get("username"),
+            "first_name": u.get("first_name"),
+            "display_name": u.get("display_name"),
+        })
+    return out
+
+
+def get_pending_friend_requests(user_id: int) -> List[Dict[str, Any]]:
+    """Get pending incoming friend requests."""
+    supabase = get_supabase()
+    result = supabase.table("user_friendships").select(
+        "id, requester_id, created_at"
+    ).eq("addressee_id", user_id).eq("status", "pending").execute()
+
+    if not result.data:
+        return []
+
+    requester_ids = [r["requester_id"] for r in result.data]
+    users_result = supabase.table("users").select(
+        "id, username, first_name, display_name"
+    ).in_("id", requester_ids).execute()
+    users_map = {u["id"]: u for u in (users_result.data or [])}
+
+    out = []
+    for row in result.data:
+        u = users_map.get(row["requester_id"], {})
+        out.append({
+            "friendship_id": row["id"],
+            "user_id": row["requester_id"],
+            "username": u.get("username"),
+            "first_name": u.get("first_name"),
+            "display_name": u.get("display_name"),
+            "created_at": row["created_at"],
+        })
+    return out
+
+
+def get_friend_ids(user_id: int) -> List[int]:
+    """Get list of accepted friend user IDs."""
+    supabase = get_supabase()
+    as_req = supabase.table("user_friendships").select("addressee_id").eq("requester_id", user_id).eq("status", "accepted").execute()
+    as_addr = supabase.table("user_friendships").select("requester_id").eq("addressee_id", user_id).eq("status", "accepted").execute()
+    ids = [r["addressee_id"] for r in (as_req.data or [])]
+    ids += [r["requester_id"] for r in (as_addr.data or [])]
+    return ids
+
+
+def are_friends(user_id: int, other_id: int) -> bool:
+    """Check if two users are friends."""
+    supabase = get_supabase()
+    result = supabase.table("user_friendships").select("id").or_(
+        f"and(requester_id.eq.{user_id},addressee_id.eq.{other_id}),and(requester_id.eq.{other_id},addressee_id.eq.{user_id})"
+    ).eq("status", "accepted").execute()
+    return bool(result.data)
+
+
+def get_friendship_status(user_id: int, other_id: int) -> Optional[str]:
+    """Return friendship status between two users, or None if none exists."""
+    supabase = get_supabase()
+    result = supabase.table("user_friendships").select("id, status, requester_id").or_(
+        f"and(requester_id.eq.{user_id},addressee_id.eq.{other_id}),and(requester_id.eq.{other_id},addressee_id.eq.{user_id})"
+    ).execute()
+    if not result.data:
+        return None
+    row = result.data[0]
+    status = row["status"]
+    if status == "pending" and row["requester_id"] != user_id:
+        return "incoming_request"
+    return status
+
+
+def get_friend_reviews_for_place(user_id: int, google_place_id: str) -> List[Dict[str, Any]]:
+    """Get reviews written by friends for a given google_place_id."""
+    supabase = get_supabase()
+    friend_ids = get_friend_ids(user_id)
+    if not friend_ids:
+        return []
+
+    places_result = supabase.table("places").select(
+        "id, user_id, name, address"
+    ).in_("user_id", friend_ids).eq("google_place_id", google_place_id).is_("deleted_at", "null").execute()
+    if not places_result.data:
+        return []
+
+    place_ids = [p["id"] for p in places_result.data]
+    place_map = {p["id"]: p for p in places_result.data}
+    user_id_map = {p["id"]: p["user_id"] for p in places_result.data}
+
+    reviews_result = supabase.table("reviews").select(
+        "id, user_id, place_id, overall_rating, price_rating, overall_remarks, created_at"
+    ).in_("place_id", place_ids).execute()
+
+    if not reviews_result.data:
+        return []
+
+    reviewer_ids = list({r["user_id"] for r in reviews_result.data})
+    users_result = supabase.table("users").select(
+        "id, first_name, display_name, username"
+    ).in_("id", reviewer_ids).execute()
+    users_map = {u["id"]: u for u in (users_result.data or [])}
+
+    out = []
+    for r in reviews_result.data:
+        u = users_map.get(r["user_id"], {})
+        place = place_map.get(r["place_id"], {})
+        dishes = supabase.table("review_dishes").select("dish_name, rating").eq("review_id", r["id"]).execute()
+        photos = supabase.table("review_photos").select("file_url").eq("review_id", r["id"]).order("sort_order").limit(1).execute()
+        out.append({
+            **r,
+            "reviewer_name": u.get("display_name") or u.get("first_name") or "Friend",
+            "reviewer_username": u.get("username"),
+            "dishes": dishes.data or [],
+            "photo_url": photos.data[0]["file_url"] if photos.data else None,
+            "place_name": place.get("name"),
+            "place_address": place.get("address"),
+        })
+    return out
+
+
+# =============================================================================
+# Activity Feed Operations
+# =============================================================================
+
+def log_activity(
+    user_id: int,
+    activity_type: str,
+    place_id: Optional[int] = None,
+    review_id: Optional[int] = None,
+    metadata: Optional[Dict] = None,
+    is_public: bool = True,
+) -> None:
+    """Log a user activity (visited, reviewed, saved, friend_added). Non-critical."""
+    supabase = get_supabase()
+    try:
+        supabase.table("user_activities").insert({
+            "user_id": user_id,
+            "activity_type": activity_type,
+            "place_id": place_id,
+            "review_id": review_id,
+            "metadata": metadata or {},
+            "is_public": is_public,
+        }).execute()
+    except Exception:
+        pass
+
+
+def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
+    """Get activity feed from accepted friends."""
+    supabase = get_supabase()
+    friend_ids = get_friend_ids(user_id)
+    if not friend_ids:
+        return []
+
+    result = supabase.table("user_activities").select(
+        "id, user_id, activity_type, place_id, metadata, is_public, created_at"
+    ).in_("user_id", friend_ids).eq("is_public", True).order(
+        "created_at", desc=True
+    ).limit(limit).offset(offset).execute()
+
+    if not result.data:
+        return []
+
+    actor_ids = list({r["user_id"] for r in result.data})
+    users_result = supabase.table("users").select(
+        "id, first_name, display_name, username"
+    ).in_("id", actor_ids).execute()
+    users_map = {u["id"]: u for u in (users_result.data or [])}
+
+    out = []
+    for row in result.data:
+        u = users_map.get(row["user_id"], {})
+        out.append({
+            **row,
+            "actor_name": u.get("display_name") or u.get("first_name") or "Friend",
+            "actor_username": u.get("username"),
+        })
+    return out
