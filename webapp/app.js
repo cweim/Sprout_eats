@@ -1442,6 +1442,77 @@ function createPlaceCard(place) {
     return card;
 }
 
+// ── Personal place card (new design) ─────────────────────────────────
+
+function createPersonalPlaceCard(place) {
+    const card = document.createElement('div');
+    card.className = 'pcard' + (place.is_visited ? ' pcard-visited' : '');
+    card.dataset.placeId = place.id;
+
+    const review = getPlaceReview(place.id);
+    const platform = place.source_platform;
+
+    const platformBadge = platform === 'instagram'
+        ? '<span class="pcard-platform" title="From Instagram">📸</span>'
+        : platform === 'tiktok'
+        ? '<span class="pcard-platform" title="From TikTok">🎵</span>'
+        : '';
+
+    let statusBadge = '';
+    if (place.is_visited) {
+        const visitDate = place.visited_at ? formatShortDate(place.visited_at) : '';
+        const stars = review ? '⭐'.repeat(review.overall_rating) : '';
+        statusBadge = `<span class="pcard-status pcard-status-visited">✓${visitDate ? ' ' + visitDate : ''}</span>`;
+        if (stars) statusBadge += `<span class="pcard-user-rating">${stars}</span>`;
+    } else {
+        statusBadge = `<span class="pcard-status pcard-status-wishlist">🌱 To visit</span>`;
+    }
+
+    let meta = '';
+    if (place.place_rating) meta += `<span class="pcard-meta-item">⭐ ${place.place_rating}</span>`;
+    if (place.place_price_level && PLACE_PRICE_LABELS[place.place_price_level]) {
+        meta += `<span class="pcard-meta-item">${PLACE_PRICE_LABELS[place.place_price_level]}</span>`;
+    }
+    const types = formatPlaceTypes(place.place_types);
+    if (types) meta += `<span class="pcard-meta-item pcard-type">${types}</span>`;
+
+    const snippet = review?.overall_remarks
+        ? `<p class="pcard-snippet">"${escapeHtml(review.overall_remarks.slice(0, 90))}${review.overall_remarks.length > 90 ? '…' : ''}"</p>`
+        : (!place.is_visited && place.place_description
+            ? `<p class="pcard-snippet pcard-desc">${escapeHtml(place.place_description.slice(0, 80))}${place.place_description.length > 80 ? '…' : ''}</p>`
+            : '');
+
+    card.innerHTML = `
+        <div class="pcard-top">
+            <div class="pcard-name-row">
+                ${platformBadge}
+                <span class="pcard-name">${escapeHtml(place.name)}</span>
+                <button class="pcard-more" onclick="event.stopPropagation(); openPlaceMenu(${place.id}, '${place.name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" aria-label="More options">···</button>
+            </div>
+            ${place.address ? `<p class="pcard-address">${escapeHtml(place.address)}</p>` : ''}
+            ${meta ? `<div class="pcard-meta">${meta}</div>` : ''}
+            ${snippet}
+        </div>
+        <div class="pcard-bottom">
+            <div class="pcard-status-row">${statusBadge}</div>
+            ${!place.is_visited
+                ? `<button class="pcard-log-btn" onclick="event.stopPropagation(); openRestaurantCard(${place.id})">Log visit →</button>`
+                : `<button class="pcard-log-btn pcard-log-btn-edit" onclick="event.stopPropagation(); openRestaurantCard(${place.id})">View →</button>`}
+        </div>`;
+
+    card.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        openRestaurantCard(place.id);
+    });
+    return card;
+}
+
+function formatShortDate(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    return d.toLocaleDateString('en-SG', { month: 'short', day: 'numeric' });
+}
+
 // Share a place via native share sheet or Telegram share URL
 async function toggleGroupVisitedFromCard(placeId, btn) {
     try {
@@ -1709,14 +1780,9 @@ function renderPlacesList(placesToRender) {
     const listContainer = document.getElementById('places-list');
     const noResults = document.getElementById('no-results');
 
-    // Clear existing cards
     listContainer.innerHTML = '';
+    document.getElementById('load-more-places-btn')?.remove();
 
-    // Remove any stale load-more button
-    const existingLoadMore = document.getElementById('load-more-places-btn');
-    if (existingLoadMore) existingLoadMore.remove();
-
-    // Check for empty results
     if (placesToRender.length === 0) {
         listContainer.style.display = 'none';
         noResults.style.display = 'flex';
@@ -1724,19 +1790,37 @@ function renderPlacesList(placesToRender) {
         return;
     }
 
-    // Show list, hide no-results
     listContainer.style.display = 'block';
     noResults.style.display = 'none';
 
-    // Create and append cards
-    placesToRender.forEach(place => {
-        const card = createPlaceCard(place);
-        listContainer.appendChild(card);
-    });
+    if (!IS_GROUP_MAP && !IS_SHARE_MAP) {
+        // Personal map: two-section layout
+        const wishlist = placesToRender.filter(p => !p.is_visited);
+        const visited  = placesToRender.filter(p => p.is_visited);
+
+        if (wishlist.length > 0) {
+            const sec = document.createElement('div');
+            sec.className = 'plist-section';
+            sec.innerHTML = `<div class="plist-section-header"><span class="plist-section-title">Want to Go</span><span class="plist-section-count">${wishlist.length}</span></div>`;
+            wishlist.forEach(p => sec.appendChild(createPersonalPlaceCard(p)));
+            listContainer.appendChild(sec);
+        }
+
+        if (visited.length > 0) {
+            const sec = document.createElement('div');
+            sec.className = 'plist-section';
+            sec.innerHTML = `<div class="plist-section-header"><span class="plist-section-title">Visited ✓</span><span class="plist-section-count">${visited.length}</span></div>`;
+            visited.forEach(p => sec.appendChild(createPersonalPlaceCard(p)));
+            listContainer.appendChild(sec);
+        }
+    } else {
+        placesToRender.forEach(place => {
+            listContainer.appendChild(createPlaceCard(place));
+        });
+    }
 
     updateResultsCount(placesToRender.length, totalPlaces || places.length);
 
-    // Show "Load more" button when more pages exist and no active filters
     const noFiltersActive = !searchQuery && !activeCategory && visitedFilter === 'all' && !countryFilter;
     if (hasMorePlaces && noFiltersActive) {
         const btn = document.createElement('button');
@@ -3442,8 +3526,8 @@ async function initApp() {
     }
 
 
-    // Show map tab by default
-    switchTab('map');
+    // Show list tab by default (main home screen)
+    switchTab('list');
 
     // Load friend request badge in background
     loadFriendRequests();
@@ -4767,20 +4851,19 @@ function switchTab(tab) {
         btn.classList.toggle('active', btn.dataset.tab === tab);
     });
 
-    // All views live inside .app-main — just toggle active class
-    document.getElementById('map-view')?.classList.toggle('active', tab === 'map');
-    document.getElementById('list-view')?.classList.toggle('active', false);
+    // Resolve which inner view to show
+    const innerView = tab === 'map' ? 'map' : tab === 'list' ? 'list' : null;
+
+    document.getElementById('map-view')?.classList.toggle('active', innerView === 'map');
+    document.getElementById('list-view')?.classList.toggle('active', innerView === 'list');
     document.getElementById('reviews-view')?.classList.toggle('active', false);
     document.getElementById('feed-view')?.classList.toggle('active', tab === 'feed');
     document.getElementById('profile-view')?.classList.toggle('active', tab === 'profile');
 
-    // When switching to map tab, restore the last inner view (map/list/reviews)
-    if (tab === 'map') {
-        switchView(currentView || 'map');
-    }
-
     if (tab === 'map' && map) {
         setTimeout(() => map.invalidateSize(), 100);
+    } else if (tab === 'list') {
+        currentView = 'list';
     } else if (tab === 'feed') {
         loadFeed();
     } else if (tab === 'profile') {
@@ -4813,7 +4896,7 @@ async function loadFeed() {
             return;
         }
 
-        list.innerHTML = activities.map(createFeedCard).join('');
+        list.innerHTML = activities.map(a => createFeedCard(a)).join('');
     } catch (err) {
         console.error('loadFeed error:', err);
         if (loading) loading.style.display = 'none';
@@ -4822,44 +4905,58 @@ async function loadFeed() {
 }
 
 function createFeedCard(activity) {
-    const timeAgo = formatTimeAgo(activity.created_at);
-    const actor = activity.actor_display_name || activity.actor_username || 'Someone';
-    const placeLink = activity.place_name
-        ? `<span class="feed-place-name">${escapeHtml(activity.place_name)}</span>`
+    const meta = activity.metadata || {};
+    const actor = activity.actor_name || activity.actor_username || 'Friend';
+    const actorInitial = actor[0]?.toUpperCase() || '?';
+    const placeName = meta.place_name || '';
+    const address   = meta.address   || '';
+    const rating    = meta.rating    ? parseInt(meta.rating) : 0;
+    const remarks   = meta.remarks   || '';
+    const timeAgo   = formatTimeAgo(activity.created_at);
+    const gid       = meta.google_place_id || '';
+
+    const likesCount = activity.likes_count || 0;
+    const userLiked  = activity.user_liked  || false;
+
+    let verb = 'did something at';
+    if (activity.activity_type === 'visited')  verb = 'visited';
+    if (activity.activity_type === 'reviewed') verb = 'reviewed';
+    if (activity.activity_type === 'saved')    verb = 'saved';
+
+    const starsHtml = rating > 0
+        ? `<span class="fc-stars">${'⭐'.repeat(rating)}</span>`
+        : '';
+    const remarksHtml = remarks
+        ? `<p class="fc-remarks">"${escapeHtml(remarks)}"</p>`
+        : '';
+    const placeHtml = placeName
+        ? `<span class="fc-place" onclick="event.stopPropagation()">${escapeHtml(placeName)}</span>`
+        : '';
+    const addrHtml = address
+        ? `<p class="fc-address">${escapeHtml(address)}</p>`
         : '';
 
-    let icon = '📍';
-    let action = 'did something';
-    if (activity.activity_type === 'visited') {
-        icon = '✅';
-        action = `visited ${placeLink}`;
-    } else if (activity.activity_type === 'reviewed') {
-        icon = '⭐';
-        action = `reviewed ${placeLink}`;
-    } else if (activity.activity_type === 'saved') {
-        icon = '🔖';
-        action = `saved ${placeLink}`;
-    } else if (activity.activity_type === 'friend_added') {
-        icon = '🤝';
-        action = 'made a new friend';
-    }
-
-    const reviewHtml = activity.review_text
-        ? `<p class="feed-review-text">"${escapeHtml(activity.review_text)}"</p>`
-        : '';
-
-    const ratingHtml = activity.review_rating
-        ? `<span class="feed-rating">${'⭐'.repeat(Math.round(activity.review_rating))}</span>`
-        : '';
-
+    const cardId = `fc-${activity.id}`;
     return `
-        <div class="feed-card">
-            <div class="feed-card-icon">${icon}</div>
-            <div class="feed-card-body">
-                <p class="feed-action"><strong>${escapeHtml(actor)}</strong> ${action}</p>
-                ${ratingHtml}
-                ${reviewHtml}
-                <p class="feed-time">${timeAgo}</p>
+        <div class="fc" id="${cardId}" onclick="onFeedCardTap('${gid}', '${escapeHtml(placeName)}')">
+            <div class="fc-header">
+                <div class="fc-avatar">${actorInitial}</div>
+                <div class="fc-actor-block">
+                    <span class="fc-actor">${escapeHtml(actor)}</span>
+                    <span class="fc-verb">${verb} ${placeHtml}</span>
+                </div>
+                <span class="fc-time">${timeAgo}</span>
+            </div>
+            ${addrHtml}
+            ${starsHtml}
+            ${remarksHtml}
+            <div class="fc-actions">
+                <button class="fc-like-btn ${userLiked ? 'liked' : ''}"
+                    data-liked="${userLiked}"
+                    onclick="event.stopPropagation(); likeActivity(${activity.id}, this)"
+                    aria-label="Like">
+                    ❤️ <span class="like-count">${likesCount > 0 ? likesCount : ''}</span>
+                </button>
             </div>
         </div>`;
 }
@@ -5206,5 +5303,347 @@ async function shareInviteLink() {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// RESTAURANT CARD
+// ═══════════════════════════════════════════════════════════════════════
 
+let rcCurrentPlaceId = null;
+let rcCurrentGoogleId = null;
 
+async function openRestaurantCard(placeId) {
+    rcCurrentPlaceId = placeId;
+
+    const overlay = document.getElementById('restaurant-card-overlay');
+    const sheet   = document.getElementById('restaurant-card');
+    overlay.style.display = 'block';
+    sheet.classList.add('rc-open');
+
+    // Clear & show skeleton
+    document.getElementById('rc-name').textContent = '…';
+    document.getElementById('rc-address').textContent = '';
+    document.getElementById('rc-meta').innerHTML = '';
+    document.getElementById('rc-hours').style.display = 'none';
+    document.getElementById('rc-description').style.display = 'none';
+    document.getElementById('rc-your-visit').innerHTML = '<p class="rc-loading">Loading…</p>';
+    document.getElementById('rc-friends-list').innerHTML = '';
+    document.getElementById('rc-friends-empty').style.display = 'none';
+
+    try {
+        const res = await fetch(`${API_URL}/api/places/${placeId}`, { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error('Not found');
+        const data = await res.json();
+        const place = data.place || data;
+        renderRestaurantCard(place);
+        rcCurrentGoogleId = place.google_place_id || null;
+
+        // Load friends in parallel
+        if (place.google_place_id) {
+            loadRcFriendReviews(place.google_place_id);
+        }
+    } catch (e) {
+        document.getElementById('rc-name').textContent = 'Error loading';
+    }
+}
+
+function renderRestaurantCard(place) {
+    document.getElementById('rc-name').textContent = place.name || '';
+    document.getElementById('rc-address').textContent = place.address || '';
+
+    // Maps button
+    const mapsBtn = document.getElementById('rc-maps-btn');
+    if (place.google_place_id) {
+        mapsBtn.onclick = () => window.open(
+            `https://www.google.com/maps/place/?q=place_id:${place.google_place_id}`, '_blank'
+        );
+    } else if (place.latitude && place.longitude) {
+        mapsBtn.onclick = () => window.open(
+            `https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`, '_blank'
+        );
+    }
+
+    // Meta row
+    let meta = '';
+    if (place.place_rating) meta += `<span class="rc-meta-chip">⭐ ${place.place_rating}</span>`;
+    if (place.place_price_level && PLACE_PRICE_LABELS[place.place_price_level]) {
+        meta += `<span class="rc-meta-chip">${PLACE_PRICE_LABELS[place.place_price_level]}</span>`;
+    }
+    const types = formatPlaceTypes(place.place_types);
+    if (types) meta += `<span class="rc-meta-chip rc-type-chip">${types}</span>`;
+    document.getElementById('rc-meta').innerHTML = meta;
+
+    // Hours
+    if (place.place_opening_hours) {
+        const hoursEl = document.getElementById('rc-hours');
+        const openNow = isOpenNow(place);
+        const openText = openNow === true ? '⏰ Open now' : openNow === false ? '⏰ Closed now' : '';
+        if (openText) {
+            hoursEl.textContent = openText;
+            hoursEl.className = 'rc-hours ' + (openNow ? 'rc-open-now' : 'rc-closed-now');
+            hoursEl.style.display = '';
+        }
+    }
+
+    // Description
+    if (place.place_description) {
+        const descEl = document.getElementById('rc-description');
+        descEl.textContent = place.place_description;
+        descEl.style.display = '';
+    }
+
+    // Your visit section
+    renderRcYourVisit(place);
+}
+
+function renderRcYourVisit(place) {
+    const el = document.getElementById('rc-your-visit');
+    const review = getPlaceReview(place.id);
+
+    if (place.is_visited) {
+        const visitDate = place.visited_at ? new Date(place.visited_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+        const stars = review ? '⭐'.repeat(review.overall_rating) : '';
+        const remarks = review?.overall_remarks ? `<p class="rc-visit-remarks">"${escapeHtml(review.overall_remarks)}"</p>` : '';
+        el.innerHTML = `
+            <div class="rc-visit-logged">
+                <div class="rc-visit-header">
+                    <span class="rc-visit-check">✓ Visited</span>
+                    ${visitDate ? `<span class="rc-visit-date">${visitDate}</span>` : ''}
+                </div>
+                ${stars ? `<div class="rc-visit-stars">${stars}</div>` : ''}
+                ${remarks}
+                <button class="rc-edit-btn" onclick="openLogVisit(${place.id}, true)">Edit visit</button>
+            </div>`;
+    } else {
+        el.innerHTML = `
+            <div class="rc-visit-cta">
+                <p class="rc-visit-cta-text">Haven't been here yet?</p>
+                <button class="rc-log-btn" onclick="openLogVisit(${place.id}, false)">
+                    🌱 Log my visit
+                </button>
+            </div>`;
+    }
+}
+
+async function loadRcFriendReviews(googlePlaceId) {
+    const listEl = document.getElementById('rc-friends-list');
+    const emptyEl = document.getElementById('rc-friends-empty');
+    try {
+        const res = await fetch(`${API_URL}/api/restaurant/${googlePlaceId}/friend-reviews`, { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        const reviews = data.reviews || [];
+        if (reviews.length === 0) {
+            emptyEl.style.display = '';
+            return;
+        }
+        emptyEl.style.display = 'none';
+        listEl.innerHTML = reviews.map(r => {
+            const name = escapeHtml(r.display_name || r.first_name || 'Friend');
+            const stars = r.overall_rating ? '⭐'.repeat(r.overall_rating) : '';
+            const remarks = r.overall_remarks ? `<span class="rc-friend-remarks">"${escapeHtml(r.overall_remarks.slice(0, 80))}${r.overall_remarks.length > 80 ? '…' : ''}"</span>` : '';
+            const date = r.created_at ? formatTimeAgo(r.created_at) : '';
+            return `<div class="rc-friend-row">
+                <div class="rc-friend-avatar">${name[0].toUpperCase()}</div>
+                <div class="rc-friend-body">
+                    <div class="rc-friend-name-row">
+                        <span class="rc-friend-name">@${name}</span>
+                        ${stars ? `<span class="rc-friend-stars">${stars}</span>` : ''}
+                        ${date ? `<span class="rc-friend-date">${date}</span>` : ''}
+                    </div>
+                    ${remarks}
+                </div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        console.error('loadRcFriendReviews error:', e);
+    }
+}
+
+function closeRestaurantCard() {
+    const sheet = document.getElementById('restaurant-card');
+    const overlay = document.getElementById('restaurant-card-overlay');
+    sheet.classList.remove('rc-open');
+    overlay.style.display = 'none';
+    rcCurrentPlaceId = null;
+    rcCurrentGoogleId = null;
+}
+
+function openRcMenu() {
+    const menu = document.getElementById('rc-menu');
+    if (menu) menu.style.display = 'flex';
+}
+
+function closeRcMenu() {
+    const menu = document.getElementById('rc-menu');
+    if (menu) menu.style.display = 'none';
+}
+
+async function deletePlaceFromCard() {
+    if (!rcCurrentPlaceId) return;
+    if (!confirm('Remove this place from your list?')) return;
+    try {
+        await fetch(`${API_URL}/api/places/${rcCurrentPlaceId}`, {
+            method: 'DELETE', headers: getAuthHeaders()
+        });
+        closeRestaurantCard();
+        // Remove from local array + re-render
+        places = places.filter(p => p.id !== rcCurrentPlaceId);
+        renderPlacesList(applyFiltersToList(places));
+        displayPlacesOnMap(false);
+    } catch (e) {
+        console.error('deletePlaceFromCard error:', e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LOG VISIT SHEET
+// ═══════════════════════════════════════════════════════════════════════
+
+let lvPlaceId = null;
+let lvRating = 0;
+
+function openLogVisit(placeId, isEdit = false) {
+    lvPlaceId = placeId;
+    lvRating = 0;
+
+    const place = places.find(p => p.id === placeId);
+    document.getElementById('lv-place-name').textContent = place?.name || '';
+
+    // Pre-fill if editing
+    const review = getPlaceReview(placeId);
+    if (isEdit && review) {
+        setVisitRating(review.overall_rating || 0);
+        document.getElementById('lv-review-text').value = review.overall_remarks || '';
+    } else {
+        setVisitRating(0);
+        document.getElementById('lv-review-text').value = '';
+    }
+
+    document.getElementById('log-visit-overlay').style.display = 'block';
+    document.getElementById('log-visit-sheet').style.display = 'flex';
+    document.getElementById('log-visit-sheet').classList.add('rc-open');
+}
+
+function closeLogVisit() {
+    document.getElementById('log-visit-overlay').style.display = 'none';
+    const sheet = document.getElementById('log-visit-sheet');
+    sheet.classList.remove('rc-open');
+    setTimeout(() => { sheet.style.display = 'none'; }, 300);
+    lvPlaceId = null;
+}
+
+function setVisitRating(val) {
+    lvRating = val;
+    document.querySelectorAll('#lv-stars .lv-star').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.val) <= val);
+    });
+}
+
+async function submitLogVisit() {
+    if (!lvPlaceId) return;
+    const text = document.getElementById('lv-review-text').value.trim();
+    const btn = document.getElementById('lv-submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    try {
+        const res = await fetch(`${API_URL}/api/places/${lvPlaceId}/log-visit`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rating: lvRating || null, review_text: text || null }),
+        });
+        if (!res.ok) throw new Error('Failed');
+
+        // Update local state
+        const place = places.find(p => p.id === lvPlaceId);
+        if (place) {
+            place.is_visited = true;
+            place.visited_at = new Date().toISOString();
+        }
+        // Store review in local reviews cache
+        if (lvRating || text) {
+            const existing = getPlaceReview(lvPlaceId);
+            if (existing) {
+                existing.overall_rating = lvRating;
+                existing.overall_remarks = text;
+            } else {
+                if (!window._reviews) window._reviews = [];
+                window._reviews.push({ place_id: lvPlaceId, overall_rating: lvRating, overall_remarks: text });
+            }
+        }
+
+        closeLogVisit();
+        // Refresh restaurant card if open
+        if (rcCurrentPlaceId === lvPlaceId) {
+            const updatedPlace = places.find(p => p.id === lvPlaceId);
+            if (updatedPlace) renderRcYourVisit(updatedPlace);
+        }
+        // Re-render list
+        renderPlacesList(applyFiltersToList(places));
+        displayPlacesOnMap(false);
+
+    } catch (e) {
+        console.error('submitLogVisit error:', e);
+        btn.textContent = 'Error — try again';
+    } finally {
+        btn.disabled = false;
+        if (btn.textContent === 'Saving…') btn.textContent = 'Save Visit';
+    }
+}
+
+// Helper: get current filtered+sorted list (needed after local state changes)
+function applyFiltersToList(allPlaces) {
+    // reuse existing applyFilters chain
+    let filtered = allPlaces;
+    if (typeof applyFilters === 'function') {
+        // applyFilters() re-renders internally; we need to get the filtered array
+        // Use the existing filter state vars
+        filtered = filterByVisited(filtered);
+        filtered = filterByCategory(filtered);
+        filtered = filterByCountry(filtered);
+        filtered = filterByRating(filtered);
+        filtered = filterByPriceLevel(filtered);
+        filtered = filterByOpenNow(filtered);
+        filtered = filterBySearch(filtered);
+        filtered = sortPlaces(filtered);
+    }
+    return filtered;
+}
+
+// Feed like/unlike
+async function likeActivity(activityId, btn) {
+    const liked = btn.dataset.liked === 'true';
+    const countEl = btn.querySelector('.like-count');
+    const currentCount = parseInt(countEl?.textContent || '0');
+
+    // Optimistic update
+    btn.dataset.liked = liked ? 'false' : 'true';
+    btn.classList.toggle('liked', !liked);
+    if (countEl) countEl.textContent = liked ? currentCount - 1 : currentCount + 1;
+
+    try {
+        const method = liked ? 'DELETE' : 'POST';
+        await fetch(`${API_URL}/api/activities/${activityId}/like`, {
+            method, headers: getAuthHeaders()
+        });
+    } catch (e) {
+        // Revert on error
+        btn.dataset.liked = liked ? 'true' : 'false';
+        btn.classList.toggle('liked', liked);
+        if (countEl) countEl.textContent = currentCount;
+    }
+}
+
+function onFeedCardTap(googlePlaceId, placeName) {
+    if (!googlePlaceId) return;
+    // Try to find in own places list first
+    const own = places.find(p => p.google_place_id === googlePlaceId);
+    if (own) {
+        openRestaurantCard(own.id);
+    } else {
+        // Show a lightweight info card (future: open shared restaurant page)
+        // For now just open Google Maps as fallback
+        if (placeName) {
+            window.open(`https://www.google.com/maps/place/?q=place_id:${googlePlaceId}`, '_blank');
+        }
+    }
+}

@@ -2,7 +2,8 @@ import logging
 import math
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Request
+import httpx
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form, Depends, Request
 from pydantic import BaseModel, Field
 
 from api.telegram_auth import get_current_user, TelegramUser
@@ -792,6 +793,11 @@ class FriendRequestBody(BaseModel):
     target_user_id: int
 
 
+class LogVisitBody(BaseModel):
+    rating: Optional[int] = Field(None, ge=1, le=5)
+    review_text: Optional[str] = Field(None, max_length=500)
+
+
 @router.get("/friends")
 async def list_friends(user: TelegramUser = Depends(get_current_user)):
     """List all accepted friends."""
@@ -876,3 +882,78 @@ async def get_invite_link(user: TelegramUser = Depends(get_current_user)):
         return {"link": None, "message": "Bot username not configured"}
     link = f"https://t.me/{bot_username}?start=addfriend_{user.id}"
     return {"link": link, "user_id": user.id}
+
+
+# =============================================================================
+# Log Visit (atomic: mark visited + review + activity + notify friends)
+# =============================================================================
+
+async def _notify_friends_of_visit(user_id: int, place_name: str, google_place_id: Optional[str]):
+    """Fire-and-forget: send Telegram notification to all friends via Bot API."""
+    friend_ids = repository.get_friend_ids(user_id)
+    if not friend_ids:
+        return
+    user = repository.get_user_by_id(user_id)
+    actor = (user.get("display_name") or user.get("first_name") or "Your friend") if user else "Your friend"
+    text = f"🌱 *{actor}* just visited *{place_name}*!"
+    bot_token = app_config.TELEGRAM_BOT_TOKEN
+    if not bot_token:
+        return
+
+    reply_markup = None
+    if app_config.WEBAPP_URL and google_place_id:
+        app_url = f"{app_config.WEBAPP_URL}?startapp=gplace_{google_place_id}"
+        reply_markup = {"inline_keyboard": [[{"text": "See their visit 👀", "web_app": {"url": app_url}}]]}
+
+    async with httpx.AsyncClient(timeout=5) as client:
+        for fid in friend_ids:
+            try:
+                payload: dict = {"chat_id": fid, "text": text, "parse_mode": "Markdown"}
+                if reply_markup:
+                    payload["reply_markup"] = reply_markup
+                await client.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json=payload)
+            except Exception as exc:
+                logger.warning("visit notify failed for %s: %s", fid, exc)
+
+
+@router.post("/places/{place_id}/log-visit")
+async def log_visit_place(
+    place_id: int,
+    body: LogVisitBody,
+    background_tasks: BackgroundTasks,
+    user: TelegramUser = Depends(get_current_user),
+):
+    """Atomically mark visited, save rating/review, log activity, notify friends."""
+    result = repository.log_visit(
+        user_id=user.id,
+        place_id=place_id,
+        rating=body.rating,
+        review_text=body.review_text,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Place not found")
+
+    # Notify friends in background (non-blocking)
+    background_tasks.add_task(
+        _notify_friends_of_visit,
+        user_id=user.id,
+        place_name=result.get("place_name", "a place"),
+        google_place_id=result.get("google_place_id"),
+    )
+    return {"success": True, **result}
+
+
+# =============================================================================
+# Activity Likes
+# =============================================================================
+
+@router.post("/activities/{activity_id}/like")
+async def like_activity(activity_id: int, user: TelegramUser = Depends(get_current_user)):
+    repository.like_activity(user.id, activity_id)
+    return {"success": True}
+
+
+@router.delete("/activities/{activity_id}/like")
+async def unlike_activity(activity_id: int, user: TelegramUser = Depends(get_current_user)):
+    repository.unlike_activity(user.id, activity_id)
+    return {"success": True}

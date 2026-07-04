@@ -2013,12 +2013,130 @@ def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict
     ).in_("id", actor_ids).execute()
     users_map = {u["id"]: u for u in (users_result.data or [])}
 
+    activity_ids = [r["id"] for r in result.data]
+    likes_map = get_activity_likes(activity_ids, user_id)
+
     out = []
     for row in result.data:
         u = users_map.get(row["user_id"], {})
+        likes = likes_map.get(row["id"], {"count": 0, "user_liked": False})
         out.append({
             **row,
             "actor_name": u.get("display_name") or u.get("first_name") or "Friend",
             "actor_username": u.get("username"),
+            "likes_count": likes["count"],
+            "user_liked": likes["user_liked"],
         })
+    return out
+
+
+# ── Log Visit (atomic: mark visited + review + activity) ──────────────
+
+def log_visit(
+    user_id: int,
+    place_id: int,
+    rating: Optional[int] = None,
+    review_text: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Mark a place visited, optionally save review, log activity. Returns activity metadata."""
+    from datetime import datetime
+    supabase = get_supabase()
+    visited_at = datetime.utcnow().isoformat()
+
+    # Verify place belongs to user
+    place_res = supabase.table("places").select(
+        "id, name, address, google_place_id"
+    ).eq("id", place_id).eq("user_id", user_id).maybe_single().execute()
+    if not place_res.data:
+        return None
+    place_data = place_res.data
+
+    # Mark visited
+    supabase.table("places").update(
+        {"is_visited": True, "visited_at": visited_at}
+    ).eq("id", place_id).eq("user_id", user_id).execute()
+
+    # Upsert review if rating or text provided
+    review_id = None
+    if rating is not None or review_text:
+        rev_result = supabase.table("reviews").upsert(
+            {
+                "place_id": place_id,
+                "user_id": user_id,
+                "overall_rating": rating,
+                "overall_remarks": review_text or "",
+                "dishes": [],
+            },
+            on_conflict="place_id,user_id",
+        ).execute()
+        if rev_result.data:
+            review_id = rev_result.data[0].get("id")
+
+    # Log activity
+    metadata = {
+        "place_name": place_data.get("name"),
+        "address": place_data.get("address"),
+        "google_place_id": place_data.get("google_place_id"),
+    }
+    if rating is not None:
+        metadata["rating"] = rating
+    if review_text:
+        metadata["remarks"] = review_text[:200]
+
+    act_result = supabase.table("user_activities").insert({
+        "user_id": user_id,
+        "activity_type": "visited",
+        "place_id": place_id,
+        "review_id": review_id,
+        "metadata": metadata,
+        "is_public": True,
+    }).execute()
+    activity_id = act_result.data[0]["id"] if act_result.data else None
+
+    return {
+        "visited_at": visited_at,
+        "review_id": review_id,
+        "activity_id": activity_id,
+        "place_name": place_data.get("name"),
+        "google_place_id": place_data.get("google_place_id"),
+    }
+
+
+# ── Activity Likes ────────────────────────────────────────────────────
+
+def like_activity(user_id: int, activity_id: int) -> bool:
+    supabase = get_supabase()
+    try:
+        supabase.table("user_activity_likes").insert(
+            {"user_id": user_id, "activity_id": activity_id}
+        ).execute()
+        return True
+    except Exception:
+        return False  # unique constraint: already liked
+
+
+def unlike_activity(user_id: int, activity_id: int) -> bool:
+    supabase = get_supabase()
+    supabase.table("user_activity_likes").delete().eq(
+        "user_id", user_id
+    ).eq("activity_id", activity_id).execute()
+    return True
+
+
+def get_activity_likes(activity_ids: List[int], viewer_id: int) -> Dict[int, Dict]:
+    """Return {activity_id: {count, user_liked}} for a batch of activity IDs."""
+    if not activity_ids:
+        return {}
+    supabase = get_supabase()
+    result = supabase.table("user_activity_likes").select(
+        "activity_id, user_id"
+    ).in_("activity_id", activity_ids).execute()
+
+    out: Dict[int, Dict] = {aid: {"count": 0, "user_liked": False} for aid in activity_ids}
+    for row in result.data or []:
+        aid = row["activity_id"]
+        if aid in out:
+            out[aid]["count"] += 1
+            if row["user_id"] == viewer_id:
+                out[aid]["user_liked"] = True
     return out

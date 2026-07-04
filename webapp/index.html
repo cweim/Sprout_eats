@@ -14,7 +14,7 @@
 
 
     <!-- App styles - Playful & Warm theme -->
-    <link rel="stylesheet" href="styles.css?v=51">
+    <link rel="stylesheet" href="styles.css?v=52">
 </head>
 <body>
     <header class="app-header">
@@ -444,6 +444,87 @@
         </div>
     </div>
 
+    <!-- Restaurant Card Sheet -->
+    <div id="restaurant-card-overlay" class="rc-overlay" style="display:none" onclick="closeRestaurantCard()"></div>
+    <div id="restaurant-card" class="rc-sheet" aria-modal="true" role="dialog" aria-label="Restaurant details">
+        <div class="rc-handle"></div>
+        <div class="rc-scroll">
+            <!-- Header -->
+            <div class="rc-header">
+                <div class="rc-title-block">
+                    <h2 id="rc-name" class="rc-name"></h2>
+                    <p id="rc-address" class="rc-address"></p>
+                </div>
+                <div class="rc-header-actions">
+                    <button id="rc-maps-btn" class="rc-maps-btn" onclick="openInMaps()" aria-label="Open in Maps">🗺</button>
+                    <button class="rc-more-btn" onclick="openRcMenu()" aria-label="More options">···</button>
+                </div>
+            </div>
+            <!-- Meta row -->
+            <div id="rc-meta" class="rc-meta"></div>
+            <!-- Hours -->
+            <div id="rc-hours" class="rc-hours" style="display:none"></div>
+            <!-- Description -->
+            <p id="rc-description" class="rc-description" style="display:none"></p>
+
+            <div class="rc-divider"></div>
+
+            <!-- Your visit -->
+            <div class="rc-section">
+                <h3 class="rc-section-title">Your Visit</h3>
+                <div id="rc-your-visit" class="rc-your-visit">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+
+            <div class="rc-divider"></div>
+
+            <!-- Friends -->
+            <div class="rc-section">
+                <h3 class="rc-section-title">Friends who've been</h3>
+                <div id="rc-friends-list" class="rc-friends-list">
+                    <p class="rc-friends-empty" id="rc-friends-empty">None of your friends have been here yet.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Visit Sheet -->
+    <div id="log-visit-overlay" class="rc-overlay" style="display:none" onclick="closeLogVisit()"></div>
+    <div id="log-visit-sheet" class="rc-sheet lv-sheet" style="display:none" role="dialog" aria-label="Log your visit">
+        <div class="rc-handle"></div>
+        <div class="rc-scroll">
+            <div class="lv-header">
+                <h3 class="lv-title">Log visit</h3>
+                <p id="lv-place-name" class="lv-subtitle"></p>
+            </div>
+            <div class="lv-section">
+                <p class="lv-label">How was it?</p>
+                <div class="lv-stars" id="lv-stars">
+                    <button class="lv-star" data-val="1" onclick="setVisitRating(1)">★</button>
+                    <button class="lv-star" data-val="2" onclick="setVisitRating(2)">★</button>
+                    <button class="lv-star" data-val="3" onclick="setVisitRating(3)">★</button>
+                    <button class="lv-star" data-val="4" onclick="setVisitRating(4)">★</button>
+                    <button class="lv-star" data-val="5" onclick="setVisitRating(5)">★</button>
+                </div>
+            </div>
+            <div class="lv-section">
+                <p class="lv-label">What did you think? <span class="lv-optional">(optional)</span></p>
+                <textarea id="lv-review-text" class="lv-textarea" placeholder="Short and sweet is fine…" maxlength="500" rows="4"></textarea>
+            </div>
+            <button id="lv-submit-btn" class="lv-submit" onclick="submitLogVisit()">Save Visit</button>
+        </div>
+    </div>
+
+    <!-- Rc context menu -->
+    <div id="rc-menu" class="place-menu" style="display:none">
+        <div class="place-menu-backdrop" onclick="closeRcMenu()"></div>
+        <div class="place-menu-sheet">
+            <button class="place-menu-item" onclick="closeRcMenu(); deletePlaceFromCard()">🗑 Remove place</button>
+            <button class="place-menu-item" onclick="closeRcMenu()">Cancel</button>
+        </div>
+    </div>
+
     <!-- Add Friend Modal -->
     <div id="add-friend-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="add-friend-title">
         <div class="modal-sheet">
@@ -495,20 +576,25 @@
     <!-- Bottom Navigation -->
     <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
         <button class="nav-tab" data-tab="feed" onclick="switchTab('feed')" aria-label="Feed">
-            <span class="nav-icon">🏠</span>
-            <span class="nav-label">Feed</span>
+            <span class="nav-icon">✨</span>
+            <span class="nav-label">Friends</span>
+            <span class="nav-badge" id="nav-feed-badge" style="display:none"></span>
         </button>
-        <button class="nav-tab active" data-tab="map" onclick="switchTab('map')" aria-label="My Map">
+        <button class="nav-tab active" data-tab="list" onclick="switchTab('list')" aria-label="My Sprouts">
+            <span class="nav-icon">🌱</span>
+            <span class="nav-label">My Sprouts</span>
+        </button>
+        <button class="nav-tab" data-tab="map" onclick="switchTab('map')" aria-label="Map">
             <span class="nav-icon">🗺️</span>
-            <span class="nav-label">My Map</span>
+            <span class="nav-label">Map</span>
         </button>
         <button class="nav-tab" data-tab="profile" onclick="switchTab('profile')" aria-label="Profile">
             <span class="nav-icon">👤</span>
-            <span class="nav-label">Profile</span>
+            <span class="nav-label">Me</span>
             <span class="nav-badge" id="nav-profile-badge" style="display:none"></span>
         </button>
     </nav>
 
-    <script src="app.js?v=73"></script>
+    <script src="app.js?v=74"></script>
 </body>
 </html>
