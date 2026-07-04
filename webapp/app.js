@@ -4767,14 +4767,17 @@ function switchTab(tab) {
         btn.classList.toggle('active', btn.dataset.tab === tab);
     });
 
-    // Show/hide top-level views
-    const appMain = document.querySelector('.app-main');
-    const feedView = document.getElementById('feed-view');
-    const profileView = document.getElementById('profile-view');
+    // All views live inside .app-main — just toggle active class
+    document.getElementById('map-view')?.classList.toggle('active', tab === 'map');
+    document.getElementById('list-view')?.classList.toggle('active', false);
+    document.getElementById('reviews-view')?.classList.toggle('active', false);
+    document.getElementById('feed-view')?.classList.toggle('active', tab === 'feed');
+    document.getElementById('profile-view')?.classList.toggle('active', tab === 'profile');
 
-    if (appMain) appMain.style.display = tab === 'map' ? '' : 'none';
-    if (feedView) feedView.style.display = tab === 'feed' ? '' : 'none';
-    if (profileView) profileView.style.display = tab === 'profile' ? '' : 'none';
+    // When switching to map tab, restore the last inner view (map/list/reviews)
+    if (tab === 'map') {
+        switchView(currentView || 'map');
+    }
 
     if (tab === 'map' && map) {
         setTimeout(() => map.invalidateSize(), 100);

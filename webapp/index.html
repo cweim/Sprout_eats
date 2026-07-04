@@ -14,7 +14,7 @@
 
 
     <!-- App styles - Playful & Warm theme -->
-    <link rel="stylesheet" href="styles.css?v=49">
+    <link rel="stylesheet" href="styles.css?v=50">
 </head>
 <body>
     <header class="app-header">
@@ -158,6 +158,54 @@
         </div>
 
         <button id="fab-discover" class="fab-discover" title="Discover new places" aria-label="Discover new places">🔍</button>
+
+        <!-- Feed View -->
+        <div id="feed-view" class="view">
+            <div id="feed-list" class="feed-list"></div>
+            <div id="feed-loading" class="feed-loading" style="display:none">Loading...</div>
+            <div id="feed-empty" class="feed-empty" style="display:none">
+                <div class="feed-empty-icon">🌱</div>
+                <p class="feed-empty-title">No activity yet</p>
+                <p class="feed-empty-sub">Add friends to see their food adventures here.</p>
+                <button class="btn-primary" onclick="switchTab('profile')">Find Friends</button>
+            </div>
+        </div>
+
+        <!-- Profile View -->
+        <div id="profile-view" class="view">
+            <div class="profile-header">
+                <div class="profile-avatar" id="profile-avatar"></div>
+                <div class="profile-info">
+                    <h2 id="profile-name" class="profile-name"></h2>
+                    <p id="profile-username" class="profile-username"></p>
+                    <p id="profile-bio" class="profile-bio"></p>
+                </div>
+                <button id="btn-edit-profile" class="btn-icon-sm" onclick="openEditProfile()" aria-label="Edit profile">✏️</button>
+            </div>
+            <div class="profile-stats">
+                <div class="stat-item"><span class="stat-num" id="stat-saved">—</span><span class="stat-label">Saved</span></div>
+                <div class="stat-item"><span class="stat-num" id="stat-visited">—</span><span class="stat-label">Visited</span></div>
+                <div class="stat-item"><span class="stat-num" id="stat-reviews">—</span><span class="stat-label">Reviews</span></div>
+            </div>
+            <!-- Friends section -->
+            <div class="profile-section">
+                <div class="profile-section-header">
+                    <h3 class="profile-section-title">Friends <span id="friends-count" class="friends-count-badge"></span></h3>
+                    <button class="btn-secondary-sm" onclick="openAddFriendModal()">+ Add</button>
+                </div>
+                <div id="friend-requests-banner" class="friend-requests-banner" style="display:none">
+                    <span id="friend-requests-label"></span>
+                    <button class="btn-text" onclick="showFriendRequests()">View</button>
+                </div>
+                <div id="friends-list" class="friends-list">
+                    <p class="friends-empty" id="friends-empty" style="display:none">No friends yet. Add friends to see their reviews!</p>
+                </div>
+            </div>
+            <!-- Invite link -->
+            <div class="profile-section">
+                <button class="btn-full-secondary" onclick="shareInviteLink()">🔗 Invite a Friend</button>
+            </div>
+        </div>
 
     </main>
 
@@ -396,56 +444,6 @@
         </div>
     </div>
 
-    <!-- Feed View -->
-    <div id="feed-view" class="view" style="display:none">
-        <div id="feed-list" class="feed-list"></div>
-        <div id="feed-loading" class="feed-loading" style="display:none">Loading...</div>
-        <div id="feed-empty" class="feed-empty" style="display:none">
-            <div class="feed-empty-icon">🌱</div>
-            <p class="feed-empty-title">No activity yet</p>
-            <p class="feed-empty-sub">Add friends to see their food adventures here.</p>
-            <button class="btn-primary" onclick="switchTab('profile')">Find Friends</button>
-        </div>
-    </div>
-
-    <!-- Profile View -->
-    <div id="profile-view" class="view" style="display:none">
-        <div class="profile-header">
-            <div class="profile-avatar" id="profile-avatar"></div>
-            <div class="profile-info">
-                <h2 id="profile-name" class="profile-name"></h2>
-                <p id="profile-username" class="profile-username"></p>
-                <p id="profile-bio" class="profile-bio"></p>
-            </div>
-            <button id="btn-edit-profile" class="btn-icon-sm" onclick="openEditProfile()" aria-label="Edit profile">✏️</button>
-        </div>
-        <div class="profile-stats">
-            <div class="stat-item"><span class="stat-num" id="stat-saved">—</span><span class="stat-label">Saved</span></div>
-            <div class="stat-item"><span class="stat-num" id="stat-visited">—</span><span class="stat-label">Visited</span></div>
-            <div class="stat-item"><span class="stat-num" id="stat-reviews">—</span><span class="stat-label">Reviews</span></div>
-        </div>
-
-        <!-- Friends section -->
-        <div class="profile-section">
-            <div class="profile-section-header">
-                <h3 class="profile-section-title">Friends <span id="friends-count" class="friends-count-badge"></span></h3>
-                <button class="btn-secondary-sm" onclick="openAddFriendModal()">+ Add</button>
-            </div>
-            <div id="friend-requests-banner" class="friend-requests-banner" style="display:none">
-                <span id="friend-requests-label"></span>
-                <button class="btn-text" onclick="showFriendRequests()">View</button>
-            </div>
-            <div id="friends-list" class="friends-list">
-                <p class="friends-empty" id="friends-empty" style="display:none">No friends yet. Add friends to see their reviews!</p>
-            </div>
-        </div>
-
-        <!-- Invite link -->
-        <div class="profile-section">
-            <button class="btn-full-secondary" onclick="shareInviteLink()">🔗 Invite a Friend</button>
-        </div>
-    </div>
-
     <!-- Add Friend Modal -->
     <div id="add-friend-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="add-friend-title">
         <div class="modal-sheet">
@@ -511,6 +509,6 @@
         </button>
     </nav>
 
-    <script src="app.js?v=72"></script>
+    <script src="app.js?v=73"></script>
 </body>
 </html>

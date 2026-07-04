@@ -4557,10 +4557,10 @@ button:disabled,
 }
 
 /* ---- Profile View ---- */
+#feed-view { overflow-y: auto; }
 #profile-view {
     padding: 16px;
     overflow-y: auto;
-    height: 100%;
 }
 .profile-header {
     display: flex;
