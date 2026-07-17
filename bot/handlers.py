@@ -42,6 +42,7 @@ from database.supabase_client import (
     upload_photo as storage_upload_photo,
     upload_feedback_attachment as storage_upload_feedback_attachment,
 )
+from database.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
 
@@ -235,15 +236,6 @@ def build_google_maps_url(place) -> str:
     return f"https://www.google.com/maps/search/?api=1&query={quote(name)}"
 
 
-def _open_map_keyboard() -> InlineKeyboardMarkup | None:
-    """Return a one-button keyboard to open the Mini App, or None if not configured."""
-    if not config.WEBAPP_URL:
-        return None
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🗺️ View on Map", web_app=WebAppInfo(url=config.WEBAPP_URL))
-    ]])
-
-
 def build_saved_place_message(place, source_url: str | None = None) -> str:
     """Build a concise saved-place confirmation with labeled links."""
     name = html.escape(str(get_place_value(place, "name", "this place")))
@@ -337,6 +329,28 @@ async def notify_friends_of_review(
             logger.warning(f"Failed to notify friend {friend_id} of review: {e}")
 
 
+async def _fetch_and_store_avatar(bot, user_id: int) -> None:
+    """Download Telegram profile photo and store in Supabase Storage."""
+    try:
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
+        if not photos.photos:
+            return
+        photo_file = await photos.photos[0][-1].get_file()
+        photo_bytes = await photo_file.download_as_bytearray()
+        supabase = get_supabase()
+        storage_path = f"avatars/{user_id}.jpg"
+        supabase.storage.from_("avatars").upload(
+            storage_path,
+            bytes(photo_bytes),
+            {"content-type": "image/jpeg", "upsert": "true"},
+        )
+        avatar_url = supabase.storage.from_("avatars").get_public_url(storage_path)
+        repository.update_user_avatar(user_id, avatar_url)
+        logger.info(f"Stored avatar for user {user_id}")
+    except Exception as e:
+        logger.warning(f"Could not fetch avatar for {user_id}: {e}")
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Handle friend invite deep link
     if context.args and context.args[0].startswith("addfriend_"):
@@ -396,16 +410,34 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     count = repository.get_place_count(user_id)
 
     if count == 0:
-        # New user — explain what the bot does
-        text = (
-            "Hey! 👋 I save food places from Instagram Reels and TikTok.\n\n"
-            "Send me a video link and I'll extract the restaurant or cafe "
-            "and pin it to your personal map. 🗺️"
-        )
-        keyboard = []
-        if config.WEBAPP_URL:
-            keyboard.append([InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))])
-        keyboard.append([InlineKeyboardButton("❓ How it works", callback_data="action_howto")])
+        # Fetch and store avatar in background (non-blocking)
+        import asyncio
+        asyncio.create_task(_fetch_and_store_avatar(context.bot, user_id))
+
+        # Check if display_name already set (e.g. user did /start again)
+        existing_user = repository.get_my_profile(user_id)
+        if existing_user and existing_user.get("display_name"):
+            # Already named — show normal welcome
+            text = (
+                "Hey! 👋 I save food places from Instagram Reels and TikTok.\n\n"
+                "Send me a video link and I'll extract the restaurant or cafe "
+                "and pin it to your personal map. 🗺️"
+            )
+            keyboard = []
+            if config.WEBAPP_URL:
+                keyboard.append([InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))])
+            keyboard.append([InlineKeyboardButton("❓ How it works", callback_data="action_howto")])
+        else:
+            # New user — ask for display name
+            first_name = update.effective_user.first_name or "there"
+            context.user_data["waiting_display_name"] = True
+            text = (
+                f"Hey {first_name}! 👋 I save food places from Instagram Reels and TikTok.\n\n"
+                "First — what should friends call you on Sprout?"
+            )
+            keyboard = [[
+                InlineKeyboardButton(f"Use {first_name} ✓", callback_data=f"set_name_tg")
+            ]]
     else:
         # Returning user — show personalised summary
         recent = repository.get_most_recent_place(user_id)
@@ -433,55 +465,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = []
         if config.WEBAPP_URL:
             keyboard.append([InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))])
-        keyboard.append([InlineKeyboardButton("📍 Find places near me", callback_data="action_nearby")])
 
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-
-
-async def places_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))]] if config.WEBAPP_URL else []
-    await update.message.reply_text(
-        "See all your saved places on the interactive map 👇",
-        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
-    )
-
-
-async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))]] if config.WEBAPP_URL else []
-    await update.message.reply_text(
-        "Your interactive map is in the app — tap to explore 👇",
-        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
-    )
-
-
-async def viewer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Open the interactive Mini App viewer."""
-    if not config.WEBAPP_URL:
-        await update.message.reply_text(
-            "The map viewer isn't available yet. Check back soon!"
-        )
-        return
-
-    keyboard = [[
-        InlineKeyboardButton(
-            "🗺️ Open My Map",
-            web_app=WebAppInfo(url=config.WEBAPP_URL)
-        )
-    ]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        "Ready to explore your saved places? 🗺️",
-        reply_markup=reply_markup,
-    )
-
-
-async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))]] if config.WEBAPP_URL else []
-    await update.message.reply_text(
-        "To manage or remove your saved places, open the app 👇",
-        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
-    )
 
 
 async def clear_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -494,6 +479,23 @@ async def clear_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"All cleared! {count} place{'s' if count != 1 else ''} removed. 🗑️")
     else:
         await query.edit_message_text("No worries, your places are safe! 📍")
+
+
+async def set_name_tg_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Use Telegram first name as display name."""
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    first_name = update.effective_user.first_name or "Friend"
+    repository.update_user_profile(user_id, display_name=first_name)
+    context.user_data.pop("waiting_display_name", None)
+    keyboard = [[InlineKeyboardButton("❓ How it works", callback_data="action_howto")]]
+    if config.WEBAPP_URL:
+        keyboard.append([InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))])
+    await query.edit_message_text(
+        f"✅ Got it, {first_name}!\n\nJust send me a video link to get started. 🎬",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -582,17 +584,6 @@ async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
-    elif query.data == "action_nearby":
-        # Trigger location request
-        keyboard = [[KeyboardButton("📍 Share My Location", request_location=True)]]
-        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-
-        await query.message.reply_text(
-            "Let's see what's saved near you! 📍\n\n"
-            "Tap below to share your location:",
-            reply_markup=reply_markup
-        )
-        await query.delete_message()
 
     elif query.data == "action_howto":
         skip_btn = InlineKeyboardMarkup([[InlineKeyboardButton("✕ Skip", callback_data="dismiss")]])
@@ -619,8 +610,8 @@ async def action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await asyncio.sleep(0.6)
 
         await query.message.reply_text(
-            "⭐ *Step 3 — Leave reviews*\n\n"
-            "After visiting a place, write a quick review — rating, dishes, photos. Find it in the Reviews tab.\n\n"
+            "⭐ *Step 3 — Log your visit*\n\n"
+            "After visiting, open the place and tap *Been Here* to log it and leave a review.\n\n"
             "Ready! Just send me a video link to get started. 🎬",
             parse_mode="Markdown",
         )
@@ -652,10 +643,6 @@ def get_menu_keyboard():
                 web_app=WebAppInfo(url=config.WEBAPP_URL)
             )
         ])
-
-    keyboard.append([
-        InlineKeyboardButton("📍 Find places near me", callback_data="action_nearby"),
-    ])
 
     return InlineKeyboardMarkup(keyboard)
 
@@ -1383,7 +1370,6 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.message.reply_text(
         f"✅ Saved {count} place{'s' if count != 1 else ''}\n\n{names_text}",
         parse_mode="HTML",
-        reply_markup=_open_map_keyboard(),
     )
 
 
@@ -1440,11 +1426,9 @@ async def save_all_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     count = len(saved_names)
     names_text = "\n".join(f"• {html.escape(name)}" for name in saved_names)
-    open_map_btn = _open_map_keyboard()
     await query.message.reply_text(
         f"✅ Saved {count} place{'s' if count != 1 else ''}\n\n{names_text}",
         parse_mode="HTML",
-        reply_markup=open_map_btn,
     )
 
 
@@ -1502,7 +1486,6 @@ async def unresolved_pick_callback(update: Update, context: ContextTypes.DEFAULT
     await query.message.reply_location(latitude=place["latitude"], longitude=place["longitude"])
     await query.message.reply_text(
         build_saved_place_message(place, source_url=source_url),
-        reply_markup=_open_map_keyboard(),
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
@@ -1706,6 +1689,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_url(update, context)
         return
 
+    # Check if waiting for display name input
+    if context.user_data.get("waiting_display_name"):
+        display_name = text[:50]  # cap at 50 chars
+        user_id2 = update.effective_user.id
+        repository.update_user_profile(user_id2, display_name=display_name)
+        context.user_data.pop("waiting_display_name", None)
+        keyboard = [[InlineKeyboardButton("❓ How it works", callback_data="action_howto")]]
+        if config.WEBAPP_URL:
+            keyboard.append([InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))])
+        await update.message.reply_text(
+            f"✅ Got it, {display_name}!\n\nJust send me a video link to get started. 🎬",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
     # Check if this is a response to a pending search
     pending_url = context.user_data.get("pending_url")
     if not pending_url:
@@ -1762,14 +1760,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))]] if config.WEBAPP_URL else []
-    await update.message.reply_text(
-        "To remove a saved place, open the app and delete it from there 👇",
-        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
-    )
-
-
 async def delete_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle place deletion from inline keyboard."""
     user_id = update.effective_user.id
@@ -1790,19 +1780,6 @@ async def delete_place_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("Removed! 🗑️")
     else:
         await query.edit_message_text("That one's already gone!")
-
-
-async def nearby_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Request location to find nearby saved places."""
-    # Create location request button
-    keyboard = [[KeyboardButton("📍 Share My Location", request_location=True)]]
-    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-
-    await update.message.reply_text(
-        "Let's see what's saved near you! 📍\n\n"
-        "Tap below to share your location:",
-        reply_markup=reply_markup
-    )
 
 
 async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2014,86 +1991,6 @@ async def cancel_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle shared location and show up to 5 nearest saved places."""
-    user_id = update.effective_user.id
-    location = update.message.location
-    lat, lng = location.latitude, location.longitude
-
-    places = repository.get_all_places(user_id)
-    if not places:
-        await update.message.reply_text(
-            "No places saved yet! 📍\n\n"
-            "Send me a video link and I'll find some for you!",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return
-
-    # Calculate distances for ALL places (no radius limit)
-    places_with_dist = []
-    for place in places:
-        if place['latitude'] and place['longitude']:
-            dist = haversine_distance(lat, lng, place['latitude'], place['longitude'])
-            places_with_dist.append((place, dist))
-
-    # Sort by distance and take top 5
-    places_with_dist.sort(key=lambda x: x[1])
-    top_5 = places_with_dist[:5]
-
-    if not top_5:
-        await update.message.reply_text(
-            "Hmm, your places don't have location data. 🤔\n\n"
-            "Try adding some new ones!",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return
-
-    # Format clean response with inline links
-    result_count = len(top_5)
-    place_label = "place" if result_count == 1 else "places"
-    if result_count < 5:
-        text = f"📍 Here {'is' if result_count == 1 else 'are'} {result_count} {place_label} near you:\n\n"
-    else:
-        text = "📍 Here are your 5 nearest places:\n\n"
-
-    for place, dist in top_5:
-        dist_str = f"{int(dist * 1000)}m" if dist < 1 else f"{dist:.1f}km"
-
-        # Build line with clickable links
-        text += f"<b>{html.escape(place['name'])}</b> ({dist_str})\n"
-        links = [
-            f'<a href="{build_google_maps_url(place)}">Google Maps</a>'
-        ]
-        if place.get('source_url'):
-            links.append(f'<a href="{place["source_url"]}">Original</a>')
-        text += " · ".join(links) + "\n\n"
-
-    total = len(places_with_dist)
-    if total > 5:
-        text += f"<i>+{total - 5} more saved places</i>"
-
-    # Remove reply keyboard first
-    await update.message.reply_text(
-        text,
-        reply_markup=ReplyKeyboardRemove(),
-        parse_mode="HTML",
-        disable_web_page_preview=True
-    )
-
-    # Send View My Places button
-    if config.WEBAPP_URL:
-        keyboard = [[
-            InlineKeyboardButton(
-                "🗺️ Open My Map",
-                web_app=WebAppInfo(url=config.WEBAPP_URL)
-            )
-        ]]
-        await update.message.reply_text(
-            "See all your places on a map:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
-
 def clear_feedback_context(context: ContextTypes.DEFAULT_TYPE):
     """Clear active Telegram feedback collection state."""
     context.user_data.pop("feedback_context", None)
@@ -2162,60 +2059,6 @@ async def handle_review_callback(update: Update, context: ContextTypes.DEFAULT_T
         )
     else:
         await query.message.reply_text("Open the app to write your review.")
-
-
-async def handle_remind_later(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle 'Ask Later' button - reschedule reminder."""
-    query = update.callback_query
-    await query.answer()
-
-    # Callback data format: "remind_later:reminder_id"
-    parts = query.data.split(':')
-    if len(parts) != 2:
-        return
-
-    reminder_id = int(parts[1])
-
-    # Reset the reminder to trigger again in 1 hour
-    reminder = repository.reschedule_reminder(reminder_id)
-
-    if reminder:
-        repository.create_app_event(
-            user_id=update.effective_user.id,
-            event_name="review_prompt_later_clicked",
-            event_source="telegram_bot",
-            entity_type="review_reminder",
-            entity_id=str(reminder_id),
-            metadata={},
-        )
-        await query.edit_message_text(
-            "No problem! I'll ask again later 😊"
-        )
-    else:
-        await query.edit_message_text(
-            "Got it!"
-        )
-
-
-async def handle_remind_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle 'Don't Ask' button - stop reminders for this place."""
-    query = update.callback_query
-    await query.answer()
-
-    # Callback data format: "remind_stop:place_id"
-    parts = query.data.split(':')
-    if len(parts) != 2:
-        return
-
-    place_id = int(parts[1])
-    user_id = update.effective_user.id
-
-    repository.set_dont_ask_again(user_id, place_id)
-
-    await query.edit_message_text(
-        "Got it, I won't ask about this place again.\n"
-        "You can always review it in the Mini App! 📱"
-    )
 
 
 async def handle_dismiss(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2588,25 +2431,3 @@ async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAUL
         pass
 
 
-async def sharemap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate (or retrieve) a permanent share link for the user's map."""
-    if not config.WEBAPP_URL:
-        await update.message.reply_text("Mini App not configured.")
-        return
-    ensure_bot_user(update)
-    user_id = update.effective_user.id
-    first_name = update.effective_user.first_name or "my"
-    token = repository.get_or_create_map_share(user_id)
-    share_url = f"{config.WEBAPP_URL}?share={token}"
-    share_text = quote(f"🌱 Check out {first_name}'s food map on Sprout!\nDiscover where they eat 👇\n\nBuild yours: @sprout_eats_bot")
-    tg_share_url = f"https://t.me/share/url?url={quote(share_url)}&text={share_text}"
-    await update.message.reply_text(
-        f"🌱 <b>Your Sprout map is ready to share!</b>\n\n"
-        f"<a href=\"{share_url}\">🗺️ View {html.escape(first_name)}'s map</a>\n\n"
-        "Anyone with this link can explore your saved spots — no sign-up needed.",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📤 Share to Telegram", url=tg_share_url),
-            InlineKeyboardButton("Preview →", url=share_url),
-        ]]),
-    )

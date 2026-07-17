@@ -89,6 +89,7 @@ let allReviews = [];
 let currentView = 'map';
 let map = null;
 let markersLayer = null;
+let friendMarkersLayer = null;
 let userLocationMarker = null;
 
 // Filter state (sortBy and visitedFilter loaded from localStorage)
@@ -121,15 +122,12 @@ const PLACES_PER_PAGE = 100;
 
 // Notes modal state
 let currentEditingPlaceId = null;
-let pendingReviewPromptPlaceId = null;
 
 // Location state
 let userLocation = null;
 
 const PLACE_PREVIEW_MIN_ZOOM = 14;
 let listControlsInitialized = false;
-let notesModalInitialized = false;
-let reviewPromptInitialized = false;
 let reviewSheetInitialized = false;
 let reviewsViewInitialized = false;
 
@@ -170,7 +168,6 @@ function requestUserLocation(centerMap = false) {
                     lat: position.coords.latitude,
                     lng: position.coords.longitude
                 };
-                console.log('User location acquired:', userLocation);
 
                 // Center map on user location if requested
                 if (centerMap && map) {
@@ -195,7 +192,6 @@ function requestUserLocation(centerMap = false) {
                 resolve(userLocation);
             },
             (error) => {
-                console.log('Location not available:', error.message);
                 resolve(null);
             },
             { enableHighAccuracy: true, timeout: 5000 }
@@ -209,11 +205,6 @@ function initTelegram() {
         const tg = window.Telegram.WebApp;
         tg.ready();
         tg.expand();
-
-        // Log user info for debugging
-        console.log('Telegram WebApp initialized');
-        console.log('User:', tg.initDataUnsafe.user);
-        console.log('Theme:', tg.themeParams);
 
         // Update header for group map context
         if (IS_GROUP_MAP) {
@@ -239,7 +230,6 @@ function initTelegram() {
 
         return tg;
     } else {
-        console.log('Not running in Telegram WebApp context');
         return null;
     }
 }
@@ -251,11 +241,9 @@ function applyTheme() {
     // Check Telegram colorScheme first
     if (window.Telegram?.WebApp?.colorScheme) {
         theme = window.Telegram.WebApp.colorScheme;
-        console.log('Theme from Telegram:', theme);
     } else if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
         // Fallback to system preference
         theme = 'dark';
-        console.log('Theme from system preference:', theme);
     }
 
     document.documentElement.dataset.theme = theme;
@@ -271,8 +259,6 @@ async function fetchPlaces(retries = 3) {
 
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-            console.log(`Fetching places (attempt ${attempt}/${retries}) from:`, url);
-
             // Create abort controller for timeout
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -283,7 +269,6 @@ async function fetchPlaces(retries = 3) {
             });
             clearTimeout(timeoutId);
 
-            console.log('Response status:', response.status);
             if (!response.ok) {
                 const isRetriableHttpError = response.status >= 500 || response.status === 429;
                 if (!isRetriableHttpError) {
@@ -305,7 +290,6 @@ async function fetchPlaces(retries = 3) {
                 throw new Error(`HTTP error: ${response.status}`);
             }
             const data = await response.json();
-            console.log('Fetched places:', data.places?.length || 0, 'of', data.total || 0);
             if (IS_SHARE_MAP) {
                 shareOwnerName = data.owner_name || '';
                 shareOwnerUsername = data.owner_username || '';
@@ -449,15 +433,7 @@ function ensurePlacesUiInitialized() {
         listControlsInitialized = true;
     }
 
-    if (!notesModalInitialized) {
-        setupNotesModal();
-        notesModalInitialized = true;
-    }
-
-    if (!reviewPromptInitialized) {
-        setupReviewPromptModal();
-        reviewPromptInitialized = true;
-    }
+    setupNotesModal();
 
     if (!reviewSheetInitialized) {
         setupReviewSheet();
@@ -544,6 +520,9 @@ function initMap() {
     // Plain layer group — no clustering, markers always visible
     markersLayer = L.layerGroup().addTo(map);
 
+    // Friend activity layer — separate from user's own markers
+    friendMarkersLayer = L.layerGroup().addTo(map);
+
     map.on('zoomend', () => {
         updatePlacePreviewVisibility();
         updateMarkerIconSizes();
@@ -578,7 +557,6 @@ function updatePlacePreviewVisibility() {
     const container = map.getContainer();
     const currentZoom = map.getZoom();
     const shouldShow = currentZoom >= PLACE_PREVIEW_MIN_ZOOM;
-    console.log(`Zoom: ${currentZoom}, Min: ${PLACE_PREVIEW_MIN_ZOOM}, Show: ${shouldShow}`);
     container.classList.toggle('show-place-previews', shouldShow);
 }
 
@@ -607,7 +585,8 @@ function createPopupContent(place) {
     // Review indicator
     const review = getPlaceReview(place.id);
     if (review) {
-        html += `<div class="popup-review">✍️ ${'⭐'.repeat(review.overall_rating)} ${review.overall_rating}/5</div>`;
+        const sentEmoji = SENTIMENT_EMOJI[review.sentiment] || '✍️';
+        html += `<div class="popup-review">${sentEmoji} ${review.caption || review.overall_remarks || ''}</div>`;
     }
 
     // Description (editorial summary)
@@ -639,45 +618,17 @@ function createPopupContent(place) {
         html += `<div class="place-popup-meta">${metaHtml}</div>`;
     }
 
-    // Visited toggle (full width, like list view) — read-only on share map
-    const visitedClass = place.is_visited ? ' active' : '';
-    const visitedText = place.is_visited ? '✓ Visited' : 'Mark as visited';
-    if (IS_SHARE_MAP) {
-        if (place.is_visited) {
-            html += `<button class="visited-toggle-btn popup-visited active" style="pointer-events:none">✓ Visited</button>`;
-        }
-    } else {
-        html += `<button class="visited-toggle-btn popup-visited${visitedClass}" onclick="toggleVisited(${place.id})">${visitedText}</button>`;
-    }
-
-    // Notes section — read-only on share map
-    if (IS_SHARE_MAP) {
-        if (place.notes) {
-            html += `<div class="popup-notes has-notes"><span class="notes-text">${escapeHtml(place.notes)}</span></div>`;
-        }
-    } else if (place.notes) {
-        html += `<div class="popup-notes has-notes" onclick="event.stopPropagation(); startPopupNoteEdit(${place.id}, this)">
-            <span class="notes-text">${escapeHtml(place.notes)}</span>
-        </div>`;
-    } else {
-        html += `<div class="popup-notes empty" onclick="event.stopPropagation(); startPopupNoteEdit(${place.id}, this)">
-            <span class="notes-icon">✏️</span>
-            <span class="notes-placeholder">Add notes...</span>
-        </div>`;
+    // Been here button — opens review sheet (marks visited on save if not already)
+    if (!IS_SHARE_MAP) {
+        const beenClass = place.is_visited ? ' active' : '';
+        const beenText = place.is_visited ? 'Been here ✓' : 'Been here?';
+        html += `<button class="been-here-btn${beenClass}" onclick="openBeenHereSheet(${place.id})">${beenText}</button>`;
+    } else if (place.is_visited) {
+        html += `<button class="been-here-btn active" style="pointer-events:none">Been here ✓</button>`;
     }
 
     // Action buttons
     html += '<div class="place-popup-actions">';
-
-    // Review button (personal map only)
-    if (!IS_SHARE_MAP) {
-        if (place.is_visited) {
-            const reviewAriaLabel = `Write review for ${escapeHtml(place.name)}`;
-            html += `<button class="card-action-btn review-btn" onclick="openReviewSheet(${place.id})" title="Write Review" aria-label="${reviewAriaLabel}">Review</button>`;
-        } else {
-            html += `<button class="card-action-btn review-btn disabled" onclick="showVisitFirstNudge()" aria-label="Mark as visited first to review">Review</button>`;
-        }
-    }
 
     // Google Maps link
     const mapsAriaLabel = `Open ${escapeHtml(place.name)} in Google Maps`;
@@ -723,18 +674,8 @@ async function toggleVisited(placeId) {
 // Update a marker's popup content in-place without closing it
 function updateMarkerPopup(placeId, place) {
     // Create icons for swapping
-    const visitedIcon = L.icon({
-        iconUrl: '/images/sprout_mascot_green.png',
-        iconSize: [40, 40],
-        iconAnchor: [20, 40],
-        popupAnchor: [0, -40]
-    });
-    const unvisitedIcon = L.icon({
-        iconUrl: '/images/sprout_mascot_purple.png',
-        iconSize: [40, 40],
-        iconAnchor: [20, 40],
-        popupAnchor: [0, -40]
-    });
+    const visitedIcon = makeSproutIcon(true, 60);
+    const unvisitedIcon = makeSproutIcon(false, 60);
 
     markersLayer.eachLayer(marker => {
         if (marker.placeData && marker.placeData.id === placeId) {
@@ -807,13 +748,6 @@ function savePopupNote(placeId) {
     });
 }
 
-// Open notes modal from popup (legacy, kept for compatibility)
-function openNotesForPlace(placeId) {
-    const place = places.find(p => p.id === placeId);
-    if (place) {
-        openNotesModal(place);
-    }
-}
 
 
 function getPopupFocusedLatLng(latlng, zoom = 15) {
@@ -854,11 +788,22 @@ function syncMarkerPreviewTooltip(marker, place) {
 
 // Return marker icon sized for current zoom level
 // zoom < 10  → small colored dot
-// zoom 10-14 → medium sprout (26px)
-// zoom >= 15 → full sprout (40px)
+// zoom 10-14 → medium sprout (39px)
+// zoom >= 15 → full sprout (60px)
+function makeSproutIcon(isVisited, size) {
+    const w = Math.round(size * 0.8);
+    return L.icon({
+        iconUrl: isVisited ? '/images/sprout-happy.png' : '/images/sprout-before-sprout.png',
+        iconSize: [w, size],
+        iconAnchor: [w / 2, size],
+        popupAnchor: [0, -size]
+    });
+}
+
+// zoom >= 15 → full sprout (60px)
 function getMarkerIconForZoom(zoom, isVisited) {
     if (zoom < 10) {
-        const color = isVisited ? '#4caf50' : '#7c4dff';
+        const color = isVisited ? '#2d5a3d' : '#A8D58A';
         return L.divIcon({
             className: '',
             html: `<div class="marker-dot" style="background:${color}"></div>`,
@@ -867,14 +812,8 @@ function getMarkerIconForZoom(zoom, isVisited) {
             popupAnchor: [0, -6]
         });
     }
-    const size = zoom < 15 ? 26 : 40;
-    const half = size / 2;
-    return L.icon({
-        iconUrl: isVisited ? '/images/sprout_mascot_green.png' : '/images/sprout_mascot_purple.png',
-        iconSize: [size, size],
-        iconAnchor: [half, size],
-        popupAnchor: [0, -size]
-    });
+    const size = zoom < 15 ? 39 : 60;
+    return makeSproutIcon(isVisited, size);
 }
 
 // Update all existing marker icons to match current zoom
@@ -1084,16 +1023,6 @@ function filterPlacesByVisited(placesToFilter) {
     }
 }
 
-// Nudge when user taps Review on unvisited place
-function showVisitFirstNudge() {
-    const messages = [
-        "sprout says: visit first, review later! 🌱",
-        "haven't been yet? go go go! 🌿",
-        "mark it visited and spill the tea ☕",
-    ];
-    const msg = messages[Math.floor(Math.random() * messages.length)];
-    showToast(msg, null, 2000);
-}
 
 // Show toast message (optionally with retry button)
 function showToast(message, retryFn = null, duration = null) {
@@ -1157,58 +1086,6 @@ function showSuccessAnimation() {
     hapticFeedback('medium');
 }
 
-// Go to user's location
-function goToMyLocation() {
-    if (!navigator.geolocation) {
-        showToast("Location not supported in this browser");
-        return;
-    }
-
-    showToast("Finding your location...");
-
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const { latitude, longitude } = position.coords;
-
-            // Store user location for distance calculations
-            userLocation = { lat: latitude, lng: longitude };
-
-            // Remove existing user marker
-            if (userLocationMarker) {
-                map.removeLayer(userLocationMarker);
-            }
-
-            // Create custom icon for user location
-            const userIcon = L.divIcon({
-                className: 'user-location-marker',
-                html: '<div class="user-marker-dot"></div>',
-                iconSize: [20, 20],
-                iconAnchor: [10, 10]
-            });
-
-            // Add marker at user location
-            userLocationMarker = L.marker([latitude, longitude], { icon: userIcon });
-            userLocationMarker.addTo(map);
-
-            // Pan to user location
-            map.setView([latitude, longitude], 16);
-
-            showToast("Here you are!");
-
-            // Re-render views with distances (don't fit bounds, stay on user location)
-            applyFilters();
-            displayPlacesOnMap(false);
-        },
-        (error) => {
-            let message = "Couldn't get your location";
-            if (error.code === error.PERMISSION_DENIED) {
-                message = "Location access denied. Check your settings!";
-            }
-            showToast(message);
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-    );
-}
 
 // Fit map to show all places
 function fitAllPlaces() {
@@ -1227,9 +1104,7 @@ function fitAllPlaces() {
 
 // Setup map control buttons
 function setupMapControls() {
-    document.getElementById('btn-my-location').addEventListener('click', goToMyLocation);
-
-    // Map filter chips (visited/unvisited)
+// Map filter chips (visited/unvisited)
     const mapFilterChips = document.querySelectorAll('.map-filter-chip');
     mapFilterChips.forEach(chip => {
         chip.addEventListener('click', () => {
@@ -1282,8 +1157,8 @@ function createPlaceCard(place) {
     card.className = 'place-card' + (place.is_visited ? ' visited' : '');
     card.dataset.placeId = place.id;
 
-    // Sprout icon (visual only — visited=green, unvisited=purple)
-    const sproutImg = place.is_visited ? '/images/sprout_mascot_green.png' : '/images/sprout_mascot_purple.png';
+    // Sprout icon (visited=happy, unvisited=before-sprout)
+    const sproutImg = place.is_visited ? '/images/sprout-happy.png' : '/images/sprout-before-sprout.png';
 
     // Header with sprout icon, name, and more button
     let headerHtml = `<div class="place-card-header">`;
@@ -1291,7 +1166,7 @@ function createPlaceCard(place) {
     // Add review badge if exists (personal map only)
     const review = (IS_GROUP_MAP || IS_SHARE_MAP) ? null : getPlaceReview(place.id);
     const reviewBadge = review
-        ? `<span class="place-review-badge">✍️ ${'⭐'.repeat(review.overall_rating)}</span>`
+        ? `<span class="place-review-badge">${SENTIMENT_EMOJI[review.sentiment] || '✍️'}</span>`
         : '';
     headerHtml += `<span class="place-card-name">${escapeHtml(place.name)} ${reviewBadge}</span>`;
     if (!IS_GROUP_MAP && !IS_SHARE_MAP) {
@@ -1338,47 +1213,12 @@ function createPlaceCard(place) {
         if (parts) attributionHtml = `<div class="place-attribution">${parts}</div>`;
     }
 
-    // Distance + visited toggle row
+    // Distance row (no visited toggle — moved to been-here-btn in actions)
     const distance = getPlaceDistance(place);
     const distanceText = distance !== null ? `<span class="place-card-distance">📍 ${formatDistance(distance)} away</span>` : '';
-    let distanceHtml = '';
-    if (IS_SHARE_MAP) {
-        // Read-only: show visited badge, no toggle
-        const visitedBadge = place.is_visited ? `<span class="visited-toggle-btn card-visited-toggle active" style="pointer-events:none">✓ Visited</span>` : '';
-        distanceHtml = `<div class="place-card-distance-row">${distanceText}${visitedBadge}</div>`;
-    } else if (!IS_GROUP_MAP) {
-        const visitedClass = place.is_visited ? ' active' : '';
-        const visitedText = place.is_visited ? '✓ Visited' : 'Mark as visited';
-        const visitedToggleBtn = `<button class="visited-toggle-btn card-visited-toggle${visitedClass}" onclick="event.stopPropagation(); toggleVisitedFromCard(${place.id})" aria-label="${place.is_visited ? 'Mark as unvisited' : 'Mark as visited'}">${visitedText}</button>`;
-        distanceHtml = `<div class="place-card-distance-row">${distanceText}${visitedToggleBtn}</div>`;
-    } else {
-        // Group map — same visited toggle, calls group API
-        const visitedClass = place.is_visited ? ' active' : '';
-        const visitedText = place.is_visited ? '✓ Visited' : 'Mark as visited';
-        const visitedToggleBtn = `<button class="visited-toggle-btn card-visited-toggle${visitedClass}" onclick="event.stopPropagation(); toggleGroupVisitedFromCard(${place.id}, this)" aria-label="${place.is_visited ? 'Mark as unvisited' : 'Mark as visited'}">${visitedText}</button>`;
-        distanceHtml = `<div class="place-card-distance-row">${distanceText}${visitedToggleBtn}</div>`;
-    }
+    const distanceHtml = distanceText ? `<div class="place-card-distance-row">${distanceText}</div>` : '';
 
-    // Notes section - inline editable (personal map only); read-only on share map
-    let notesHtml = '';
-    if (IS_SHARE_MAP) {
-        if (place.notes) {
-            notesHtml = `<div class="place-card-notes has-notes">
-                <span class="notes-text">${escapeHtml(place.notes)}</span>
-            </div>`;
-        }
-    } else if (!IS_GROUP_MAP) {
-        if (place.notes) {
-            notesHtml = `<div class="place-card-notes has-notes" onclick="event.stopPropagation(); startInlineNoteEdit(${place.id}, this)">
-                <span class="notes-text">${escapeHtml(place.notes)}</span>
-            </div>`;
-        } else {
-            notesHtml = `<div class="place-card-notes empty" onclick="event.stopPropagation(); startInlineNoteEdit(${place.id}, this)">
-                <span class="notes-icon">✏️</span>
-                <span class="notes-placeholder">Add notes...</span>
-            </div>`;
-        }
-    }
+    const notesHtml = '';
 
     // Reviews section (group map and share map)
     let reviewsHtml = '';
@@ -1394,17 +1234,18 @@ function createPlaceCard(place) {
         </div>`;
     }
 
-    // Action buttons (Review, Maps, Reel - delete moved to menu)
-    let actionsHtml = '<div class="place-card-actions">';
-
-    // Review button (personal map only)
+    // Been here button (personal map only)
+    let beenHereHtml = '';
     if (!IS_GROUP_MAP && !IS_SHARE_MAP) {
-        if (place.is_visited) {
-            actionsHtml += `<button class="card-action-btn review-btn" onclick="event.stopPropagation(); openReviewSheet(${place.id})" aria-label="Write review">⭐ Review</button>`;
-        } else {
-            actionsHtml += `<button class="card-action-btn review-btn disabled" onclick="event.stopPropagation(); showVisitFirstNudge()" aria-label="Mark as visited first to review">⭐ Review</button>`;
-        }
+        const beenClass = place.is_visited ? ' active' : '';
+        const beenText = place.is_visited ? 'Been here ✓' : 'Been here?';
+        beenHereHtml = `<button class="been-here-btn${beenClass}" onclick="event.stopPropagation(); openBeenHereSheet(${place.id})">${beenText}</button>`;
+    } else if (IS_SHARE_MAP && place.is_visited) {
+        beenHereHtml = `<button class="been-here-btn active" style="pointer-events:none">Been here ✓</button>`;
     }
+
+    // Action buttons (Maps, Reel, Share)
+    let actionsHtml = '<div class="place-card-actions">';
 
     // Google Maps link
     if (place.google_place_id) {
@@ -1428,12 +1269,12 @@ function createPlaceCard(place) {
 
     actionsHtml += '</div>';
 
-    card.innerHTML = headerHtml + addressHtml + descriptionHtml + attributionHtml + metaHtml + distanceHtml + notesHtml + reviewsHtml + actionsHtml;
+    card.innerHTML = headerHtml + addressHtml + descriptionHtml + attributionHtml + metaHtml + distanceHtml + beenHereHtml + reviewsHtml + actionsHtml;
 
     // Click handler - show on map
     card.addEventListener('click', (e) => {
         // Don't navigate if clicking on interactive elements
-        if (e.target.closest('button, a, input, textarea, select, .place-card-notes, .place-edit-form')) {
+        if (e.target.closest('button, a, input, textarea, select, .place-edit-form')) {
             return;
         }
         showPlaceOnMap(place);
@@ -1461,9 +1302,9 @@ function createPersonalPlaceCard(place) {
     let statusBadge = '';
     if (place.is_visited) {
         const visitDate = place.visited_at ? formatShortDate(place.visited_at) : '';
-        const stars = review ? '⭐'.repeat(review.overall_rating) : '';
+        const sentimentDisplay = review ? (SENTIMENT_EMOJI[review.sentiment] || '') : '';
         statusBadge = `<span class="pcard-status pcard-status-visited">✓${visitDate ? ' ' + visitDate : ''}</span>`;
-        if (stars) statusBadge += `<span class="pcard-user-rating">${stars}</span>`;
+        if (sentimentDisplay) statusBadge += `<span class="pcard-user-rating">${sentimentDisplay}</span>`;
     } else {
         statusBadge = `<span class="pcard-status pcard-status-wishlist">🌱 To visit</span>`;
     }
@@ -2135,18 +1976,22 @@ function hapticFeedback(style = 'light') {
 
 // Update place visited status via API
 async function updatePlaceVisited(placeId, isVisited, fromPopup = false) {
-    // Update local state immediately
     const place = places.find(p => p.id === placeId);
-    if (place) {
-        place.is_visited = isVisited;
-    }
+    if (!place) return;
 
-    // Haptic feedback
+    // Update local state immediately
+    place.is_visited = isVisited;
+
     hapticFeedback('light');
+    showToast(isVisited ? `✓ Marked ${place.name} as visited!` : `Unmarked ${place.name}`);
 
-    // Show feedback
-    const placeName = place ? place.name : '';
-    showToast(isVisited ? `✓ Marked ${placeName} as visited!` : `Unmarked ${placeName}`);
+    // Update UI instantly — before API call
+    if (fromPopup) {
+        updateMarkerPopup(placeId, place);
+    } else {
+        displayPlacesOnMap();
+    }
+    applyFilters();
 
     // Persist to server
     try {
@@ -2155,73 +2000,18 @@ async function updatePlaceVisited(placeId, isVisited, fromPopup = false) {
             headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ is_visited: isVisited })
         });
-        if (!response.ok) {
-            throw new Error('Failed to update');
-        }
-        if (isVisited && !getPlaceReview(placeId)) {
-            openReviewPrompt(placeId);
-        }
-        if (!isVisited && pendingReviewPromptPlaceId === placeId) {
-            closeReviewPrompt();
-        }
+        if (!response.ok) throw new Error('Failed to update');
     } catch (error) {
         console.error('Failed to update visited status:', error);
-        // Revert local state on error
-        if (place) place.is_visited = !isVisited;
+        // Revert local state and UI on error
+        place.is_visited = !isVisited;
         showToast('Failed to save');
-    }
-
-    // If called from popup, update marker and popup in-place without closing
-    if (fromPopup && place) {
-        updateMarkerPopup(placeId, place);
-        applyFilters();
-    } else {
-        // Full re-render for list view changes
+        if (fromPopup) updateMarkerPopup(placeId, place);
         applyFilters();
         displayPlacesOnMap();
     }
 }
 
-function openReviewPrompt(placeId) {
-    const place = places.find(p => p.id === placeId);
-    const modal = document.getElementById('review-prompt-modal');
-    const placeNameEl = document.getElementById('review-prompt-place-name');
-    if (!place || !modal || !placeNameEl) return;
-
-    pendingReviewPromptPlaceId = placeId;
-    placeNameEl.textContent = place.name;
-    _prevFocusEl = document.activeElement;
-    modal.style.display = 'flex';
-    modal._trapFocusCleanup = trapFocus(modal);
-    modal.querySelector('button')?.focus();
-}
-
-function closeReviewPrompt() {
-    pendingReviewPromptPlaceId = null;
-    const modal = document.getElementById('review-prompt-modal');
-    if (modal) {
-        modal._trapFocusCleanup?.();
-        modal.style.display = 'none';
-    }
-    _prevFocusEl?.focus();
-    _prevFocusEl = null;
-}
-
-async function dontAskReviewAgain(placeId) {
-    try {
-        const response = await fetch(`${API_URL}/api/places/${placeId}/review-reminder/dont-ask`, {
-            method: 'POST',
-            headers: getAuthHeaders()
-        });
-        if (!response.ok) {
-            throw new Error('Failed to update reminder preference');
-        }
-        showToast("Won't ask again for this place");
-    } catch (error) {
-        console.error('Failed to opt out of review reminder:', error);
-        showToast('Failed to save');
-    }
-}
 
 // Update place notes via API
 async function updatePlaceNotes(placeId, notes) {
@@ -2262,58 +2052,6 @@ async function updatePlaceNotes(placeId, notes) {
 
 // Start inline note editing in list view
 
-function startInlineNoteEdit(placeId, container) {
-    const place = places.find(p => p.id === placeId);
-    if (!place) return;
-
-    // Replace container content with textarea
-    const currentNotes = place.notes || '';
-    container.innerHTML = `
-        <textarea class="inline-notes-input" placeholder="What did you think? Any must-try dishes?">${currentNotes}</textarea>
-        <div class="inline-notes-actions">
-            <button class="inline-notes-cancel" onclick="event.stopPropagation(); cancelInlineNoteEdit(${placeId})">Cancel</button>
-            <button class="inline-notes-save" onclick="event.stopPropagation(); saveInlineNote(${placeId})">Save</button>
-        </div>
-    `;
-    container.classList.add('editing');
-
-    // Focus the textarea
-    const textarea = container.querySelector('textarea');
-    textarea.focus();
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-
-    // Handle click outside to cancel
-    textarea.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            cancelInlineNoteEdit(placeId);
-        } else if (e.key === 'Enter' && e.metaKey) {
-            saveInlineNote(placeId);
-        }
-    });
-}
-
-// Cancel inline note editing
-function cancelInlineNoteEdit(placeId) {
-    applyFilters(); // Re-render the list to restore original state
-}
-
-// Save inline note
-function saveInlineNote(placeId) {
-    const card = document.querySelector(`.place-card[data-place-id="${placeId}"]`);
-    if (!card) return;
-
-    const textarea = card.querySelector('.inline-notes-input');
-    if (!textarea) return;
-
-    const saveBtn = card.querySelector('.inline-notes-save');
-    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
-
-    // Send empty string to clear notes (not null, which API ignores)
-    const notes = textarea.value.trim();
-    updatePlaceNotes(placeId, notes).finally(() => {
-        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
-    });
-}
 
 // Confirm delete place
 async function confirmDeletePlace(placeId, placeName) {
@@ -2633,33 +2371,6 @@ function setupNotesModal() {
     });
 }
 
-function setupReviewPromptModal() {
-    document.getElementById('review-prompt-close').addEventListener('click', closeReviewPrompt);
-    document.getElementById('review-prompt-later').addEventListener('click', () => {
-        closeReviewPrompt();
-        showToast('Okay, I’ll remind you later in Telegram');
-    });
-    document.getElementById('review-prompt-now').addEventListener('click', async () => {
-        const placeId = pendingReviewPromptPlaceId;
-        closeReviewPrompt();
-        if (placeId) {
-            await openReviewSheet(placeId);
-        }
-    });
-    document.getElementById('review-prompt-dont-ask').addEventListener('click', async () => {
-        const placeId = pendingReviewPromptPlaceId;
-        closeReviewPrompt();
-        if (placeId) {
-            await dontAskReviewAgain(placeId);
-        }
-    });
-
-    document.getElementById('review-prompt-modal').addEventListener('click', (e) => {
-        if (e.target.id === 'review-prompt-modal') {
-            closeReviewPrompt();
-        }
-    });
-}
 
 // ========== GOOGLE SEARCH MODAL ==========
 
@@ -2758,8 +2469,8 @@ function renderSearchTypeChips() {
     `).join('');
 }
 
-// Open search modal
-function openSearchModal() {
+// Open search modal (optionally pre-fill with a query)
+function openSearchModal(prefill = '') {
     const modal = document.getElementById('search-modal');
     const input = document.getElementById('google-search-input');
     const resultsContainer = document.getElementById('search-results');
@@ -2778,6 +2489,13 @@ function openSearchModal() {
     modal.style.display = 'flex';
     modal._trapFocusCleanup = trapFocus(modal);
     input.focus();
+
+    // Pre-fill and search if a query was provided (from Discover tab chips)
+    if (prefill) {
+        input.value = prefill;
+        searchGooglePlaces();
+        return;
+    }
 
     // Auto-load nearby restaurants if location available
     if (userLocation) {
@@ -2884,6 +2602,7 @@ function renderSearchResults(results) {
         `;
     }).join('');
 }
+
 
 // Close search modal
 function closeSearchModal() {
@@ -3015,7 +2734,7 @@ function setupSearchModal() {
     document.getElementById('google-search-btn').onclick = searchGooglePlaces;
 
     const openModal = () => openSearchModal();
-    ['btn-search-google', 'btn-search-empty', 'fab-discover'].forEach((id) => {
+    ['btn-search-google', 'btn-search-empty'].forEach((id) => {
         const button = document.getElementById(id);
         if (button) button.onclick = openModal;
     });
@@ -3460,7 +3179,6 @@ async function initApp() {
         if (document.getElementById('filter-drawer')?.style.display === 'flex') { closeFilterDrawer(); return; }
         if (document.getElementById('reviews-filter-drawer')?.style.display === 'flex') { closeReviewsFilterDrawer(); return; }
         if (document.getElementById('notes-modal')?.style.display === 'flex') { closeNotesModal(); return; }
-        if (document.getElementById('review-prompt-modal')?.style.display === 'flex') { closeReviewPrompt(); return; }
         if (document.getElementById('place-menu')?.style.display === 'flex') { closePlaceMenu(); return; }
     });
 
@@ -3518,16 +3236,13 @@ async function initApp() {
     updateMapFilterCounts();
     updateVisitedChipCounts();
 
-    // Share map: show owner banner, hide add/discover FAB
     if (IS_SHARE_MAP) {
-        const fab = document.getElementById('fab-discover');
-        if (fab) fab.style.display = 'none';
         showShareBanner();
     }
 
 
-    // Show list tab by default (main home screen)
-    switchTab('list');
+    // Show saved tab by default (main home screen)
+    switchTab('saved');
 
     // Load friend request badge in background
     loadFriendRequests();
@@ -3553,8 +3268,6 @@ async function initApp() {
             }
         }
     }
-
-    console.log(`Loaded ${places.length} places`);
 }
 
 // ========== REVIEW SHEET ==========
@@ -3744,35 +3457,92 @@ function setupDishChipInput() {
 
 // ========== REVIEW FORM HELPERS ==========
 
+const SENTIMENT_EMOJI = { loved: '🤩', okay: '👍', meh: '😐' };
+const SENTIMENT_TO_RATING = { loved: 5, okay: 3, meh: 1 };
+
+// Inject 1-10 circles into each score row (called once on init)
+function initScoreCircles() {
+    ['food-score', 'vibe-score', 'value-score'].forEach(id => {
+        const container = document.getElementById(id);
+        if (!container || container.children.length > 0) return;
+        for (let i = 1; i <= 10; i++) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'score-circle';
+            btn.dataset.val = i;
+            btn.textContent = i;
+            btn.addEventListener('click', () => {
+                const current = parseInt(container.dataset.score) || 0;
+                const newVal = current === i ? 0 : i;
+                container.dataset.score = newVal || '';
+                container.querySelectorAll('.score-circle').forEach(b => {
+                    b.classList.toggle('active', parseInt(b.dataset.val) === newVal && newVal !== 0);
+                });
+            });
+            container.appendChild(btn);
+        }
+    });
+}
+
+function initSentimentButtons() {
+    document.querySelectorAll('.sentiment-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.sentiment-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('sentiment-group')?.classList.remove('invalid');
+        });
+    });
+}
+
 function getReviewFormValidation() {
-    const rating = parseInt(document.getElementById('overall-stars').dataset.rating) || 0;
-    if (rating === 0) {
-        return { valid: false, message: 'Add a rating to save your review ⭐', element: document.getElementById('overall-rating-group') };
+    const sentiment = document.querySelector('.sentiment-btn.active')?.dataset.sentiment;
+    if (!sentiment) {
+        return { valid: false, message: 'How was it? Tap one to continue 🌱', element: document.getElementById('sentiment-group') };
     }
     return { valid: true };
 }
 
 function getReviewFormPayload() {
+    const sentiment = document.querySelector('.sentiment-btn.active')?.dataset.sentiment || null;
+    const foodScore = parseInt(document.getElementById('food-score')?.dataset.score) || null;
+    const vibeScore = parseInt(document.getElementById('vibe-score')?.dataset.score) || null;
+    const valueScore = parseInt(document.getElementById('value-score')?.dataset.score) || null;
+    const caption = document.getElementById('overall-remarks')?.value.trim() || null;
     return {
-        overall_rating: parseInt(document.getElementById('overall-stars').dataset.rating) || 0,
-        price_rating: parseInt(document.getElementById('price-rating').dataset.rating) || 0,
-        overall_remarks: document.getElementById('overall-remarks').value.trim(),
+        sentiment,
+        food_score: foodScore,
+        vibe_score: vibeScore,
+        value_score: valueScore,
+        caption,
+        // Legacy bridge: keep overall_rating + overall_remarks for DB compat until migration
+        overall_rating: SENTIMENT_TO_RATING[sentiment] || 3,
+        price_rating: 0,
+        overall_remarks: caption,
         dishes: dishChips.map(c => c.persistedId ? { id: c.persistedId, name: c.name } : { name: c.name }),
     };
 }
 
 // Populate review form from currentReview (or blank for new)
 function populateReviewForm() {
-    // Ratings
-    const starsEl = document.getElementById('overall-stars');
-    const priceEl = document.getElementById('price-rating');
-    starsEl.dataset.rating = currentReview?.overall_rating || 0;
-    priceEl.dataset.rating = currentReview?.price_rating || 0;
-    initStarRating(starsEl);
-    initPriceRating(priceEl);
+    // Sentiment
+    const sentiment = currentReview?.sentiment || null;
+    document.querySelectorAll('.sentiment-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.sentiment === sentiment);
+    });
 
-    // Remarks
-    document.getElementById('overall-remarks').value = currentReview?.overall_remarks || '';
+    // Scores
+    [['food-score', 'food_score'], ['vibe-score', 'vibe_score'], ['value-score', 'value_score']].forEach(([elId, field]) => {
+        const container = document.getElementById(elId);
+        if (!container) return;
+        const score = currentReview?.[field] || 0;
+        container.dataset.score = score || '';
+        container.querySelectorAll('.score-circle').forEach(btn => {
+            btn.classList.toggle('active', parseInt(btn.dataset.val) === score && score !== 0);
+        });
+    });
+
+    // Caption
+    document.getElementById('overall-remarks').value = currentReview?.caption || currentReview?.overall_remarks || '';
 
     // Dish chips
     dishChips = [];
@@ -3787,19 +3557,13 @@ function populateReviewForm() {
     // Delete button only for existing reviews
     document.getElementById('delete-review-btn').style.display = currentReview ? 'block' : 'none';
 
-    // Clear errors
     clearReviewValidationState();
 }
 
 function clearReviewValidationState() {
     const errorEl = document.getElementById('review-form-error');
-    if (errorEl) {
-        errorEl.textContent = '';
-        errorEl.style.display = 'none';
-    }
-
-    document.getElementById('overall-rating-group')?.classList.remove('invalid');
-    document.getElementById('price-rating-group')?.classList.remove('invalid');
+    if (errorEl) { errorEl.textContent = ''; errorEl.style.display = 'none'; }
+    document.getElementById('sentiment-group')?.classList.remove('invalid');
     document.querySelectorAll('.dish-card.invalid').forEach(card => card.classList.remove('invalid'));
 }
 
@@ -3854,6 +3618,11 @@ async function flushPendingReviewPhotos(reviewId) {
         await uploadPhoto(reviewId, photo.file, null);
     }
     pendingOverallPhotos = [];
+}
+
+// Open review/visit sheet ("Been here?" entry point)
+function openBeenHereSheet(placeId) {
+    openReviewSheet(placeId);
 }
 
 // Open review sheet for a place
@@ -4110,6 +3879,17 @@ async function saveReview() {
             currentReview = (await refreshed.json()).review;
         }
 
+        // Auto-mark visited when saving review (if not already)
+        const reviewedPlace = places.find(p => p.id === currentReviewPlaceId);
+        if (reviewedPlace && !reviewedPlace.is_visited) {
+            reviewedPlace.is_visited = true;
+            fetch(`${API_URL}/api/places/${currentReviewPlaceId}`, {
+                method: 'PATCH',
+                headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_visited: true })
+            }).catch(e => console.error('Failed to mark visited:', e));
+        }
+
         showSuccessAnimation();
         closeReviewSheet();
 
@@ -4123,7 +3903,7 @@ async function saveReview() {
     } finally {
         if (saveButton) {
             saveButton.disabled = false;
-            saveButton.textContent = 'Save';
+            saveButton.textContent = 'Been here ✓';
         }
     }
 }
@@ -4146,7 +3926,7 @@ async function deleteReviewForPlace(placeId) {
 async function deleteReview() {
     if (!currentReviewPlaceId) return;
 
-    if (!confirm('Delete this review? This cannot be undone.')) return;
+    if (!confirm('Remove this visit? Your review will be deleted too.')) return;
 
     hapticFeedback('medium');
 
@@ -4158,7 +3938,18 @@ async function deleteReview() {
 
         if (!response.ok) throw new Error('Failed to delete review');
 
-        showToast('Review deleted');
+        // Unmark visited
+        const unvisitPlace = places.find(p => p.id === currentReviewPlaceId);
+        if (unvisitPlace) {
+            unvisitPlace.is_visited = false;
+            fetch(`${API_URL}/api/places/${currentReviewPlaceId}`, {
+                method: 'PATCH',
+                headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_visited: false })
+            }).catch(e => console.error('Failed to unmark visited:', e));
+        }
+
+        showToast('Visit removed');
         closeReviewSheet();
 
         // Reload reviews and refresh displays
@@ -4490,6 +4281,10 @@ function setupReviewSheet() {
 
     // Setup swipe-to-close gesture
     setupSheetGestures(document.getElementById('review-sheet'), closeReviewSheet);
+
+    // Init sentiment buttons and score circles
+    initSentimentButtons();
+    initScoreCircles();
 
     // Setup dish chip input
     setupDishChipInput();
@@ -4840,7 +4635,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ========== BOTTOM NAV / TAB SWITCHING ==========
 
-let currentTab = 'map';
+let currentTab = 'saved';
 let feedLoaded = false;
 
 function switchTab(tab) {
@@ -4851,23 +4646,136 @@ function switchTab(tab) {
         btn.classList.toggle('active', btn.dataset.tab === tab);
     });
 
-    // Resolve which inner view to show
-    const innerView = tab === 'map' ? 'map' : tab === 'list' ? 'list' : null;
+    // Page title + header visibility (hidden on Saved for full-bleed)
+    const titles = { home: 'sprout', discover: 'Discover', saved: 'Saved', profile: 'Profile' };
+    const titleEl = document.getElementById('page-title');
+    if (titleEl) titleEl.textContent = titles[tab] || 'sprout';
+    const header = document.getElementById('app-header');
+    if (header) header.style.display = 'none';
 
-    document.getElementById('map-view')?.classList.toggle('active', innerView === 'map');
-    document.getElementById('list-view')?.classList.toggle('active', innerView === 'list');
+    // View visibility
+    const isSavedMap  = tab === 'saved' && currentView === 'map';
+    const isSavedList = tab === 'saved' && currentView !== 'map';
+    document.getElementById('map-view')?.classList.toggle('active', isSavedMap);
+    document.getElementById('list-view')?.classList.toggle('active', isSavedList);
     document.getElementById('reviews-view')?.classList.toggle('active', false);
-    document.getElementById('feed-view')?.classList.toggle('active', tab === 'feed');
+    document.getElementById('feed-view')?.classList.toggle('active', tab === 'home');
     document.getElementById('profile-view')?.classList.toggle('active', tab === 'profile');
 
-    if (tab === 'map' && map) {
-        setTimeout(() => map.invalidateSize(), 100);
-    } else if (tab === 'list') {
-        currentView = 'list';
-    } else if (tab === 'feed') {
+    // Show/hide saved toggle FAB
+    const savedFab = document.getElementById('btn-saved-toggle');
+    if (savedFab) savedFab.style.display = tab === 'saved' ? 'flex' : 'none';
+
+    if (tab === 'saved') {
+        updateSavedToggleIcon(currentView);
+        if (isSavedMap && map) {
+            setTimeout(() => map.invalidateSize(), 100);
+            loadFriendMapActivity();
+        } else {
+            currentView = 'list';
+        }
+    } else if (tab === 'home') {
         loadFeed();
     } else if (tab === 'profile') {
         loadProfile();
+    }
+}
+
+function switchSavedView(view) {
+    currentView = view;
+    document.getElementById('list-view')?.classList.toggle('active', view === 'list');
+    document.getElementById('map-view')?.classList.toggle('active', view === 'map');
+    updateSavedToggleIcon(view);
+    if (view === 'map' && map) {
+        setTimeout(() => map.invalidateSize(), 100);
+        loadFriendMapActivity();
+    }
+}
+
+function toggleSavedView() {
+    switchSavedView(currentView === 'map' ? 'list' : 'map');
+}
+
+// SVG paths for the toggle icon
+const MAP_ICON_SVG = `<polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>`;
+const LIST_ICON_SVG = `<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>`;
+
+function updateSavedToggleIcon(view) {
+    const fab = document.getElementById('btn-saved-toggle');
+    if (!fab) return;
+    const svg = document.getElementById('saved-toggle-svg');
+    if (svg) {
+        svg.innerHTML = view === 'map' ? LIST_ICON_SVG : MAP_ICON_SVG;
+    }
+}
+
+// ========== FRIEND MAP LAYER ==========
+
+function createFriendIcon(name) {
+    const initial = (name || '?')[0].toUpperCase();
+    return L.divIcon({
+        className: '',
+        html: `<div class="friend-map-pin">${initial}</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -18]
+    });
+}
+
+async function loadFriendMapActivity() {
+    if (!friendMarkersLayer) return;
+    friendMarkersLayer.clearLayers();
+    try {
+        const res = await fetch('/api/friends/map-activity', { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const { activities } = await res.json();
+        activities.forEach(act => {
+            const p = act.places;
+            if (!p?.latitude || !p?.longitude) return;
+            const name = act.users?.first_name || 'Friend';
+            const timeAgo = formatTimeAgo(new Date(act.created_at));
+            const stars = act.rating ? '⭐'.repeat(Math.round(act.rating)) : '';
+            const verb = act.activity_type === 'visited' ? 'visited' : 'saved';
+            const placeJson = escapeHtml(JSON.stringify({ name: p.name, latitude: p.latitude, longitude: p.longitude, google_place_id: p.google_place_id, address: p.address }));
+            const marker = L.marker([p.latitude, p.longitude], { icon: createFriendIcon(name) });
+            marker.bindPopup(`
+                <div class="friend-popup">
+                    <div class="friend-popup-name">${escapeHtml(name)} ${verb}</div>
+                    <div class="friend-popup-place">${escapeHtml(p.name)}</div>
+                    <div class="friend-popup-meta">${timeAgo}${stars ? ' · ' + stars : ''}</div>
+                    <button class="friend-popup-save" onclick="saveFriendPlace('${placeJson}')">Save to my list →</button>
+                </div>
+            `);
+            friendMarkersLayer.addLayer(marker);
+        });
+    } catch (e) {
+        console.error('Friend map load failed', e);
+    }
+}
+
+async function saveFriendPlace(placeJsonStr) {
+    try {
+        const place = JSON.parse(placeJsonStr);
+        const res = await fetch('/api/places', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: place.name,
+                address: place.address || '',
+                latitude: place.latitude,
+                longitude: place.longitude,
+                google_place_id: place.google_place_id || null,
+            })
+        });
+        if (res.ok) {
+            showToast('Saved to your list!');
+            await loadPlaces();
+        } else {
+            const data = await res.json().catch(() => ({}));
+            showToast(data.detail || 'Could not save place.');
+        }
+    } catch (e) {
+        console.error('saveFriendPlace failed', e);
     }
 }
 
@@ -4907,10 +4815,10 @@ async function loadFeed() {
 function createFeedCard(activity) {
     const meta = activity.metadata || {};
     const actor = activity.actor_name || activity.actor_username || 'Friend';
-    const actorInitial = actor[0]?.toUpperCase() || '?';
-    const placeName = meta.place_name || '';
+    const actorInitials = actor.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
+    const placeName = meta.place_name || 'a place';
     const address   = meta.address   || '';
-    const rating    = meta.rating    ? parseInt(meta.rating) : 0;
+    const sentiment = meta.sentiment || null;
     const remarks   = meta.remarks   || '';
     const timeAgo   = formatTimeAgo(activity.created_at);
     const gid       = meta.google_place_id || '';
@@ -4918,19 +4826,17 @@ function createFeedCard(activity) {
     const likesCount = activity.likes_count || 0;
     const userLiked  = activity.user_liked  || false;
 
-    let verb = 'did something at';
+    let verb = 'checked out';
     if (activity.activity_type === 'visited')  verb = 'visited';
     if (activity.activity_type === 'reviewed') verb = 'reviewed';
     if (activity.activity_type === 'saved')    verb = 'saved';
 
-    const starsHtml = rating > 0
-        ? `<span class="fc-stars">${'⭐'.repeat(rating)}</span>`
+    const sentimentLabel = { loved: 'Loved it', okay: 'It was okay', meh: 'Meh' };
+    const sentimentHtml = sentiment
+        ? `<div><span class="fc-sentiment">${SENTIMENT_EMOJI[sentiment]} ${sentimentLabel[sentiment]}</span></div>`
         : '';
-    const remarksHtml = remarks
-        ? `<p class="fc-remarks">"${escapeHtml(remarks)}"</p>`
-        : '';
-    const placeHtml = placeName
-        ? `<span class="fc-place" onclick="event.stopPropagation()">${escapeHtml(placeName)}</span>`
+    const captionHtml = remarks
+        ? `<p class="fc-caption">"${escapeHtml(remarks)}"</p>`
         : '';
     const addrHtml = address
         ? `<p class="fc-address">${escapeHtml(address)}</p>`
@@ -4940,22 +4846,24 @@ function createFeedCard(activity) {
     return `
         <div class="fc" id="${cardId}" onclick="onFeedCardTap('${gid}', '${escapeHtml(placeName)}')">
             <div class="fc-header">
-                <div class="fc-avatar">${actorInitial}</div>
+                <div class="fc-avatar">${actorInitials}</div>
                 <div class="fc-actor-block">
                     <span class="fc-actor">${escapeHtml(actor)}</span>
-                    <span class="fc-verb">${verb} ${placeHtml}</span>
+                    <span class="fc-meta">${verb} · ${timeAgo}</span>
                 </div>
-                <span class="fc-time">${timeAgo}</span>
             </div>
-            ${addrHtml}
-            ${starsHtml}
-            ${remarksHtml}
+            <div class="fc-place-block">
+                <p class="fc-place-name">${escapeHtml(placeName)}</p>
+                ${addrHtml}
+            </div>
+            ${sentimentHtml}
+            ${captionHtml}
             <div class="fc-actions">
                 <button class="fc-like-btn ${userLiked ? 'liked' : ''}"
                     data-liked="${userLiked}"
                     onclick="event.stopPropagation(); likeActivity(${activity.id}, this)"
                     aria-label="Like">
-                    ❤️ <span class="like-count">${likesCount > 0 ? likesCount : ''}</span>
+                    ${userLiked ? '❤️' : '🤍'} <span class="like-count">${likesCount > 0 ? likesCount : ''}</span>
                 </button>
             </div>
         </div>`;
@@ -4991,12 +4899,31 @@ async function loadProfile() {
 }
 
 function renderProfile(data) {
+    const displayName = data.display_name || data.first_name || 'You';
     const nameEl = document.getElementById('profile-display-name');
     const userEl = document.getElementById('profile-username');
     const bioEl = document.getElementById('profile-bio');
-    if (nameEl) nameEl.textContent = data.display_name || data.first_name || 'You';
+    const avatarEl = document.getElementById('profile-avatar-circle');
+
+    if (nameEl) nameEl.textContent = displayName;
     if (userEl) userEl.textContent = data.username ? `@${data.username}` : '';
     if (bioEl) bioEl.textContent = data.bio || '';
+    if (avatarEl) {
+        const photoUrl = data.avatar_url
+            || window.Telegram?.WebApp?.initDataUnsafe?.user?.photo_url
+            || null;
+        if (photoUrl) {
+            avatarEl.innerHTML = '';
+            avatarEl.style.backgroundImage = `url(${photoUrl})`;
+            avatarEl.style.backgroundSize = 'cover';
+            avatarEl.style.backgroundPosition = 'center';
+            avatarEl.textContent = '';
+        } else {
+            avatarEl.style.backgroundImage = '';
+            const initials = displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+            avatarEl.textContent = initials;
+        }
+    }
 
     const stats = data.stats || {};
     const savedEl = document.getElementById('stat-saved');
@@ -5005,6 +4932,48 @@ function renderProfile(data) {
     if (savedEl) savedEl.textContent = stats.saved ?? '—';
     if (visitedEl) visitedEl.textContent = stats.visited ?? '—';
     if (reviewsEl) reviewsEl.textContent = stats.reviews ?? '—';
+
+    renderMyVisits();
+}
+
+function renderMyVisits() {
+    const section = document.getElementById('my-visits-section');
+    const listEl = document.getElementById('my-visits-list');
+    if (!section || !listEl) return;
+
+    const visited = (places || []).filter(p => p.is_visited);
+    if (visited.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = '';
+    // Sort newest first by visited_at
+    const sorted = [...visited].sort((a, b) => {
+        const ta = a.visited_at ? new Date(a.visited_at).getTime() : 0;
+        const tb = b.visited_at ? new Date(b.visited_at).getTime() : 0;
+        return tb - ta;
+    });
+
+    listEl.innerHTML = sorted.slice(0, 10).map(place => {
+        const review = getPlaceReview(place.id);
+        const sentiment = review?.sentiment || null;
+        const caption = review?.caption || review?.overall_remarks || '';
+        const dateStr = place.visited_at ? formatShortDate(place.visited_at) : '';
+        const sentimentEmoji = sentiment ? SENTIMENT_EMOJI[sentiment] : '';
+        const captionDisplay = caption ? caption.slice(0, 60) + (caption.length > 60 ? '…' : '') : place.address || '';
+        return `
+            <div class="visit-item" onclick="openBeenHereSheet(${place.id})">
+                <div class="visit-item-main">
+                    <p class="visit-item-name">${escapeHtml(place.name)}</p>
+                    <p class="visit-item-caption">${escapeHtml(captionDisplay)}</p>
+                </div>
+                <div class="visit-item-right">
+                    ${sentimentEmoji ? `<span class="visit-item-sentiment">${sentimentEmoji}</span>` : ''}
+                    ${dateStr ? `<span class="visit-item-date">${dateStr}</span>` : ''}
+                </div>
+            </div>`;
+    }).join('');
 }
 
 // ========== FRIENDS ==========
@@ -5031,12 +5000,15 @@ async function loadFriends() {
         } else {
             if (emptyEl) emptyEl.style.display = 'none';
             friends.forEach(f => {
+                const name = f.display_name || f.first_name || 'Friend';
+                const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
                 const card = document.createElement('div');
                 card.className = 'friend-card';
                 card.innerHTML = `
-                    <div class="friend-info">
-                        <p class="friend-name">${escapeHtml(f.display_name || f.first_name || 'Friend')}</p>
-                        ${f.username ? `<p class="friend-username">@${escapeHtml(f.username)}</p>` : ''}
+                    <div class="friend-avatar-circle">${initials}</div>
+                    <div class="friend-card-info">
+                        <p class="friend-card-name">${escapeHtml(name)}</p>
+                        ${f.username ? `<p class="friend-card-username">@${escapeHtml(f.username)}</p>` : ''}
                     </div>
                     <button class="btn-icon-sm btn-danger-sm" onclick="removeFriend(${f.friendship_id})" aria-label="Remove friend">✕</button>`;
                 listEl.appendChild(card);
@@ -5400,17 +5372,17 @@ function renderRcYourVisit(place) {
 
     if (place.is_visited) {
         const visitDate = place.visited_at ? new Date(place.visited_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
-        const stars = review ? '⭐'.repeat(review.overall_rating) : '';
-        const remarks = review?.overall_remarks ? `<p class="rc-visit-remarks">"${escapeHtml(review.overall_remarks)}"</p>` : '';
+        const sentimentDisplay = review ? (SENTIMENT_EMOJI[review.sentiment] || '') : '';
+        const remarks = review ? (review.caption || review.overall_remarks || '') : '';
         el.innerHTML = `
             <div class="rc-visit-logged">
                 <div class="rc-visit-header">
                     <span class="rc-visit-check">✓ Visited</span>
                     ${visitDate ? `<span class="rc-visit-date">${visitDate}</span>` : ''}
                 </div>
-                ${stars ? `<div class="rc-visit-stars">${stars}</div>` : ''}
-                ${remarks}
-                <button class="rc-edit-btn" onclick="openLogVisit(${place.id}, true)">Edit visit</button>
+                ${sentimentDisplay ? `<div class="rc-visit-stars">${sentimentDisplay}</div>` : ''}
+                ${remarks ? `<p class="rc-visit-remarks">"${escapeHtml(remarks)}"</p>` : ''}
+                <button class="rc-edit-btn" onclick="openBeenHereSheet(${place.id})">Edit visit</button>
             </div>`;
     } else {
         el.innerHTML = `

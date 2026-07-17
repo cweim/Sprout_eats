@@ -453,12 +453,30 @@ class DishRequest(BaseModel):
     remarks: Optional[str] = None
 
 
+_SENTIMENT_TO_RATING = {"loved": 5, "okay": 3, "meh": 1}
+
+
 class ReviewRequest(BaseModel):
     """Request model for creating/updating a review."""
-    overall_rating: int = Field(..., ge=1, le=5)
+    # New fields
+    sentiment: Optional[str] = None  # "loved" | "okay" | "meh"
+    food_score: Optional[int] = Field(None, ge=1, le=10)
+    vibe_score: Optional[int] = Field(None, ge=1, le=10)
+    value_score: Optional[int] = Field(None, ge=1, le=10)
+    caption: Optional[str] = None
+    # Legacy fields (kept for backwards compat; derived from sentiment when absent)
+    overall_rating: Optional[int] = Field(None, ge=1, le=5)
     price_rating: int = Field(0, ge=0, le=5)
     overall_remarks: Optional[str] = None
     dishes: List[DishRequest] = []
+
+    def resolved_rating(self) -> int:
+        if self.overall_rating is not None:
+            return self.overall_rating
+        return _SENTIMENT_TO_RATING.get(self.sentiment or "", 3)
+
+    def resolved_remarks(self) -> Optional[str]:
+        return self.caption or self.overall_remarks
 
 
 class PhotoResponse(BaseModel):
@@ -527,6 +545,11 @@ def review_to_dict(review: dict) -> dict:
     return {
         "id": review["id"],
         "place_id": review.get("place_id"),
+        "sentiment": review.get("sentiment"),
+        "food_score": review.get("food_score"),
+        "vibe_score": review.get("vibe_score"),
+        "value_score": review.get("value_score"),
+        "caption": review.get("caption"),
         "overall_rating": review.get("overall_rating"),
         "price_rating": review.get("price_rating"),
         "overall_remarks": review.get("overall_remarks"),
@@ -575,10 +598,15 @@ async def create_or_update_review(
     review = repository.create_or_update_review(
         user_id=user.id,
         place_id=place_id,
-        overall_rating=request.overall_rating,
+        overall_rating=request.resolved_rating(),
         price_rating=request.price_rating,
-        overall_remarks=request.overall_remarks,
-        dishes=dishes_data
+        overall_remarks=request.resolved_remarks(),
+        dishes=dishes_data,
+        sentiment=request.sentiment,
+        food_score=request.food_score,
+        vibe_score=request.vibe_score,
+        value_score=request.value_score,
+        caption=request.caption,
     )
 
     # Log to activity feed
@@ -591,8 +619,9 @@ async def create_or_update_review(
             "place_name": place.get("name") if place else None,
             "address": place.get("address") if place else None,
             "google_place_id": place.get("google_place_id") if place else None,
-            "rating": request.overall_rating,
-            "remarks": (request.overall_remarks or "")[:100],
+            "rating": request.resolved_rating(),
+            "sentiment": request.sentiment,
+            "remarks": (request.resolved_remarks() or "")[:100],
         },
     )
 
@@ -854,6 +883,15 @@ async def get_feed(
     offset = (page - 1) * per_page
     activities = repository.get_friend_feed(user.id, limit=per_page, offset=offset)
     return {"activities": activities, "page": page, "has_more": len(activities) == per_page}
+
+
+@router.get("/friends/map-activity")
+async def get_friends_map_activity(
+    user: TelegramUser = Depends(get_current_user),
+):
+    """Get recent friend visited/saved activities with coordinates for map pins."""
+    activities = repository.get_friend_map_activity(user.id)
+    return {"activities": activities}
 
 
 # =============================================================================

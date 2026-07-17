@@ -615,7 +615,12 @@ def create_or_update_review(
     overall_rating: int,
     price_rating: int,
     overall_remarks: Optional[str] = None,
-    dishes: Optional[List[dict]] = None
+    dishes: Optional[List[dict]] = None,
+    sentiment: Optional[str] = None,
+    food_score: Optional[int] = None,
+    vibe_score: Optional[int] = None,
+    value_score: Optional[int] = None,
+    caption: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create or update review for a place."""
     supabase = get_supabase()
@@ -633,6 +638,14 @@ def create_or_update_review(
 
     safe_price = price_rating if price_rating and price_rating >= 1 else None
 
+    new_fields = {
+        "sentiment": sentiment,
+        "food_score": food_score,
+        "vibe_score": vibe_score,
+        "value_score": value_score,
+        "caption": caption,
+    }
+
     if existing.data:
         # Update existing
         review_id = existing.data[0]["id"]
@@ -640,6 +653,7 @@ def create_or_update_review(
             "overall_rating": overall_rating,
             "overall_remarks": overall_remarks,
             "updated_at": now,
+            **new_fields,
         }
         if safe_price is not None:
             update_payload["price_rating"] = safe_price
@@ -651,6 +665,7 @@ def create_or_update_review(
             "user_id": user_id,
             "overall_rating": overall_rating,
             "overall_remarks": overall_remarks,
+            **new_fields,
         }
         if safe_price is not None:
             insert_payload["price_rating"] = safe_price
@@ -1744,7 +1759,7 @@ def get_my_profile(user_id: int) -> Optional[Dict[str, Any]]:
     """Get full profile for the authenticated user (public or private)."""
     supabase = get_supabase()
     result = supabase.table("users").select(
-        "id, username, first_name, last_name, display_name, bio, is_public, created_at"
+        "id, username, first_name, last_name, display_name, bio, is_public, avatar_url, created_at"
     ).eq("id", user_id).execute()
     if not result.data:
         return None
@@ -1757,7 +1772,7 @@ def get_public_profile(user_id: int) -> Optional[Dict[str, Any]]:
     """Get a public profile (returns None if private)."""
     supabase = get_supabase()
     result = supabase.table("users").select(
-        "id, username, first_name, last_name, display_name, bio, is_public, created_at"
+        "id, username, first_name, last_name, display_name, bio, is_public, avatar_url, created_at"
     ).eq("id", user_id).execute()
     if not result.data:
         return None
@@ -1766,6 +1781,12 @@ def get_public_profile(user_id: int) -> Optional[Dict[str, Any]]:
         return None
     user["stats"] = _get_user_stats(user_id, supabase)
     return user
+
+
+def update_user_avatar(user_id: int, avatar_url: str) -> None:
+    """Store a Supabase Storage URL as the user's avatar."""
+    supabase = get_supabase()
+    supabase.table("users").update({"avatar_url": avatar_url}).eq("id", user_id).execute()
 
 
 def search_users_by_username(query: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -1989,6 +2010,65 @@ def log_activity(
         }).execute()
     except Exception:
         pass
+
+
+def get_friend_map_activity(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+    """Get recent friend visited/saved activities with place coordinates for map display."""
+    supabase = get_supabase()
+    friend_ids = get_friend_ids(user_id)
+    if not friend_ids:
+        return []
+
+    result = supabase.table("user_activities").select(
+        "id, user_id, activity_type, place_id, metadata, created_at"
+    ).in_("user_id", friend_ids).in_(
+        "activity_type", ["visited", "saved"]
+    ).eq("is_public", True).order(
+        "created_at", desc=True
+    ).limit(limit).execute()
+
+    if not result.data:
+        return []
+
+    # Fetch unique places with coordinates
+    place_ids = list({r["place_id"] for r in result.data if r.get("place_id")})
+    places_result = supabase.table("places").select(
+        "id, name, latitude, longitude, google_place_id, address"
+    ).in_("id", place_ids).execute()
+    places_map = {p["id"]: p for p in (places_result.data or [])}
+
+    # Fetch actor names
+    actor_ids = list({r["user_id"] for r in result.data})
+    users_result = supabase.table("users").select(
+        "id, first_name, display_name, username"
+    ).in_("id", actor_ids).execute()
+    users_map = {u["id"]: u for u in (users_result.data or [])}
+
+    out = []
+    for row in result.data:
+        place = places_map.get(row.get("place_id"))
+        if not place or not place.get("latitude") or not place.get("longitude"):
+            continue
+        u = users_map.get(row["user_id"], {})
+        metadata = row.get("metadata") or {}
+        out.append({
+            "activity_type": row["activity_type"],
+            "created_at": row["created_at"],
+            "rating": metadata.get("rating"),
+            "actor_id": row["user_id"],
+            "users": {
+                "first_name": u.get("display_name") or u.get("first_name") or "Friend",
+                "username": u.get("username"),
+            },
+            "places": {
+                "name": place.get("name"),
+                "latitude": place.get("latitude"),
+                "longitude": place.get("longitude"),
+                "google_place_id": place.get("google_place_id"),
+                "address": place.get("address"),
+            },
+        })
+    return out
 
 
 def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:

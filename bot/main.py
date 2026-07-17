@@ -1,6 +1,5 @@
 import logging
-from datetime import timedelta
-from telegram import BotCommand, MenuButtonCommands, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import BotCommand, MenuButtonCommands
 from telegram.error import BadRequest
 from telegram.ext import (
     Application,
@@ -13,15 +12,8 @@ from telegram.ext import (
 )
 
 import config
-from database import supabase_repository as repository
 from bot.handlers import (
     start_command,
-    places_command,
-    map_command,
-    viewer_command,
-    clear_command,
-    delete_command,
-    nearby_command,
     clear_callback,
     action_callback,
     toggle_place_callback,
@@ -34,9 +26,7 @@ from bot.handlers import (
     unresolved_pick_callback,
     cancel_extraction_callback,
     handle_text,
-    handle_location,
-    handle_remind_later,
-    handle_remind_stop,
+    set_name_tg_callback,
     handle_dismiss,
     handle_review_callback,
     feedback_conversation_handler,
@@ -44,7 +34,6 @@ from bot.handlers import (
     handle_group_url,
     vote_group_place_callback,
     grp_cancel_name_callback,
-    sharemap_command,
 )
 
 # Configure logging
@@ -74,100 +63,11 @@ async def handle_bot_error(update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def check_review_reminders(context: ContextTypes.DEFAULT_TYPE):
-    """Background job to send review reminders."""
-    logger.info("Checking for pending review reminders...")
-
-    # Get reminders that are at least 1 hour old and not sent
-    pending = repository.get_pending_reminders(since_hours=config.REMINDER_CHECK_HOURS)
-
-    for reminder in pending:
-        try:
-            user_id = reminder['user_id']
-            place_id = reminder['place_id']
-            reminder_id = reminder['id']
-
-            # Get place name
-            place = repository.get_place_by_id(user_id, place_id)
-            if not place:
-                continue
-
-            # Check if user already wrote a review
-            existing_review = repository.get_review(user_id, place_id)
-            if existing_review:
-                repository.mark_reminder_sent(reminder_id)
-                continue
-
-            # Send reminder message
-            review_btn_row = []
-            if config.WEBAPP_URL:
-                from telegram import WebAppInfo
-                review_btn_row = [InlineKeyboardButton(
-                    "⭐ Write Review →",
-                    web_app=WebAppInfo(url=f"{config.WEBAPP_URL}?startapp=review_{place_id}")
-                )]
-            keyboard_rows = []
-            if review_btn_row:
-                keyboard_rows.append(review_btn_row)
-            keyboard_rows.append([
-                InlineKeyboardButton("Ask Later", callback_data=f"remind_later:{reminder_id}"),
-                InlineKeyboardButton("Don't Ask", callback_data=f"remind_stop:{place_id}"),
-            ])
-            keyboard = InlineKeyboardMarkup(keyboard_rows)
-
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"Hey! How was *{place['name']}*? 🍜\n\nWrite your review while it's fresh.",
-                parse_mode='Markdown',
-                reply_markup=keyboard
-            )
-
-            repository.mark_reminder_sent(reminder_id)
-            logger.info(f"Sent review reminder for place {place_id} to user {user_id}")
-
-        except Exception as e:
-            logger.error(f"Failed to send reminder {reminder['id']}: {e}")
-
-    logger.info(f"Processed {len(pending)} reminders")
-
-    # Piggyback: clean up expired bot sessions
-    try:
-        deleted = repository.cleanup_expired_bot_sessions()
-        if deleted:
-            logger.info(f"Cleaned up {deleted} expired bot sessions")
-    except Exception as e:
-        logger.warning(f"Bot session cleanup failed: {e}")
-
-
-def setup_reminder_job(application):
-    """Set up the reminder check job to run every 5 minutes."""
-    job_queue = application.job_queue
-    if job_queue is None:
-        logger.warning(
-            "JobQueue is unavailable. Review reminders are disabled. "
-            "Install python-telegram-bot with the job-queue extra."
-        )
-        return False
-
-    # Run every 5 minutes
-    job_queue.run_repeating(
-        check_review_reminders,
-        interval=timedelta(minutes=config.REMINDER_JOB_INTERVAL_MINUTES),
-        first=timedelta(seconds=config.REMINDER_JOB_STARTUP_DELAY_SECONDS),
-        name='review_reminders'
-    )
-    logger.info("Review reminder job scheduled")
-    return True
-
-
 async def post_init(application):
     """Set up bot commands menu after initialization."""
     await application.bot.set_my_commands([
-        BotCommand("start", "👋 Start here"),
-        BotCommand("viewer", "🗺️ Open my map"),
-        BotCommand("sharemap", "🔗 Share your map with friends"),
-        BotCommand("nearby", "📍 Find places near me"),
-        BotCommand("feedback", "🛠️ Send feedback or report a bug"),
+        BotCommand("start", "\U0001f44b Start here"),
+        BotCommand("feedback", "\U0001f6e0\ufe0f Send feedback or report a bug"),
     ])
     # Set the menu button to show commands instead of a web app
     await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
@@ -203,18 +103,9 @@ def main():
         .build()
     )
 
-    # Set up reminder job
-    setup_reminder_job(app)
-
     # Add handlers
     app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("sharemap", sharemap_command))
-    app.add_handler(CommandHandler("places", places_command))
-    app.add_handler(CommandHandler("map", map_command))
-    app.add_handler(CommandHandler("viewer", viewer_command))
-    app.add_handler(CommandHandler("clear", clear_command))
-    app.add_handler(CommandHandler("delete", delete_command))
-    app.add_handler(CommandHandler("nearby", nearby_command))
+    app.add_handler(CallbackQueryHandler(set_name_tg_callback, pattern="^set_name_tg$"))
     app.add_handler(CallbackQueryHandler(clear_callback, pattern="^clear_"))
     app.add_handler(CallbackQueryHandler(action_callback, pattern="^action_"))
     app.add_handler(CallbackQueryHandler(toggle_place_callback, pattern="^toggle_place_"))
@@ -226,10 +117,6 @@ def main():
     app.add_handler(CallbackQueryHandler(delete_place_callback, pattern="^delete_place_"))
     app.add_handler(CallbackQueryHandler(unresolved_pick_callback, pattern="^unresolved_pick_"))
     app.add_handler(CallbackQueryHandler(cancel_extraction_callback, pattern="^cancel_extraction_"))
-
-    # Reminder callback handlers
-    app.add_handler(CallbackQueryHandler(handle_remind_later, pattern=r'^remind_later:'))
-    app.add_handler(CallbackQueryHandler(handle_remind_stop, pattern=r'^remind_stop:'))
     app.add_handler(CallbackQueryHandler(handle_dismiss, pattern=r'^dismiss$'))
     app.add_handler(CallbackQueryHandler(handle_review_callback, pattern=r'^review:'))
 
@@ -245,11 +132,9 @@ def main():
     # Handle text messages (URLs and place name responses)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # Handle location messages (for /nearby command)
-    app.add_handler(MessageHandler(filters.LOCATION, handle_location))
     app.add_error_handler(handle_bot_error)
 
-    logger.info("🗺️ Discovery Bot is ready!")
+    logger.info("\U0001f5fa\ufe0f Discovery Bot is ready!")
     app.run_polling(allowed_updates=["message", "callback_query", "my_chat_member"])
 
 

@@ -13,20 +13,33 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 
-    <!-- App styles - Playful & Warm theme -->
-    <link rel="stylesheet" href="styles.css?v=52">
+    <!-- Google Fonts - Nunito -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- App styles - Forest Green & Cream theme -->
+    <link rel="stylesheet" href="styles.css?v=65">
 </head>
 <body>
-    <header class="app-header">
-        <h1 class="app-logo">🌱 Sprout</h1>
+    <header class="app-header" id="app-header">
+        <h1 id="page-title" class="page-title">sprout</h1>
         <div class="header-actions">
             <button id="btn-header-filter" class="header-icon-btn" aria-label="Filter" style="display:none">⚙️</button>
         </div>
     </header>
 
     <main class="app-main">
+        <!-- Saved view toggle FAB (fixed bottom-right, only shown on Saved tab) -->
+        <button id="btn-saved-toggle" class="saved-toggle-fab" onclick="toggleSavedView()" aria-label="Toggle map/list view" style="display:none">
+            <svg id="saved-toggle-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+                <line x1="8" y1="2" x2="8" y2="18"/>
+                <line x1="16" y1="6" x2="16" y2="22"/>
+            </svg>
+        </button>
         <!-- Map View -->
-        <div id="map-view" class="view active">
+        <div id="map-view" class="view">
             <div id="map"></div>
             <!-- Map filter panel -->
             <div class="map-filter-panel">
@@ -41,9 +54,6 @@
                         <option value="">All types</option>
                     </select>
                 </div>
-            </div>
-            <div class="map-controls">
-                <button id="btn-my-location" class="map-control-btn" title="My Location" aria-label="Center on my location">📍</button>
             </div>
         </div>
 
@@ -92,7 +102,7 @@
             </div>
             <div id="no-results" class="no-results" style="display: none;">
                 <p>Nothing here yet!</p>
-                <p class="hint">Try adjusting your filters or use the discover button to find new places</p>
+                <p class="hint">Try adjusting your filters or tap + to add new places</p>
             </div>
         </div>
 
@@ -147,7 +157,7 @@
         <!-- Empty State -->
         <div id="empty-state" class="empty-state" style="display: none;">
             <p>No places yet!</p>
-            <p class="hint">Send a video link to the bot or use the discover button to start finding places 🗺️</p>
+            <p class="hint">Send a video link to the bot to save places 🗺️</p>
         </div>
 
         <!-- Error State -->
@@ -157,14 +167,12 @@
             <button id="btn-retry" class="retry-btn">Try Again</button>
         </div>
 
-        <button id="fab-discover" class="fab-discover" title="Discover new places" aria-label="Discover new places">🔍</button>
 
         <!-- Feed View -->
         <div id="feed-view" class="view">
             <div id="feed-list" class="feed-list"></div>
             <div id="feed-loading" class="feed-loading" style="display:none">Loading...</div>
             <div id="feed-empty" class="feed-empty" style="display:none">
-                <div class="feed-empty-icon">🌱</div>
                 <p class="feed-empty-title">No activity yet</p>
                 <p class="feed-empty-sub">Add friends to see their food adventures here.</p>
                 <button class="btn-primary" onclick="switchTab('profile')">Find Friends</button>
@@ -174,18 +182,34 @@
         <!-- Profile View -->
         <div id="profile-view" class="view">
             <div class="profile-header">
-                <div class="profile-avatar" id="profile-avatar"></div>
+                <div class="profile-avatar-circle" id="profile-avatar-circle"></div>
                 <div class="profile-info">
-                    <h2 id="profile-name" class="profile-name"></h2>
+                    <h2 id="profile-display-name" class="profile-name"></h2>
                     <p id="profile-username" class="profile-username"></p>
                     <p id="profile-bio" class="profile-bio"></p>
                 </div>
                 <button id="btn-edit-profile" class="btn-icon-sm" onclick="openEditProfile()" aria-label="Edit profile">✏️</button>
             </div>
             <div class="profile-stats">
-                <div class="stat-item"><span class="stat-num" id="stat-saved">—</span><span class="stat-label">Saved</span></div>
-                <div class="stat-item"><span class="stat-num" id="stat-visited">—</span><span class="stat-label">Visited</span></div>
-                <div class="stat-item"><span class="stat-num" id="stat-reviews">—</span><span class="stat-label">Reviews</span></div>
+                <div class="stat-card">
+                    <span class="stat-num" id="stat-visited">—</span>
+                    <span class="stat-label">Visited</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-num" id="stat-saved">—</span>
+                    <span class="stat-label">Saved</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-num" id="stat-reviews">—</span>
+                    <span class="stat-label">Reviews</span>
+                </div>
+            </div>
+            <!-- My Visits -->
+            <div class="profile-section" id="my-visits-section" style="display:none">
+                <div class="profile-section-header">
+                    <h3 class="profile-section-title">My Visits</h3>
+                </div>
+                <div id="my-visits-list" class="my-visits-list"></div>
             </div>
             <!-- Friends section -->
             <div class="profile-section">
@@ -255,18 +279,6 @@
         </div>
     </div>
 
-    <div id="review-prompt-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="review-prompt-title">
-        <div class="modal-content review-prompt-content">
-            <div id="review-prompt-place-name" class="review-prompt-place-name"></div>
-            <h2 id="review-prompt-title" class="review-prompt-question">How was it? ⭐</h2>
-            <div class="modal-footer review-prompt-footer">
-                <button id="review-prompt-later" class="modal-btn review-prompt-secondary">Later</button>
-                <button id="review-prompt-now" class="modal-btn primary">Write review</button>
-            </div>
-            <button id="review-prompt-dont-ask" class="review-prompt-link-btn">Don't ask again for this place</button>
-            <button id="review-prompt-close" style="display:none;" aria-label="Close">×</button>
-        </div>
-    </div>
 
     <!-- Filter Drawer -->
     <div id="filter-drawer" class="drawer" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="filter-drawer-title">
@@ -372,30 +384,52 @@
             <div class="sheet-header">
                 <div class="sheet-handle"></div>
                 <div class="sheet-title-group">
-                    <h2 id="review-sheet-title">Review</h2>
+                    <h2 id="review-sheet-title">How was it?</h2>
                     <span id="review-sheet-place" class="sheet-subtitle"></span>
                 </div>
                 <button id="review-sheet-close" class="sheet-close-btn" aria-label="Close">×</button>
             </div>
 
             <div class="sheet-body" id="review-form">
-                <!-- Rating + Price on same row -->
-                <div class="review-ratings-row">
-                    <div class="rating-group" id="overall-rating-group">
-                        <span class="review-label">Rating</span>
-                        <div id="overall-stars" class="star-rating" data-rating="0"></div>
+                <!-- Sentiment (required) -->
+                <div class="review-section review-section-sentiment">
+                    <div class="sentiment-row" id="sentiment-group">
+                        <button type="button" class="sentiment-btn" data-sentiment="loved">
+                            <span class="sentiment-emoji">🤩</span>
+                            <span class="sentiment-label">Loved it</span>
+                        </button>
+                        <button type="button" class="sentiment-btn" data-sentiment="okay">
+                            <span class="sentiment-emoji">👍</span>
+                            <span class="sentiment-label">It was okay</span>
+                        </button>
+                        <button type="button" class="sentiment-btn" data-sentiment="meh">
+                            <span class="sentiment-emoji">😐</span>
+                            <span class="sentiment-label">Meh</span>
+                        </button>
                     </div>
-                    <div class="rating-group" id="price-rating-group">
-                        <span class="review-label">Price</span>
-                        <div id="price-rating" class="price-rating" data-rating="0"></div>
+                </div>
+
+                <!-- Scores: Food / Vibe / Value (optional) -->
+                <div class="review-section">
+                    <span class="review-label">Rate it <span class="review-label-optional">(optional)</span></span>
+                    <div class="score-row">
+                        <span class="score-dimension">Food</span>
+                        <div class="score-circles" id="food-score" data-score=""></div>
+                    </div>
+                    <div class="score-row">
+                        <span class="score-dimension">Vibe</span>
+                        <div class="score-circles" id="vibe-score" data-score=""></div>
+                    </div>
+                    <div class="score-row">
+                        <span class="score-dimension">Value</span>
+                        <div class="score-circles" id="value-score" data-score=""></div>
                     </div>
                 </div>
 
                 <!-- Dish chips -->
                 <div class="review-section">
-                    <span class="review-label">What did you have?</span>
+                    <span class="review-label">What did you have? <span class="review-label-optional">(optional)</span></span>
                     <div id="dish-chips-container" class="dish-chips-container">
-                        <!-- chips injected by JS before this trigger -->
                         <div id="dish-add-trigger" class="dish-add-trigger">
                             <span id="dish-add-label" class="dish-add-label">+ Add a dish</span>
                             <span id="dish-add-input-wrap" class="dish-add-input-wrap" style="display:none">
@@ -406,15 +440,15 @@
                     </div>
                 </div>
 
-                <!-- Notes -->
+                <!-- Caption -->
                 <div class="review-section">
-                    <span class="review-label">Anything to remember?</span>
-                    <textarea id="overall-remarks" class="review-remarks" placeholder="What was great? What to skip next time?" maxlength="1000"></textarea>
+                    <span class="review-label">Any thoughts? <span class="review-label-optional">(optional)</span></span>
+                    <textarea id="overall-remarks" class="review-remarks review-caption" placeholder="What was great? What to order next time?" maxlength="500"></textarea>
                 </div>
 
                 <!-- Photos -->
                 <div class="review-section">
-                    <span class="review-label">Photos</span>
+                    <span class="review-label">Photos <span class="review-label-optional">(optional)</span></span>
                     <div id="overall-photos" class="photo-grid"></div>
                 </div>
 
@@ -422,8 +456,8 @@
             </div>
 
             <div class="sheet-footer">
-                <button id="delete-review-btn" class="sheet-btn danger" style="display: none;">Delete</button>
-                <button id="save-review-btn" class="sheet-btn primary">Save</button>
+                <button id="delete-review-btn" class="sheet-btn danger" style="display: none;">Remove visit</button>
+                <button id="save-review-btn" class="sheet-btn primary">Been here ✓</button>
             </div>
         </div>
     </div>
@@ -575,26 +609,30 @@
 
     <!-- Bottom Navigation -->
     <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
-        <button class="nav-tab" data-tab="feed" onclick="switchTab('feed')" aria-label="Feed">
-            <span class="nav-icon">✨</span>
-            <span class="nav-label">Friends</span>
+        <button class="nav-tab" data-tab="home" onclick="switchTab('home')" aria-label="Home">
+            <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            <span class="nav-label">Home</span>
             <span class="nav-badge" id="nav-feed-badge" style="display:none"></span>
         </button>
-        <button class="nav-tab active" data-tab="list" onclick="switchTab('list')" aria-label="My Sprouts">
-            <span class="nav-icon">🌱</span>
-            <span class="nav-label">My Sprouts</span>
-        </button>
-        <button class="nav-tab" data-tab="map" onclick="switchTab('map')" aria-label="Map">
-            <span class="nav-icon">🗺️</span>
-            <span class="nav-label">Map</span>
+        <button class="nav-tab active" data-tab="saved" onclick="switchTab('saved')" aria-label="Saved">
+            <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
+            </svg>
+            <span class="nav-label">Saved</span>
         </button>
         <button class="nav-tab" data-tab="profile" onclick="switchTab('profile')" aria-label="Profile">
-            <span class="nav-icon">👤</span>
-            <span class="nav-label">Me</span>
+            <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+            </svg>
+            <span class="nav-label">Profile</span>
             <span class="nav-badge" id="nav-profile-badge" style="display:none"></span>
         </button>
     </nav>
 
-    <script src="app.js?v=74"></script>
+    <script src="app.js?v=89"></script>
 </body>
 </html>
