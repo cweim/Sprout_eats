@@ -652,11 +652,10 @@ def create_or_update_review(
         update_payload = {
             "overall_rating": overall_rating,
             "overall_remarks": overall_remarks,
+            "price_rating": safe_price,
             "updated_at": now,
             **new_fields,
         }
-        if safe_price is not None:
-            update_payload["price_rating"] = safe_price
         supabase.table("reviews").update(update_payload).eq("id", review_id).execute()
     else:
         # Create new
@@ -665,10 +664,9 @@ def create_or_update_review(
             "user_id": user_id,
             "overall_rating": overall_rating,
             "overall_remarks": overall_remarks,
+            "price_rating": safe_price,
             **new_fields,
         }
-        if safe_price is not None:
-            insert_payload["price_rating"] = safe_price
         result = supabase.table("reviews").insert(insert_payload).execute()
         review_id = result.data[0]["id"]
 

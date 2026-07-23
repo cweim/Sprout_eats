@@ -107,10 +107,10 @@ let openNowFilter = false;  // false = no filter; true = open now only
 let searchDebounceTimer = null;
 
 const PLACE_PRICE_LABELS = {
-    INEXPENSIVE: '💰',
-    MODERATE: '💰💰',
-    EXPENSIVE: '💰💰💰',
-    VERY_EXPENSIVE: '💰💰💰💰',
+    INEXPENSIVE: '$',
+    MODERATE: '$$',
+    EXPENSIVE: '$$$',
+    VERY_EXPENSIVE: '$$$$',
 };
 
 // Pagination state
@@ -572,91 +572,121 @@ function formatPlaceTypes(typesString) {
 
 // Create popup content for a place
 function createPopupContent(place) {
-    let html = `<div class="place-popup" data-place-id="${place.id}">`;
+    const review = getPlaceReview(place.id);
+    const isReviewed = !!review;
+    const thumbUrl = review?.overall_photos?.[0]?.url || null;
 
-    // Name
+    let html = `<div class="place-popup ${isReviewed ? 'place-popup--reviewed' : 'place-popup--new'}" data-place-id="${place.id}">`;
+
+    // ── Photo banner ───────────────────────────────────────────────────────
+    if (thumbUrl) {
+        html += `<div class="popup-photo-banner" style="background-image:url('${thumbUrl}')"></div>`;
+    }
+
+    html += `<div class="popup-body">`;
+
+    // ── Name (hero) ────────────────────────────────────────────────────────
     html += `<div class="place-popup-name">${escapeHtml(place.name)}</div>`;
 
-    // Address
-    if (place.address) {
-        html += `<div class="place-popup-address">${escapeHtml(place.address)}</div>`;
-    }
-
-    // Review indicator
-    const review = getPlaceReview(place.id);
-    if (review) {
+    if (isReviewed) {
+        // ── REVIEWED ──────────────────────────────────────────────────────
         const sentEmoji = SENTIMENT_EMOJI[review.sentiment] || '✍️';
-        html += `<div class="popup-review">${sentEmoji} ${review.caption || review.overall_remarks || ''}</div>`;
+        const sentLabel = { loved: 'Loved it', okay: 'It was okay', meh: 'Meh' }[review.sentiment] || '';
+
+        // Sentiment row
+        html += `<div class="popup-info-row popup-sentiment-row">${sentEmoji} <strong>${sentLabel}</strong></div>`;
+
+        // Score chips
+        if (review.food_score || review.vibe_score || review.value_score) {
+            html += `<div class="popup-scores">`;
+            if (review.food_score)  html += `<span class="popup-score-chip">Food <b>${review.food_score}</b></span>`;
+            if (review.vibe_score)  html += `<span class="popup-score-chip">Vibe <b>${review.vibe_score}</b></span>`;
+            if (review.value_score) html += `<span class="popup-score-chip">Value <b>${review.value_score}</b></span>`;
+            html += `</div>`;
+        }
+
+        // Address row
+        if (place.address) {
+            html += `<div class="popup-info-row popup-info-muted">📍 ${escapeHtml(place.address)}</div>`;
+        }
+
+        // Caption
+        const caption = review.caption || review.overall_remarks || '';
+        if (caption) {
+            html += `<div class="popup-caption">"${escapeHtml(caption)}"</div>`;
+        }
+
+        // Primary CTA
+        if (!IS_SHARE_MAP) {
+            html += `<button class="popup-primary-btn" onclick="openBeenHereSheet(${place.id})">✏️ Edit review</button>`;
+        }
+
+    } else {
+        // ── UNREVIEWED ────────────────────────────────────────────────────
+
+        // Google meta row: rating · price · type
+        const metaParts = [];
+        if (place.place_rating) {
+            const cnt = place.place_rating_count ? ` (${place.place_rating_count})` : '';
+            metaParts.push(`⭐ ${place.place_rating}${cnt}`);
+        }
+        if (place.place_price_level && PLACE_PRICE_LABELS[place.place_price_level]) {
+            metaParts.push(PLACE_PRICE_LABELS[place.place_price_level]);
+        }
+        const types = formatPlaceTypes(place.place_types);
+        if (types) metaParts.push(types);
+        if (metaParts.length) {
+            html += `<div class="popup-info-row popup-info-muted">${metaParts.join(' · ')}</div>`;
+        }
+
+        // Address row
+        if (place.address) {
+            html += `<div class="popup-info-row popup-info-muted">📍 ${escapeHtml(place.address)}</div>`;
+        }
+
+        // Distance row
+        const dist = getPlaceDistance(place);
+        if (dist !== null) {
+            html += `<div class="popup-info-row popup-info-muted">🗺 ${formatDistance(dist)} away</div>`;
+        }
+
+        // Description
+        if (place.place_description) {
+            html += `<div class="popup-caption">${escapeHtml(place.place_description)}</div>`;
+        }
+
+        // Primary CTA
+        if (!IS_SHARE_MAP) {
+            html += `<button class="popup-primary-btn popup-primary-btn--cta" onclick="openBeenHereSheet(${place.id})">Been here? Add review</button>`;
+        }
     }
 
-    // Description (editorial summary)
-    if (place.place_description) {
-        html += `<div class="place-description">${escapeHtml(place.place_description)}</div>`;
-    }
+    // ── Secondary actions row: Maps · Reel · Delete ────────────────────────
+    const secParts = [];
 
-    // Meta info (rating, price, types, distance)
-    let metaHtml = '';
-    if (place.place_rating) {
-        const ratingCount = place.place_rating_count ? ` (${place.place_rating_count})` : '';
-        metaHtml += `<span>⭐ ${place.place_rating}/5${ratingCount}</span>`;
-    }
-    if (place.place_price_level && PLACE_PRICE_LABELS[place.place_price_level]) {
-        if (metaHtml) metaHtml += ' · ';
-        metaHtml += `<span>${PLACE_PRICE_LABELS[place.place_price_level]}</span>`;
-    }
-    const types = formatPlaceTypes(place.place_types);
-    if (types) {
-        if (metaHtml) metaHtml += ' · ';
-        metaHtml += `<span>${types}</span>`;
-    }
-    const popupDistance = getPlaceDistance(place);
-    if (popupDistance !== null) {
-        if (metaHtml) metaHtml += ' · ';
-        metaHtml += `<span>📍 ${formatDistance(popupDistance)}</span>`;
-    }
-    if (metaHtml) {
-        html += `<div class="place-popup-meta">${metaHtml}</div>`;
-    }
-
-    // Been here button — opens review sheet (marks visited on save if not already)
-    if (!IS_SHARE_MAP) {
-        const beenClass = place.is_visited ? ' active' : '';
-        const beenText = place.is_visited ? 'Been here ✓' : 'Been here?';
-        html += `<button class="been-here-btn${beenClass}" onclick="openBeenHereSheet(${place.id})">${beenText}</button>`;
-    } else if (place.is_visited) {
-        html += `<button class="been-here-btn active" style="pointer-events:none">Been here ✓</button>`;
-    }
-
-    // Action buttons
-    html += '<div class="place-popup-actions">';
-
-    // Google Maps link
-    const mapsAriaLabel = `Open ${escapeHtml(place.name)} in Google Maps`;
     if (place.google_place_id) {
         const encodedName = encodeURIComponent(place.name);
-        html += `<a href="https://www.google.com/maps/search/?api=1&query=${encodedName}&query_place_id=${place.google_place_id}"
-                    target="_blank" class="card-action-btn external-btn" title="Open in Google Maps" aria-label="${mapsAriaLabel}">Maps</a>`;
+        secParts.push(`<a href="https://www.google.com/maps/search/?api=1&query=${encodedName}&query_place_id=${place.google_place_id}" target="_blank" class="popup-sec-btn">Maps</a>`);
     } else if (place.latitude && place.longitude) {
-        html += `<a href="https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}"
-                    target="_blank" class="card-action-btn external-btn" title="Open in Google Maps" aria-label="${mapsAriaLabel}">Maps</a>`;
+        secParts.push(`<a href="https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}" target="_blank" class="popup-sec-btn">Maps</a>`);
     }
-
-    // Original reel link
     if (place.source_url) {
-        html += `<a href="${safeUrl(place.source_url)}" target="_blank" class="card-action-btn external-btn" title="View Original Reel" aria-label="View original reel">Reel</a>`;
+        secParts.push(`<a href="${safeUrl(place.source_url)}" target="_blank" class="popup-sec-btn">Reel</a>`);
     }
-
-    // Delete button (personal map only)
     if (!IS_SHARE_MAP) {
-        const escapedName = place.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
-        const deleteAriaLabel = `Delete ${escapeHtml(place.name)}`;
-        html += `<button class="card-action-btn delete-btn" onclick="confirmDeletePlace(${place.id}, '${escapedName}')" title="Delete Place" aria-label="${deleteAriaLabel}">Delete</button>`;
+        const escapedName = place.name.replace(/'/g, "\'").replace(/"/g, "&quot;");
+        secParts.push(`<button class="popup-sec-btn popup-sec-btn--delete" onclick="confirmDeletePlace(${place.id}, '${escapedName}')">Delete</button>`);
     }
 
-    html += '</div></div>';
+    if (secParts.length) {
+        html += `<div class="popup-secondary-actions">${secParts.join('')}</div>`;
+    }
 
+    html += `</div>`; // popup-body
+    html += `</div>`;
     return html;
 }
+
 
 // Toggle visited status from popup
 async function toggleVisited(placeId) {
@@ -3280,50 +3310,6 @@ let chipIdCounter = 0;
 
 const PRICE_LABELS = ['', 'Cheap', 'Affordable', 'Moderate', 'Pricey', 'Expensive'];
 
-// Initialize star rating component
-function initStarRating(container, onChange) {
-    container.innerHTML = '';
-    for (let i = 1; i <= 5; i++) {
-        const star = document.createElement('button');
-        star.type = 'button';
-        star.className = 'star';
-        star.textContent = '★';
-        star.dataset.value = i;
-        star.setAttribute('aria-label', i === 1 ? '1 star' : `${i} stars`);
-        container.appendChild(star);
-    }
-
-    const updateStars = (rating, hoverValue = null) => {
-        container.querySelectorAll('.star').forEach((star, idx) => {
-            const val = idx + 1;
-            star.classList.toggle('filled', val <= rating);
-            star.classList.toggle('hovered', hoverValue !== null && val <= hoverValue);
-        });
-    };
-
-    container.addEventListener('click', (e) => {
-        const star = e.target.closest('.star');
-        if (!star) return;
-        const value = parseInt(star.dataset.value);
-        container.dataset.rating = value;
-        updateStars(value);
-        hapticFeedback('light');
-        if (onChange) onChange(value);
-    });
-
-    container.addEventListener('mouseover', (e) => {
-        const star = e.target.closest('.star');
-        if (!star) return;
-        updateStars(parseInt(container.dataset.rating), parseInt(star.dataset.value));
-    });
-
-    container.addEventListener('mouseleave', () => {
-        updateStars(parseInt(container.dataset.rating));
-    });
-
-    // Set initial state
-    updateStars(parseInt(container.dataset.rating) || 0);
-}
 
 // Initialize price rating component
 function initPriceRating(container, onChange) {
@@ -3475,11 +3461,20 @@ function initScoreCircles() {
                 const current = parseInt(container.dataset.score) || 0;
                 const newVal = current === i ? 0 : i;
                 container.dataset.score = newVal || '';
-                container.querySelectorAll('.score-circle').forEach(b => {
-                    b.classList.toggle('active', parseInt(b.dataset.val) === newVal && newVal !== 0);
-                });
+                updateScoreCircles(container, newVal);
             });
             container.appendChild(btn);
+        }
+    });
+}
+
+function updateScoreCircles(container, value) {
+    container.querySelectorAll('.score-circle').forEach(btn => {
+        const val = parseInt(btn.dataset.val);
+        btn.classList.remove('active', 'filled');
+        if (value !== 0) {
+            if (val === value) btn.classList.add('active');
+            else if (val < value) btn.classList.add('filled');
         }
     });
 }
@@ -3495,9 +3490,36 @@ function initSentimentButtons() {
 }
 
 function getReviewFormValidation() {
+    const missing = [];
+    const elements = [];
+
     const sentiment = document.querySelector('.sentiment-btn.active')?.dataset.sentiment;
     if (!sentiment) {
-        return { valid: false, message: 'How was it? Tap one to continue 🌱', element: document.getElementById('sentiment-group') };
+        missing.push('Overall vibe (Loved it / Okay / Meh)');
+        elements.push(document.getElementById('sentiment-group'));
+    }
+    const foodScore = parseInt(document.getElementById('food-score')?.dataset.score) || 0;
+    if (!foodScore) {
+        missing.push('Food rating');
+        elements.push(document.getElementById('food-score'));
+    }
+    const vibeScore = parseInt(document.getElementById('vibe-score')?.dataset.score) || 0;
+    if (!vibeScore) {
+        missing.push('Vibe rating');
+        elements.push(document.getElementById('vibe-score'));
+    }
+    const valueScore = parseInt(document.getElementById('value-score')?.dataset.score) || 0;
+    if (!valueScore) {
+        missing.push('Value rating');
+        elements.push(document.getElementById('value-score'));
+    }
+
+    if (missing.length > 0) {
+        return {
+            valid: false,
+            message: `Please fill in: ${missing.join(', ')}`,
+            elements,
+        };
     }
     return { valid: true };
 }
@@ -3536,9 +3558,7 @@ function populateReviewForm() {
         if (!container) return;
         const score = currentReview?.[field] || 0;
         container.dataset.score = score || '';
-        container.querySelectorAll('.score-circle').forEach(btn => {
-            btn.classList.toggle('active', parseInt(btn.dataset.val) === score && score !== 0);
-        });
+        updateScoreCircles(container, score);
     });
 
     // Caption
@@ -3564,22 +3584,25 @@ function clearReviewValidationState() {
     const errorEl = document.getElementById('review-form-error');
     if (errorEl) { errorEl.textContent = ''; errorEl.style.display = 'none'; }
     document.getElementById('sentiment-group')?.classList.remove('invalid');
+    document.querySelectorAll('.score-circles.invalid').forEach(el => el.classList.remove('invalid'));
     document.querySelectorAll('.dish-card.invalid').forEach(card => card.classList.remove('invalid'));
 }
 
-function showReviewValidationError(message, element = null) {
+function showReviewValidationError(message, elements = []) {
     const errorEl = document.getElementById('review-form-error');
     if (errorEl) {
         errorEl.textContent = message;
         errorEl.style.display = 'block';
     }
 
-    if (element) {
-        element.classList.add('invalid');
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    const elArray = Array.isArray(elements) ? elements : [elements];
+    elArray.forEach((el, i) => {
+        if (!el) return;
+        el.classList.add('invalid');
+        if (i === 0) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
 
-    showToast(message);
+    showToast(message, null, 4000);
 }
 
 let pendingOverallPhotos = [];
@@ -3845,7 +3868,7 @@ async function saveReview() {
     clearReviewValidationState();
     const validation = getReviewFormValidation();
     if (!validation.valid) {
-        showReviewValidationError(validation.message, validation.element);
+        showReviewValidationError(validation.message, validation.elements || [validation.element]);
         return;
     }
 
@@ -3864,7 +3887,11 @@ async function saveReview() {
             body: JSON.stringify(getReviewFormPayload())
         });
 
-        if (!response.ok) throw new Error('Failed to save review');
+        if (!response.ok) {
+            const errBody = await response.text().catch(() => '');
+            console.error('Save review failed:', response.status, errBody);
+            throw new Error('Failed to save review');
+        }
 
         const data = await response.json();
         currentReview = data.review;
@@ -3899,11 +3926,11 @@ async function saveReview() {
 
     } catch (error) {
         console.error('Failed to save review:', error);
-        showToast('Failed to save review 😅');
+        showToast('Failed to save review. Please try again.');
     } finally {
         if (saveButton) {
             saveButton.disabled = false;
-            saveButton.textContent = 'Been here ✓';
+            saveButton.textContent = 'Save Review';
         }
     }
 }
@@ -4025,12 +4052,11 @@ async function compressImage(file, maxSizeKB = 1000) {
  * Validate image file before processing
  */
 function validateImageFile(file) {
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
-        return { valid: false, error: 'Please select a JPEG, PNG, or WebP image' };
+    if (!file.type || !file.type.startsWith('image/')) {
+        return { valid: false, error: `Can't upload that file type (${file.type || 'unknown'}). Please choose a photo (JPEG, PNG, HEIC, etc.)` };
     }
-    if (file.size > 10 * 1024 * 1024) { // 10MB max raw
-        return { valid: false, error: 'Image too large (max 10MB)' };
+    if (file.size > 10 * 1024 * 1024) {
+        return { valid: false, error: 'Photo too large — please use one under 10MB' };
     }
     return { valid: true };
 }
