@@ -912,6 +912,13 @@ def delete_photo(photo_id: int) -> bool:
     return len(result.data) > 0 if result.data else False
 
 
+def get_photo_by_id_only(photo_id: int) -> Optional[Dict[str, Any]]:
+    """Get a photo by ID only — for debugging mismatched review_id."""
+    supabase = get_supabase()
+    result = supabase.table("review_photos").select("id, review_id, dish_id").eq("id", photo_id).execute()
+    return result.data[0] if result.data else None
+
+
 def get_photo_by_id(photo_id: int, review_id: int) -> Optional[Dict[str, Any]]:
     """Get a photo by ID, verifying it belongs to the review."""
     supabase = get_supabase()

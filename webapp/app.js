@@ -573,14 +573,31 @@ function formatPlaceTypes(typesString) {
 // Create popup content for a place
 function createPopupContent(place) {
     const review = getPlaceReview(place.id);
-    const isReviewed = !!review;
-    const thumbUrl = review?.overall_photos?.[0]?.url || null;
+    // Treat as visited if there's a review OR if place is marked visited (no review row needed)
+    const isReviewed = !!review || !!place.is_visited;
+    const photos = review?.overall_photos || [];
 
     let html = `<div class="place-popup ${isReviewed ? 'place-popup--reviewed' : 'place-popup--new'}" data-place-id="${place.id}">`;
 
     // ── Photo banner ───────────────────────────────────────────────────────
-    if (thumbUrl) {
-        html += `<div class="popup-photo-banner" style="background-image:url('${thumbUrl}')"></div>`;
+    if (photos.length === 1) {
+        html += `<div class="popup-photo-banner" style="background-image:url('${photos[0].url}')"></div>`;
+    } else if (photos.length === 2) {
+        html += `<div class="popup-photo-grid popup-photo-grid--2">
+            <div class="popup-photo-cell" style="background-image:url('${photos[0].url}')"></div>
+            <div class="popup-photo-cell" style="background-image:url('${photos[1].url}')"></div>
+        </div>`;
+    } else if (photos.length >= 3) {
+        const extra = photos.length - 3;
+        html += `<div class="popup-photo-grid popup-photo-grid--3">
+            <div class="popup-photo-cell popup-photo-main" style="background-image:url('${photos[0].url}')"></div>
+            <div class="popup-photo-side">
+                <div class="popup-photo-cell" style="background-image:url('${photos[1].url}')"></div>
+                <div class="popup-photo-cell${extra > 0 ? ' popup-photo-has-more' : ''}" style="background-image:url('${photos[2].url}')">
+                    ${extra > 0 ? `<div class="popup-photo-more">+${extra}</div>` : ''}
+                </div>
+            </div>
+        </div>`;
     }
 
     html += `<div class="popup-body">`;
@@ -590,14 +607,14 @@ function createPopupContent(place) {
 
     if (isReviewed) {
         // ── REVIEWED ──────────────────────────────────────────────────────
-        const sentEmoji = SENTIMENT_EMOJI[review.sentiment] || '✍️';
-        const sentLabel = { loved: 'Loved it', okay: 'It was okay', meh: 'Meh' }[review.sentiment] || '';
+        const sentEmoji = review ? (SENTIMENT_EMOJI[review.sentiment] || '✍️') : '✓';
+        const sentLabel = review ? ({ loved: 'Loved it', okay: 'It was okay', meh: 'Meh' }[review.sentiment] || '') : 'Visited';
 
         // Sentiment row
         html += `<div class="popup-info-row popup-sentiment-row">${sentEmoji} <strong>${sentLabel}</strong></div>`;
 
         // Score chips
-        if (review.food_score || review.vibe_score || review.value_score) {
+        if (review && (review.food_score || review.vibe_score || review.value_score)) {
             html += `<div class="popup-scores">`;
             if (review.food_score)  html += `<span class="popup-score-chip">Food <b>${review.food_score}</b></span>`;
             if (review.vibe_score)  html += `<span class="popup-score-chip">Vibe <b>${review.vibe_score}</b></span>`;
@@ -610,8 +627,11 @@ function createPopupContent(place) {
             html += `<div class="popup-info-row popup-info-muted">📍 ${escapeHtml(place.address)}</div>`;
         }
 
+        // Opening hours
+        html += buildPopupHoursHtml(place);
+
         // Caption
-        const caption = review.caption || review.overall_remarks || '';
+        const caption = review ? (review.caption || review.overall_remarks || '') : '';
         if (caption) {
             html += `<div class="popup-caption">"${escapeHtml(caption)}"</div>`;
         }
@@ -649,6 +669,9 @@ function createPopupContent(place) {
         if (dist !== null) {
             html += `<div class="popup-info-row popup-info-muted">🗺 ${formatDistance(dist)} away</div>`;
         }
+
+        // Opening hours
+        html += buildPopupHoursHtml(place);
 
         // Description
         if (place.place_description) {
@@ -865,7 +888,8 @@ function displayPlacesOnMap(fitBounds = true) {
     markersLayer.clearLayers();
 
     // Filter places based on visited filter and cuisine
-    let filteredPlaces = filterPlacesByVisited(places);
+    // Skip visited filter when Open Now is active (show all places that are open now)
+    let filteredPlaces = openNowFilter ? [...places] : filterPlacesByVisited(places);
 
     // Apply cuisine filter for map
     if (mapCuisineFilter) {
@@ -903,8 +927,10 @@ function displayPlacesOnMap(fitBounds = true) {
                 focusMarkerWithPopup(marker, e.latlng, 16);
             });
 
-            // Bind popup with place details
-            marker.bindPopup(createPopupContent(place), {
+            // Bind popup with place details — lazy so review state is read at click time
+            marker.bindPopup(function() {
+                return createPopupContent(place);
+            }, {
                 maxWidth: 280,
                 className: 'custom-popup'
             });
@@ -1137,18 +1163,27 @@ function setupMapControls() {
 // Map filter chips (visited/unvisited)
     const mapFilterChips = document.querySelectorAll('.map-filter-chip');
     mapFilterChips.forEach(chip => {
+        if (!chip.dataset.filter) return;
         chip.addEventListener('click', () => {
+            const filter = chip.dataset.filter;
             mapFilterChips.forEach(c => { c.classList.remove('active'); c.setAttribute('aria-pressed', 'false'); });
             chip.classList.add('active');
             chip.setAttribute('aria-pressed', 'true');
-            visitedFilter = chip.dataset.filter;
-            localStorage.setItem('visitedFilter', visitedFilter);
-            // Sync with list view filter
-            document.querySelectorAll('.visited-chip').forEach(c => {
-                const isActive = c.dataset.filter === visitedFilter;
-                c.classList.toggle('active', isActive);
-                c.setAttribute('aria-pressed', String(isActive));
-            });
+
+            if (filter === 'open-now') {
+                // Open Now: show all places open now regardless of visited state
+                openNowFilter = true;
+            } else {
+                // Visited/All/To Visit: clear Open Now
+                openNowFilter = false;
+                visitedFilter = filter;
+                localStorage.setItem('visitedFilter', filter);
+                document.querySelectorAll('.visited-chip').forEach(c => {
+                    const isActive = c.dataset.filter === filter;
+                    c.classList.toggle('active', isActive);
+                    c.setAttribute('aria-pressed', String(isActive));
+                });
+            }
             applyFilters();
             displayPlacesOnMap(false);
         });
@@ -1353,6 +1388,8 @@ function createPersonalPlaceCard(place) {
             ? `<p class="pcard-snippet pcard-desc">${escapeHtml(place.place_description.slice(0, 80))}${place.place_description.length > 80 ? '…' : ''}</p>`
             : '');
 
+    const hoursHtml = !place.is_visited ? buildCardHoursHtml(place) : '';
+
     card.innerHTML = `
         <div class="pcard-top">
             <div class="pcard-name-row">
@@ -1363,6 +1400,7 @@ function createPersonalPlaceCard(place) {
             ${place.address ? `<p class="pcard-address">${escapeHtml(place.address)}</p>` : ''}
             ${meta ? `<div class="pcard-meta">${meta}</div>` : ''}
             ${snippet}
+            ${hoursHtml}
         </div>
         <div class="pcard-bottom">
             <div class="pcard-status-row">${statusBadge}</div>
@@ -1844,13 +1882,24 @@ function isOpenNow(place) {
     if (!todayStr) return null;
     if (todayStr.includes('Open 24 hours')) return true;
     if (todayStr.includes('Closed')) return false;
-    const match = todayStr.match(/(\d+:\d+ [AP]M)\s*[–\-]\s*(\d+:\d+ [AP]M)/);
-    if (!match) return null;
+
+    // Normalize all dash variants (en-dash, em-dash, minus, hyphen) → hyphen
+    const normalized = todayStr.replace(/[\u2013\u2014\u2012\u2212]/g, '-');
+    // Match HH:MM AM/PM or HH:MM (24h), case-insensitive
+    const match = normalized.match(/(\d{1,2}:\d{2}\s*(?:[AP]M)?)\s*-\s*(\d{1,2}:\d{2}\s*(?:[AP]M)?)/i);
+    if (!match) { console.warn('isOpenNow: no time match in', todayStr); return null; }
+
     const toMin = s => {
-        const [time, mer] = s.split(' ');
-        let [h, m] = time.split(':').map(Number);
-        if (mer === 'PM' && h !== 12) h += 12;
-        if (mer === 'AM' && h === 12) h = 0;
+        s = s.trim();
+        const ampm = (s.match(/([AP]M)/i) || [])[1];
+        const timePart = s.replace(/[AP]M/i, '').trim();
+        let [h, m] = timePart.split(':').map(Number);
+        m = m || 0;
+        if (ampm) {
+            const up = ampm.toUpperCase();
+            if (up === 'PM' && h !== 12) h += 12;
+            if (up === 'AM' && h === 12) h = 0;
+        }
         return h * 60 + m;
     };
     const cur = new Date().getHours() * 60 + new Date().getMinutes();
@@ -1863,6 +1912,56 @@ function filterByOpenNow(placesArr) {
     if (!openNowFilter) return placesArr;
     return placesArr.filter(p => isOpenNow(p) === true);
 }
+
+function buildHoursHtml(place, idPrefix) {
+    const noHours = '<div class="popup-info-row popup-info-muted popup-hours-unavailable">Hours not available</div>';
+    if (!place.place_opening_hours) return noHours;
+    let hours;
+    try { hours = JSON.parse(place.place_opening_hours); } catch { return noHours; }
+    if (!Array.isArray(hours) || hours.length === 0) return noHours;
+
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const todayName = dayNames[new Date().getDay()];
+    const todayStr = hours.find(h => h.startsWith(todayName));
+    if (!todayStr) return '';
+
+    const colonIdx = todayStr.indexOf(': ');
+    const todayHours = colonIdx >= 0 ? todayStr.slice(colonIdx + 2) : todayStr;
+
+    const openNow = isOpenNow(place);
+    const statusClass = openNow === true ? 'open' : openNow === false ? 'closed' : '';
+    const statusText  = openNow === true ? 'Open'  : openNow === false ? 'Closed'  : '';
+
+    const weekRows = hours.map(h => {
+        const isToday = h.startsWith(todayName);
+        return `<div class="popup-hours-day${isToday ? ' popup-hours-today' : ''}">${escapeHtml(h)}</div>`;
+    }).join('');
+
+    const dotClass = statusClass ? ` popup-hours-dot--${statusClass}` : '';
+    const dropId = `${idPrefix}-hours-${place.id}`;
+    return `<div class="popup-hours-row" onclick="toggleHoursDropdown('${dropId}')">
+        <span class="popup-hours-dot${dotClass}"></span>
+        ${statusClass ? `<span class="popup-hours-status popup-hours-status--${statusClass}">${statusText}</span>` : ''}
+        <span class="popup-hours-time">${escapeHtml(todayHours)}</span>
+        <span class="popup-hours-chevron-btn"><span class="popup-hours-chevron">▾</span></span>
+    </div>
+    <div class="popup-hours-full" id="${dropId}">${weekRows}</div>`;
+}
+
+function buildPopupHoursHtml(place) { return buildHoursHtml(place, 'popup'); }
+function buildCardHoursHtml(place)  { return buildHoursHtml(place, 'card'); }
+
+function toggleHoursDropdown(dropId) {
+    const el = document.getElementById(dropId);
+    if (!el) return;
+    const open = el.classList.toggle('popup-hours-full--open');
+    const chevron = el.previousElementSibling?.querySelector('.popup-hours-chevron');
+    if (chevron) chevron.classList.toggle('popup-hours-chevron--open', open);
+}
+
+// Legacy aliases — kept for any inline onclick still referencing these
+function togglePopupHours(placeId) { toggleHoursDropdown(`popup-hours-${placeId}`); }
+function toggleCardHours(placeId)  { toggleHoursDropdown(`card-hours-${placeId}`); }
 
 function toggleOpenNow() {
     openNowFilter = !openNowFilter;
@@ -1878,8 +1977,10 @@ function toggleOpenNow() {
 function applyFilters() {
     let filtered = [...places];
 
-    // Apply visited filter first
-    filtered = filterPlacesByVisited(filtered);
+    // Apply visited filter (skip when Open Now is active — it shows all places open now)
+    if (!openNowFilter) {
+        filtered = filterPlacesByVisited(filtered);
+    }
 
     // Apply country filter
     filtered = filterPlacesByCountry(filtered);
@@ -3127,20 +3228,16 @@ function updateMapFilterCounts() {
 
     document.querySelectorAll('.map-filter-chip').forEach(chip => {
         const filter = chip.dataset.filter;
+        if (!filter) return; // skip chips with no data-filter (e.g. Open Now)
+
         let count = 0;
         switch (filter) {
-            case 'all':
-                count = allCount;
-                break;
-            case 'visited':
-                count = visitedCount;
-                break;
-            case 'unvisited':
-                count = unvisitedCount;
-                break;
+            case 'all':      count = allCount;       break;
+            case 'visited':  count = visitedCount;   break;
+            case 'unvisited': count = unvisitedCount; break;
         }
 
-        // Update chip text with count
+        if (filter === 'open-now') return; // preserve its own label/emoji
         const baseText = filter === 'all' ? 'All' : filter === 'visited' ? 'Visited' : 'To Visit';
         chip.textContent = count > 0 ? `${baseText} (${count})` : baseText;
     });
@@ -3252,15 +3349,16 @@ async function initApp() {
     // Prefer a zoomed-in user-centric map on first load when location is available.
     // Fall back to the previous "fit all places" overview if geolocation is unavailable.
     const initialLocation = await requestUserLocation(true);
+    // Reviews must be loaded before map markers are created so popup content
+    // correctly shows the reviewed vs un-reviewed card on first render.
+    await loadReviews();
+
     displayPlacesOnMap(!initialLocation);
 
     ensurePlacesUiInitialized();
 
     // Render list view
     renderPlacesList(places);
-
-    // Load secondary data in the background so first paint is faster.
-    loadReviews();
 
     // Update all filter counts
     updateMapFilterCounts();
@@ -5313,7 +5411,7 @@ async function openRestaurantCard(placeId) {
 
     const overlay = document.getElementById('restaurant-card-overlay');
     const sheet   = document.getElementById('restaurant-card');
-    overlay.style.display = 'block';
+    overlay.style.display = 'flex';
     sheet.classList.add('rc-open');
 
     // Clear & show skeleton
@@ -5327,11 +5425,15 @@ async function openRestaurantCard(placeId) {
     document.getElementById('rc-friends-empty').style.display = 'none';
 
     try {
-        const res = await fetch(`${API_URL}/api/places/${placeId}`, { headers: getAuthHeaders() });
-        if (!res.ok) throw new Error('Not found');
-        const data = await res.json();
+        const [placeRes, reviewRes] = await Promise.all([
+            fetch(`${API_URL}/api/places/${placeId}`, { headers: getAuthHeaders() }),
+            fetch(`${API_URL}/api/places/${placeId}/review`, { headers: getAuthHeaders() }),
+        ]);
+        if (!placeRes.ok) throw new Error('Not found');
+        const data = await placeRes.json();
         const place = data.place || data;
-        renderRestaurantCard(place);
+        const review = reviewRes.ok ? (await reviewRes.json()).review : null;
+        renderRestaurantCard(place, review);
         rcCurrentGoogleId = place.google_place_id || null;
 
         // Load friends in parallel
@@ -5343,7 +5445,7 @@ async function openRestaurantCard(placeId) {
     }
 }
 
-function renderRestaurantCard(place) {
+function renderRestaurantCard(place, review) {
     document.getElementById('rc-name').textContent = place.name || '';
     document.getElementById('rc-address').textContent = place.address || '';
 
@@ -5370,15 +5472,14 @@ function renderRestaurantCard(place) {
     document.getElementById('rc-meta').innerHTML = meta;
 
     // Hours
-    if (place.place_opening_hours) {
-        const hoursEl = document.getElementById('rc-hours');
-        const openNow = isOpenNow(place);
-        const openText = openNow === true ? '⏰ Open now' : openNow === false ? '⏰ Closed now' : '';
-        if (openText) {
-            hoursEl.textContent = openText;
-            hoursEl.className = 'rc-hours ' + (openNow ? 'rc-open-now' : 'rc-closed-now');
-            hoursEl.style.display = '';
-        }
+    const hoursEl = document.getElementById('rc-hours');
+    const hoursHtml = buildHoursHtml(place, 'rc');
+    if (hoursHtml) {
+        hoursEl.innerHTML = hoursHtml;
+        hoursEl.style.display = '';
+        hoursEl.className = 'rc-hours';
+    } else {
+        hoursEl.style.display = 'none';
     }
 
     // Description
@@ -5389,12 +5490,11 @@ function renderRestaurantCard(place) {
     }
 
     // Your visit section
-    renderRcYourVisit(place);
+    renderRcYourVisit(place, review);
 }
 
-function renderRcYourVisit(place) {
+function renderRcYourVisit(place, review) {
     const el = document.getElementById('rc-your-visit');
-    const review = getPlaceReview(place.id);
 
     if (place.is_visited) {
         const visitDate = place.visited_at ? new Date(place.visited_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
@@ -5516,16 +5616,14 @@ function openLogVisit(placeId, isEdit = false) {
         document.getElementById('lv-review-text').value = '';
     }
 
-    document.getElementById('log-visit-overlay').style.display = 'block';
-    document.getElementById('log-visit-sheet').style.display = 'flex';
+    document.getElementById('log-visit-overlay').style.display = 'flex';
     document.getElementById('log-visit-sheet').classList.add('rc-open');
 }
 
 function closeLogVisit() {
-    document.getElementById('log-visit-overlay').style.display = 'none';
     const sheet = document.getElementById('log-visit-sheet');
     sheet.classList.remove('rc-open');
-    setTimeout(() => { sheet.style.display = 'none'; }, 300);
+    document.getElementById('log-visit-overlay').style.display = 'none';
     lvPlaceId = null;
 }
 
@@ -5557,16 +5655,13 @@ async function submitLogVisit() {
             place.is_visited = true;
             place.visited_at = new Date().toISOString();
         }
-        // Store review in local reviews cache
-        if (lvRating || text) {
-            const existing = getPlaceReview(lvPlaceId);
-            if (existing) {
-                existing.overall_rating = lvRating;
-                existing.overall_remarks = text;
-            } else {
-                if (!window._reviews) window._reviews = [];
-                window._reviews.push({ place_id: lvPlaceId, overall_rating: lvRating, overall_remarks: text });
-            }
+        // Update local reviews cache so popup immediately shows visited state
+        const existing = getPlaceReview(lvPlaceId);
+        if (existing) {
+            if (lvRating) existing.overall_rating = lvRating;
+            if (text) existing.overall_remarks = text;
+        } else {
+            allReviews.push({ place_id: lvPlaceId, overall_rating: lvRating || null, overall_remarks: text || null });
         }
 
         closeLogVisit();

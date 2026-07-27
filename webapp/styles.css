@@ -218,17 +218,27 @@ body {
 
 .map-filter-row {
     display: flex;
+    align-items: center;
     gap: 6px;
     background: var(--card-bg-alpha);
     padding: 6px;
     border-radius: 20px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    box-sizing: border-box;
+    overflow: hidden;
 }
-.map-filter-row::-webkit-scrollbar { display: none; }
+
+
+.map-filter-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border-color);
+    align-self: center;
+    flex-shrink: 0;
+    margin: 0 4px;
+    opacity: 0.5;
+}
 
 .map-filter-chip {
     padding: 6px 12px;
@@ -244,13 +254,8 @@ body {
 }
 
 .map-filter-chip.active {
-    background-color: var(--sprout-forest);
-    color: white;
-    box-shadow: 0 2px 6px rgba(30, 58, 43, 0.3);
-}
-
-.map-filter-chip[data-filter="visited"].active {
     background-color: var(--sprout-green);
+    color: white;
     box-shadow: 0 2px 6px rgba(124, 185, 142, 0.3);
 }
 
@@ -1055,6 +1060,57 @@ body {
     margin: -14px -16px 0;
 }
 
+/* Multi-photo grid (Google Maps style) */
+.popup-photo-grid {
+    height: 150px;
+    display: flex;
+    gap: 2px;
+    border-radius: 16px 16px 0 0;
+    margin: -14px -16px 0;
+    overflow: hidden;
+}
+
+.popup-photo-cell {
+    background-size: cover;
+    background-position: center;
+    flex: 1;
+    position: relative;
+}
+
+.popup-photo-grid--3 .popup-photo-main {
+    flex: 0 0 60%;
+}
+
+.popup-photo-side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.popup-photo-side .popup-photo-cell {
+    flex: 1;
+}
+
+.popup-photo-has-more::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.42);
+}
+
+.popup-photo-more {
+    position: absolute;
+    inset: 0;
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+}
+
 /* Body */
 .popup-body {
     padding: 14px 0 4px;
@@ -1081,6 +1137,62 @@ body {
 .popup-info-muted {
     color: var(--hint-color);
 }
+
+/* Opening hours row */
+.popup-hours-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    user-select: none;
+    color: var(--hint-color);
+}
+.popup-hours-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--border-color);
+}
+.popup-hours-dot--open   { background: #3a9a3a; }
+.popup-hours-dot--closed { background: #c62828; }
+.popup-hours-status--open   { color: #3a9a3a; font-weight: 700; flex-shrink: 0; }
+.popup-hours-status--closed { color: #c62828; font-weight: 700; flex-shrink: 0; }
+.popup-hours-time { flex: 1; }
+.popup-hours-chevron-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--secondary-bg);
+    flex-shrink: 0;
+}
+.popup-hours-chevron {
+    font-size: 10px;
+    line-height: 1;
+    display: block;
+    transition: transform 0.2s;
+}
+.popup-hours-chevron--open { transform: rotate(180deg); }
+
+.popup-hours-full {
+    display: none;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 6px;
+    padding: 7px 9px;
+    background: var(--secondary-bg);
+    border-radius: 8px;
+    max-height: 108px;
+    overflow-y: auto;
+}
+.popup-hours-full--open { display: flex; }
+.popup-hours-day { font-size: 11px; color: var(--hint-color); }
+.popup-hours-today { font-weight: 700; color: var(--text-color); }
 
 /* Sentiment row */
 .popup-sentiment-row {
@@ -5208,23 +5320,33 @@ button:disabled,
     background: rgba(0,0,0,0.35);
     z-index: 3000;
     backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
 }
 .rc-sheet {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
+    position: relative;
+    width: 100%;
+    max-width: 480px;
     background: var(--bg-color);
-    border-radius: 20px 20px 0 0;
-    z-index: 3100;
+    border-radius: 20px;
     max-height: 88vh;
     display: flex;
     flex-direction: column;
-    transform: translateY(100%);
-    transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
-    box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
+    transform: scale(0.95);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+                opacity 0.22s ease;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.22);
 }
-.rc-sheet.rc-open { transform: translateY(0); }
+.rc-sheet.rc-open {
+    transform: scale(1);
+    opacity: 1;
+    pointer-events: auto;
+}
 
 .rc-handle {
     width: 40px;
@@ -5387,7 +5509,6 @@ button:disabled,
    LOG VISIT SHEET
 ════════════════════════════════════════════════════════════════ */
 
-.lv-sheet { display: none; }
 .lv-header { margin-bottom: 20px; }
 .lv-title { font-size: 1.1rem; font-weight: 800; margin: 0 0 4px; }
 .lv-subtitle { font-size: 0.88rem; color: var(--hint-color); margin: 0; }

@@ -745,6 +745,12 @@ async def delete_photo(
     # Verify photo belongs to the review and user
     photo = repository.get_photo_by_id(photo_id, review_id)
     if not photo:
+        # Debug: check if photo exists at all (wrong review_id passed?)
+        raw = repository.get_photo_by_id_only(photo_id)
+        logger.warning(
+            f"DELETE photo 404: photo_id={photo_id} review_id={review_id} "
+            f"actual_photo={raw}"
+        )
         raise HTTPException(status_code=404, detail="Photo not found")
 
     # Verify review belongs to user

@@ -47,7 +47,8 @@
                     <button class="map-filter-chip active" data-filter="all" aria-pressed="true">All</button>
                     <button class="map-filter-chip" data-filter="unvisited" aria-pressed="false">To Visit</button>
                     <button class="map-filter-chip" data-filter="visited" aria-pressed="false">Visited ✓</button>
-                    <button class="map-filter-chip" id="open-now-chip" onclick="toggleOpenNow()" aria-pressed="false">🕐 Open Now</button>
+                    <span class="map-filter-sep"></span>
+                    <button class="map-filter-chip" id="open-now-chip" data-filter="open-now" aria-pressed="false">Open Now</button>
                 </div>
                 <div id="map-cuisine-wrap" class="map-cuisine-select-wrap" style="display:none">
                     <select id="map-cuisine-filter" class="map-cuisine-select">
@@ -479,8 +480,8 @@
     </div>
 
     <!-- Restaurant Card Sheet -->
-    <div id="restaurant-card-overlay" class="rc-overlay" style="display:none" onclick="closeRestaurantCard()"></div>
-    <div id="restaurant-card" class="rc-sheet" aria-modal="true" role="dialog" aria-label="Restaurant details">
+    <div id="restaurant-card-overlay" class="rc-overlay" style="display:none" onclick="closeRestaurantCard()">
+    <div id="restaurant-card" class="rc-sheet" onclick="event.stopPropagation()" aria-modal="true" role="dialog" aria-label="Restaurant details">
         <div class="rc-handle"></div>
         <div class="rc-scroll">
             <!-- Header -->
@@ -522,10 +523,11 @@
             </div>
         </div>
     </div>
+    </div>
 
     <!-- Log Visit Sheet -->
-    <div id="log-visit-overlay" class="rc-overlay" style="display:none" onclick="closeLogVisit()"></div>
-    <div id="log-visit-sheet" class="rc-sheet lv-sheet" style="display:none" role="dialog" aria-label="Log your visit">
+    <div id="log-visit-overlay" class="rc-overlay" style="display:none" onclick="closeLogVisit()">
+    <div id="log-visit-sheet" class="rc-sheet lv-sheet" onclick="event.stopPropagation()" role="dialog" aria-label="Log your visit">
         <div class="rc-handle"></div>
         <div class="rc-scroll">
             <div class="lv-header">
@@ -548,6 +550,7 @@
             </div>
             <button id="lv-submit-btn" class="lv-submit" onclick="submitLogVisit()">Save Visit</button>
         </div>
+    </div>
     </div>
 
     <!-- Rc context menu -->
