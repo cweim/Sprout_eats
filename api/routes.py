@@ -91,6 +91,7 @@ def place_to_dict(place: dict) -> dict:
         "source_transcript": place.get("source_transcript"),
         "source_transcript_en": place.get("source_transcript_en"),
         "is_visited": place.get("is_visited") or False,
+        "visited_at": place.get("visited_at"),
         "notes": place.get("notes"),
     }
 
@@ -449,7 +450,7 @@ class DishRequest(BaseModel):
     """Request model for a dish in a review."""
     id: Optional[int] = None
     name: str = Field(..., min_length=1)
-    rating: Optional[int] = Field(None, ge=1, le=5)
+    rating: Optional[int] = Field(None, ge=1, le=10)
     remarks: Optional[str] = None
 
 
@@ -490,7 +491,7 @@ class DishResponse(BaseModel):
     """Response model for a dish in a review."""
     id: int
     name: str
-    rating: int
+    rating: Optional[int] = None
     remarks: Optional[str] = None
     updated_at: Optional[str] = None
     photos: List[PhotoResponse] = []

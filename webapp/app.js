@@ -126,7 +126,7 @@ let currentEditingPlaceId = null;
 // Location state
 let userLocation = null;
 
-const PLACE_PREVIEW_MIN_ZOOM = 14;
+const PLACE_PREVIEW_MIN_ZOOM = 13;
 let listControlsInitialized = false;
 let reviewSheetInitialized = false;
 let reviewsViewInitialized = false;
@@ -507,7 +507,7 @@ function initMap() {
     map = L.map('map', {
         zoomControl: false,  // We have custom controls
         attributionControl: false,  // Cleaner look
-        closePopupOnClick: false  // Don't close popup when clicking inside it
+        closePopupOnClick: true
     }).setView([0, 0], 2);
 
     // Use CartoDB Voyager tiles (cute, colorful, clean)
@@ -540,12 +540,13 @@ function truncatePreviewText(text, maxLength = 48) {
 
 
 function createMarkerPreviewContent(place) {
-    // Only show preview if place has notes
-    if (!place.notes) return '';
+    const review = getPlaceReview(place.id);
+    const text = place.notes || review?.caption || review?.overall_remarks || null;
+    if (!text) return '';
 
     return `
         <div class="place-preview-bubble">
-            <div class="place-preview-text">${truncatePreviewText(place.notes, 56)}</div>
+            <div class="place-preview-text">${truncatePreviewText(text, 56)}</div>
         </div>
     `;
 }
@@ -581,19 +582,19 @@ function createPopupContent(place) {
 
     // ── Photo banner ───────────────────────────────────────────────────────
     if (photos.length === 1) {
-        html += `<div class="popup-photo-banner" style="background-image:url('${photos[0].url}')"></div>`;
+        html += `<div class="popup-photo-banner" style="background-image:url('${photos[0].url}');cursor:pointer" onclick="openPopupPhotoViewer(${place.id},0)"></div>`;
     } else if (photos.length === 2) {
         html += `<div class="popup-photo-grid popup-photo-grid--2">
-            <div class="popup-photo-cell" style="background-image:url('${photos[0].url}')"></div>
-            <div class="popup-photo-cell" style="background-image:url('${photos[1].url}')"></div>
+            <div class="popup-photo-cell" style="background-image:url('${photos[0].url}');cursor:pointer" onclick="openPopupPhotoViewer(${place.id},0)"></div>
+            <div class="popup-photo-cell" style="background-image:url('${photos[1].url}');cursor:pointer" onclick="openPopupPhotoViewer(${place.id},1)"></div>
         </div>`;
     } else if (photos.length >= 3) {
         const extra = photos.length - 3;
         html += `<div class="popup-photo-grid popup-photo-grid--3">
-            <div class="popup-photo-cell popup-photo-main" style="background-image:url('${photos[0].url}')"></div>
+            <div class="popup-photo-cell popup-photo-main" style="background-image:url('${photos[0].url}');cursor:pointer" onclick="openPopupPhotoViewer(${place.id},0)"></div>
             <div class="popup-photo-side">
-                <div class="popup-photo-cell" style="background-image:url('${photos[1].url}')"></div>
-                <div class="popup-photo-cell${extra > 0 ? ' popup-photo-has-more' : ''}" style="background-image:url('${photos[2].url}')">
+                <div class="popup-photo-cell" style="background-image:url('${photos[1].url}');cursor:pointer" onclick="openPopupPhotoViewer(${place.id},1)"></div>
+                <div class="popup-photo-cell${extra > 0 ? ' popup-photo-has-more' : ''}" style="background-image:url('${photos[2].url}');cursor:pointer" onclick="${extra > 0 ? `openRestaurantCard(${place.id})` : `openPopupPhotoViewer(${place.id},2)`}">
                     ${extra > 0 ? `<div class="popup-photo-more">+${extra}</div>` : ''}
                 </div>
             </div>
@@ -622,6 +623,23 @@ function createPopupContent(place) {
             html += `</div>`;
         }
 
+        // Dish chips
+        const dishes = review?.dishes || [];
+        if (dishes.length > 0) {
+            const MAX_VISIBLE = 3;
+            const visible = dishes.slice(0, MAX_VISIBLE);
+            const overflow = dishes.length - MAX_VISIBLE;
+            html += `<div class="popup-dishes">`;
+            visible.forEach(d => {
+                const score = d.rating != null ? `<span class="popup-dish-score">${d.rating}</span>` : '';
+                html += `<span class="popup-dish-chip">${escapeHtml(d.name)}${score}</span>`;
+            });
+            if (overflow > 0) {
+                html += `<span class="popup-dish-chip popup-dish-chip--more">+${overflow}</span>`;
+            }
+            html += `</div>`;
+        }
+
         // Address row
         if (place.address) {
             html += `<div class="popup-info-row popup-info-muted">📍 ${escapeHtml(place.address)}</div>`;
@@ -638,7 +656,7 @@ function createPopupContent(place) {
 
         // Primary CTA
         if (!IS_SHARE_MAP) {
-            html += `<button class="popup-primary-btn" onclick="openBeenHereSheet(${place.id})">✏️ Edit review</button>`;
+            html += `<button class="popup-primary-btn" onclick="openRestaurantCard(${place.id})">View</button>`;
         }
 
     } else {
@@ -726,17 +744,13 @@ async function toggleVisited(placeId) {
 
 // Update a marker's popup content in-place without closing it
 function updateMarkerPopup(placeId, place) {
-    // Create icons for swapping
-    const visitedIcon = makeSproutIcon(true, 60);
-    const unvisitedIcon = makeSproutIcon(false, 60);
-
     markersLayer.eachLayer(marker => {
         if (marker.placeData && marker.placeData.id === placeId) {
             // Update marker data reference
             marker.placeData = place;
-            // Update marker icon based on visited status
-            const newIcon = place.is_visited ? visitedIcon : unvisitedIcon;
-            marker.setIcon(newIcon);
+            // Update marker icon using current zoom
+            const zoom = map ? map.getZoom() : 15;
+            marker.setIcon(getMarkerIconForZoom(zoom, place));
             // Update popup content
             marker.setPopupContent(createPopupContent(place));
             syncMarkerPreviewTooltip(marker, place);
@@ -819,54 +833,132 @@ function focusMarkerWithPopup(marker, latlng, zoom = 15) {
     setTimeout(() => marker.openPopup(), 220);
 }
 
+function getSpeechBubbleOffset(zoom) {
+    // Position tip ~1px above the top of the marker at any zoom tier
+    const sz = zoom < 15 ? 30 : zoom < 18 ? 40 : 52;
+    return [0, -(sz / 2 + 1)];
+}
+
 function syncMarkerPreviewTooltip(marker, place) {
     if (!marker) return;
 
-    if (place.notes) {
+    const review = getPlaceReview(place.id);
+    const hasContent = place.notes || review?.caption || review?.overall_remarks;
+    if (hasContent) {
         const tooltipContent = createMarkerPreviewContent(place);
-        if (marker.getTooltip()) {
-            marker.setTooltipContent(tooltipContent);
-        } else {
-            marker.bindTooltip(tooltipContent, {
-                permanent: true,
-                direction: 'top',
-                offset: [0, -42],
-                className: 'place-preview-tooltip'
-            });
-        }
+        const zoom = map ? map.getZoom() : 13;
+        // Always rebind so offset stays correct after zoom changes
+        if (marker.getTooltip()) marker.unbindTooltip();
+        marker.bindTooltip(tooltipContent, {
+            permanent: true,
+            direction: 'top',
+            offset: getSpeechBubbleOffset(zoom),
+            className: 'place-preview-tooltip'
+        });
     } else if (marker.getTooltip()) {
         marker.unbindTooltip();
     }
 }
 
-// Return marker icon sized for current zoom level
-// zoom < 10  → small colored dot
-// zoom 10-14 → medium sprout (39px)
-// zoom >= 15 → full sprout (60px)
-function makeSproutIcon(isVisited, size) {
-    const w = Math.round(size * 0.8);
-    return L.icon({
-        iconUrl: isVisited ? '/images/sprout-happy.png' : '/images/sprout-before-sprout.png',
-        iconSize: [w, size],
-        iconAnchor: [w / 2, size],
-        popupAnchor: [0, -size]
-    });
+// Compute a 1–10 place score from a review object.
+// Weights: food 40%, vibe 30%, value 30% + sentiment nudge (±0.5).
+// Falls back to sentiment-only, then overall_rating (legacy), or null.
+function computePlaceScore(review) {
+    if (!review) return null;
+    const { food_score, vibe_score, value_score, sentiment, overall_rating } = review;
+    const nudge = { loved: 0.5, okay: 0, meh: -0.5 }[sentiment] ?? 0;
+
+    const hasFood  = food_score  != null;
+    const hasVibe  = vibe_score  != null;
+    const hasValue = value_score != null;
+
+    let base;
+    if (hasFood && hasVibe && hasValue) {
+        base = food_score * 0.4 + vibe_score * 0.3 + value_score * 0.3;
+    } else if (hasFood || hasVibe || hasValue) {
+        const raw = [food_score, vibe_score, value_score].filter(v => v != null);
+        base = raw.reduce((a, b) => a + b, 0) / raw.length;
+    } else if (sentiment) {
+        // Sentiment-only (no dimension scores)
+        const fallback = { loved: 8.5, okay: 6.0, meh: 3.5 };
+        return fallback[sentiment] ?? null;
+    } else if (overall_rating != null) {
+        // Legacy reviews: overall_rating is 1–5 (5=loved, 3=okay, 1=meh) → scale to 1–10
+        return Math.round(overall_rating * 2 * 10) / 10;
+    } else {
+        return null;
+    }
+    return Math.round(Math.min(10, Math.max(1, base + nudge)) * 10) / 10;
 }
 
-// zoom >= 15 → full sprout (60px)
-function getMarkerIconForZoom(zoom, isVisited) {
+function scoreMarkerColor(score) {
+    if (score >= 8.0) return '#7CB98E';  // sprout green
+    if (score >= 6.0) return '#F5A94A';  // amber
+    return '#E06060';                    // coral
+}
+
+// Return marker icon for a place at the given zoom level.
+// zoom < 10     → tiny dot (hollow = unvisited, filled = visited)
+// zoom 10–14   → medium circle / score badge (36px)
+// zoom >= 15   → large circle / score badge (44px)
+function getMarkerIconForZoom(zoom, place) {
+    const isVisited = place.is_visited;
+    const score = isVisited ? computePlaceScore(getPlaceReview(place.id)) : null;
+
     if (zoom < 10) {
-        const color = isVisited ? '#2d5a3d' : '#A8D58A';
+        const bg     = isVisited ? '#7CB98E' : 'transparent';
+        const border = isVisited ? '2px solid #7CB98E' : '2px solid #A8D58A';
         return L.divIcon({
             className: '',
-            html: `<div class="marker-dot" style="background:${color}"></div>`,
+            html: `<div class="marker-dot" style="background:${bg};border:${border};box-sizing:border-box"></div>`,
             iconSize: [12, 12],
             iconAnchor: [6, 6],
             popupAnchor: [0, -6]
         });
     }
-    const size = zoom < 15 ? 39 : 60;
-    return makeSproutIcon(isVisited, size);
+
+    // Three size tiers: far / mid / close
+    const sz   = zoom < 15 ? 30 : zoom < 18 ? 40 : 52;
+
+    if (score !== null) {
+        // Visited + reviewed → colored score circle
+        const bg = scoreMarkerColor(score);
+        const fs = zoom < 15 ? 11 : zoom < 18 ? 14 : 17;
+        return L.divIcon({
+            className: '',
+            html: `<div class="score-marker" style="width:${sz}px;height:${sz}px;background:${bg};font-size:${fs}px">${score.toFixed(1)}</div>`,
+            iconSize: [sz, sz],
+            iconAnchor: [sz / 2, sz / 2],
+            popupAnchor: [0, -(sz / 2 + 2)]
+        });
+    }
+
+    // Visited (no review) → filled dot with ✓; Unvisited → sprout character icon
+    const iconSz = zoom < 15 ? 9 : zoom < 18 ? 12 : 15;
+
+    let innerHtml;
+    if (isVisited) {
+        // Green filled circle with white checkmark
+        innerHtml = `<div class="score-marker-dot" style="width:${sz}px;height:${sz}px;background:#7CB98E;border:2px solid #5a9a70;box-sizing:border-box;display:flex;align-items:center;justify-content:center;">
+            <svg width="${iconSz}" height="${iconSz}" viewBox="0 0 10 10" fill="none">
+                <polyline points="2,5 4.5,7.5 8,3" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>`;
+    } else {
+        // White circle with sprout character PNG (white bg blends with circle)
+        const imgSz = Math.round(sz * 0.82);
+        innerHtml = `<div class="score-marker-dot" style="width:${sz}px;height:${sz}px;background:white;border:2px solid #A8D58A;box-sizing:border-box;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:50%;">
+            <img src="/images/white_bg_unvisited_icon.png" width="${imgSz}" height="${imgSz}" style="display:block;" draggable="false"/>
+        </div>`;
+    }
+
+    return L.divIcon({
+        className: '',
+        html: innerHtml,
+        iconSize: [sz, sz],
+        iconAnchor: [sz / 2, sz / 2],
+        popupAnchor: [0, -(sz / 2 + 2)]
+    });
 }
 
 // Update all existing marker icons to match current zoom
@@ -875,7 +967,8 @@ function updateMarkerIconSizes() {
     const zoom = map.getZoom();
     markersLayer.getLayers().forEach(marker => {
         if (marker.placeData) {
-            marker.setIcon(getMarkerIconForZoom(zoom, marker.placeData.is_visited));
+            marker.setIcon(getMarkerIconForZoom(zoom, marker.placeData));
+            syncMarkerPreviewTooltip(marker, marker.placeData);
         }
     });
 }
@@ -918,7 +1011,7 @@ function displayPlacesOnMap(fitBounds = true) {
     // Add marker for each place, sized for current zoom
     filteredPlaces.forEach(place => {
         if (place.latitude && place.longitude) {
-            const icon = getMarkerIconForZoom(zoom, place.is_visited);
+            const icon = getMarkerIconForZoom(zoom, place);
             const marker = L.marker([place.latitude, place.longitude], { icon });
             marker.placeData = place;
 
@@ -1348,6 +1441,39 @@ function createPlaceCard(place) {
     return card;
 }
 
+// ── Collapsible list sections ─────────────────────────────────────────
+
+function getListSectionCollapse() {
+    try { return JSON.parse(localStorage.getItem('plist-section-collapse')) || {}; } catch { return {}; }
+}
+
+function buildListSection(id, title, places, renderFn) {
+    const collapsed = getListSectionCollapse()[id] || false;
+    const sec = document.createElement('div');
+    sec.className = 'plist-section' + (collapsed ? ' plist-section--collapsed' : '');
+    sec.dataset.sectionId = id;
+
+    const header = document.createElement('div');
+    header.className = 'plist-section-header';
+    header.innerHTML = `<span class="plist-section-title">${title}</span><span class="plist-section-count">${places.length}</span><span class="plist-section-chevron">▾</span>`;
+    header.addEventListener('click', () => toggleListSection(sec));
+    sec.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'plist-section-body';
+    places.forEach(p => body.appendChild(renderFn(p)));
+    sec.appendChild(body);
+
+    return sec;
+}
+
+function toggleListSection(sec) {
+    const isCollapsed = sec.classList.toggle('plist-section--collapsed');
+    const state = getListSectionCollapse();
+    state[sec.dataset.sectionId] = isCollapsed;
+    localStorage.setItem('plist-section-collapse', JSON.stringify(state));
+}
+
 // ── Personal place card (new design) ─────────────────────────────────
 
 function createPersonalPlaceCard(place) {
@@ -1375,7 +1501,10 @@ function createPersonalPlaceCard(place) {
     }
 
     let meta = '';
-    if (place.place_rating) meta += `<span class="pcard-meta-item">⭐ ${place.place_rating}</span>`;
+    if (place.place_rating) {
+        const cnt = place.place_rating_count ? ` (${Number(place.place_rating_count).toLocaleString()})` : '';
+        meta += `<span class="pcard-meta-item">⭐ ${place.place_rating}${cnt}</span>`;
+    }
     if (place.place_price_level && PLACE_PRICE_LABELS[place.place_price_level]) {
         meta += `<span class="pcard-meta-item">${PLACE_PRICE_LABELS[place.place_price_level]}</span>`;
     }
@@ -1707,21 +1836,8 @@ function renderPlacesList(placesToRender) {
         const wishlist = placesToRender.filter(p => !p.is_visited);
         const visited  = placesToRender.filter(p => p.is_visited);
 
-        if (wishlist.length > 0) {
-            const sec = document.createElement('div');
-            sec.className = 'plist-section';
-            sec.innerHTML = `<div class="plist-section-header"><span class="plist-section-title">Want to Go</span><span class="plist-section-count">${wishlist.length}</span></div>`;
-            wishlist.forEach(p => sec.appendChild(createPersonalPlaceCard(p)));
-            listContainer.appendChild(sec);
-        }
-
-        if (visited.length > 0) {
-            const sec = document.createElement('div');
-            sec.className = 'plist-section';
-            sec.innerHTML = `<div class="plist-section-header"><span class="plist-section-title">Visited ✓</span><span class="plist-section-count">${visited.length}</span></div>`;
-            visited.forEach(p => sec.appendChild(createPersonalPlaceCard(p)));
-            listContainer.appendChild(sec);
-        }
+        if (wishlist.length > 0) listContainer.appendChild(buildListSection('wishlist', 'Want to Go', wishlist, createPersonalPlaceCard));
+        if (visited.length > 0)  listContainer.appendChild(buildListSection('visited',  'Visited ✓',  visited,  createPersonalPlaceCard));
     } else {
         placesToRender.forEach(place => {
             listContainer.appendChild(createPlaceCard(place));
@@ -2725,7 +2841,7 @@ function renderSearchResults(results) {
                     </div>
                 </div>
                 <div class="search-result-meta">
-                    ${place.place_rating ? `<span class="search-result-rating">⭐ ${place.place_rating}</span>` : ''}
+                    ${place.place_rating ? `<span class="search-result-rating">⭐ ${place.place_rating}${place.place_rating_count ? ` (${Number(place.place_rating_count).toLocaleString()})` : ''}</span>` : ''}
                     ${typesHtml}
                     ${distanceHtml}
                 </div>
@@ -3466,10 +3582,10 @@ function initPriceRating(container, onChange) {
 
 // ========== DISH CHIPS ==========
 
-function addDishChip(name, persistedId = null) {
+function addDishChip(name, persistedId = null, rating = null) {
     if (!name.trim()) return;
     const localId = `chip-${++chipIdCounter}`;
-    dishChips.push({ localId, persistedId, name: name.trim() });
+    dishChips.push({ localId, persistedId, name: name.trim(), rating });
     renderDishChips();
 }
 
@@ -3481,14 +3597,48 @@ function removeDishChip(localId) {
 function renderDishChips() {
     const container = document.getElementById('dish-chips-container');
     if (!container) return;
-    container.querySelectorAll('.dish-chip').forEach(el => el.remove());
+    container.querySelectorAll('.dish-chip-wrap').forEach(el => el.remove());
     const trigger = container.querySelector('#dish-add-trigger');
     dishChips.forEach(chip => {
-        const el = document.createElement('span');
-        el.className = 'dish-chip';
-        el.innerHTML = `<span class="dish-chip-name">${escapeHtml(chip.name)}</span><button type="button" class="dish-chip-remove" aria-label="Remove ${escapeHtml(chip.name)}">×</button>`;
-        el.querySelector('.dish-chip-remove').addEventListener('click', () => removeDishChip(chip.localId));
-        container.insertBefore(el, trigger);
+        const wrap = document.createElement('div');
+        wrap.className = 'dish-chip-wrap';
+
+        // Chip row
+        const chipEl = document.createElement('span');
+        chipEl.className = 'dish-chip';
+        chipEl.innerHTML = `<span class="dish-chip-name">${escapeHtml(chip.name)}</span><button type="button" class="dish-chip-remove" aria-label="Remove ${escapeHtml(chip.name)}">×</button>`;
+        chipEl.querySelector('.dish-chip-remove').addEventListener('click', () => removeDishChip(chip.localId));
+
+        // Score circles row (1-10, optional)
+        const scoreRow = document.createElement('div');
+        scoreRow.className = 'dish-score-circles';
+        for (let i = 1; i <= 10; i++) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'score-circle score-circle--dish';
+            btn.dataset.val = i;
+            btn.textContent = i;
+            if (chip.rating) {
+                if (i === chip.rating) btn.classList.add('active');
+                else if (i < chip.rating) btn.classList.add('filled');
+            }
+            btn.addEventListener('click', () => {
+                chip.rating = chip.rating === i ? null : i;
+                scoreRow.querySelectorAll('.score-circle--dish').forEach(c => {
+                    const val = parseInt(c.dataset.val);
+                    c.classList.remove('active', 'filled');
+                    if (chip.rating) {
+                        if (val === chip.rating) c.classList.add('active');
+                        else if (val < chip.rating) c.classList.add('filled');
+                    }
+                });
+            });
+            scoreRow.appendChild(btn);
+        }
+
+        wrap.appendChild(chipEl);
+        wrap.appendChild(scoreRow);
+        container.insertBefore(wrap, trigger);
     });
 }
 
@@ -3638,7 +3788,11 @@ function getReviewFormPayload() {
         overall_rating: SENTIMENT_TO_RATING[sentiment] || 3,
         price_rating: 0,
         overall_remarks: caption,
-        dishes: dishChips.map(c => c.persistedId ? { id: c.persistedId, name: c.name } : { name: c.name }),
+        dishes: dishChips.map(c => {
+            const d = c.persistedId ? { id: c.persistedId, name: c.name } : { name: c.name };
+            if (c.rating != null) d.rating = c.rating;
+            return d;
+        }),
     };
 }
 
@@ -3665,7 +3819,7 @@ function populateReviewForm() {
     // Dish chips
     dishChips = [];
     chipIdCounter = 0;
-    (currentReview?.dishes || []).forEach(d => addDishChip(d.name, d.id));
+    (currentReview?.dishes || []).forEach(d => addDishChip(d.name, d.id, d.rating ?? null));
     renderDishChips();
 
     // Photos
@@ -3797,6 +3951,13 @@ function closeReviewSheet() {
 let photoViewerPhotos = [];
 let photoViewerIndex = 0;
 let photoViewerEditMode = false;
+
+function openPopupPhotoViewer(placeId, index) {
+    const review = getPlaceReview(placeId);
+    const photos = review?.overall_photos || [];
+    if (photos.length === 0) return;
+    openPhotoViewer(photos, index, false);
+}
 
 function openPhotoViewer(photos, startIndex = 0, allowDelete = false) {
     if (!photos || photos.length === 0) return;
@@ -4763,6 +4924,7 @@ let currentTab = 'saved';
 let feedLoaded = false;
 
 function switchTab(tab) {
+    const prevTab = currentTab;
     currentTab = tab;
 
     // Update nav tab active state
@@ -4776,6 +4938,15 @@ function switchTab(tab) {
     if (titleEl) titleEl.textContent = titles[tab] || 'sprout';
     const header = document.getElementById('app-header');
     if (header) header.style.display = 'none';
+
+    // Saved tab: toggle map↔list when already on saved; always start on map from other tabs
+    if (tab === 'saved') {
+        if (prevTab === 'saved') {
+            currentView = currentView === 'map' ? 'list' : 'map';
+        } else {
+            currentView = 'map';
+        }
+    }
 
     // View visibility
     const isSavedMap  = tab === 'saved' && currentView === 'map';
@@ -4792,11 +4963,9 @@ function switchTab(tab) {
 
     if (tab === 'saved') {
         updateSavedToggleIcon(currentView);
-        if (isSavedMap && map) {
+        if (map) {
             setTimeout(() => map.invalidateSize(), 100);
             loadFriendMapActivity();
-        } else {
-            currentView = 'list';
         }
     } else if (tab === 'home') {
         loadFeed();
@@ -5414,34 +5583,46 @@ async function openRestaurantCard(placeId) {
     overlay.style.display = 'flex';
     sheet.classList.add('rc-open');
 
-    // Clear & show skeleton
-    document.getElementById('rc-name').textContent = '…';
-    document.getElementById('rc-address').textContent = '';
-    document.getElementById('rc-meta').innerHTML = '';
-    document.getElementById('rc-hours').style.display = 'none';
-    document.getElementById('rc-description').style.display = 'none';
-    document.getElementById('rc-your-visit').innerHTML = '<p class="rc-loading">Loading…</p>';
-    document.getElementById('rc-friends-list').innerHTML = '';
-    document.getElementById('rc-friends-empty').style.display = 'none';
+    // Render immediately from local state — no network round-trip needed
+    const place = places.find(p => p.id === placeId);
+    const review = getPlaceReview(placeId);
 
-    try {
-        const [placeRes, reviewRes] = await Promise.all([
-            fetch(`${API_URL}/api/places/${placeId}`, { headers: getAuthHeaders() }),
-            fetch(`${API_URL}/api/places/${placeId}/review`, { headers: getAuthHeaders() }),
-        ]);
-        if (!placeRes.ok) throw new Error('Not found');
-        const data = await placeRes.json();
-        const place = data.place || data;
-        const review = reviewRes.ok ? (await reviewRes.json()).review : null;
-        renderRestaurantCard(place, review);
+    // Reset friend list — reinject the empty-state element so it always exists in DOM
+    document.getElementById('rc-friends-list').innerHTML =
+        '<p class="rc-friends-empty" id="rc-friends-empty" style="display:none">None of your friends have been here yet.</p>';
+
+    if (place) {
+        try {
+            renderRestaurantCard(place, review);
+        } catch (e) {
+            console.error('renderRestaurantCard error:', e);
+            document.getElementById('rc-your-visit').innerHTML = '<p class="rc-loading">Error loading visit details</p>';
+        }
         rcCurrentGoogleId = place.google_place_id || null;
-
-        // Load friends in parallel
         if (place.google_place_id) {
             loadRcFriendReviews(place.google_place_id);
         }
-    } catch (e) {
-        document.getElementById('rc-name').textContent = 'Error loading';
+    } else {
+        // Fallback: place not in local cache, fetch it
+        document.getElementById('rc-name').textContent = '…';
+        document.getElementById('rc-your-visit').innerHTML = '<p class="rc-loading">Loading…</p>';
+        try {
+            const [placeRes, reviewRes] = await Promise.all([
+                fetch(`${API_URL}/api/places/${placeId}`, { headers: getAuthHeaders() }),
+                fetch(`${API_URL}/api/places/${placeId}/review`, { headers: getAuthHeaders() }),
+            ]);
+            if (!placeRes.ok) throw new Error('Not found');
+            const data = await placeRes.json();
+            const fetchedPlace = data.place || data;
+            const fetchedReview = reviewRes.ok ? (await reviewRes.json()).review : null;
+            renderRestaurantCard(fetchedPlace, fetchedReview);
+            rcCurrentGoogleId = fetchedPlace.google_place_id || null;
+            if (fetchedPlace.google_place_id) {
+                loadRcFriendReviews(fetchedPlace.google_place_id);
+            }
+        } catch (e) {
+            document.getElementById('rc-name').textContent = 'Error loading';
+        }
     }
 }
 
@@ -5461,9 +5642,12 @@ function renderRestaurantCard(place, review) {
         );
     }
 
-    // Meta row
+    // Meta row: rating (count) · price · type
     let meta = '';
-    if (place.place_rating) meta += `<span class="rc-meta-chip">⭐ ${place.place_rating}</span>`;
+    if (place.place_rating) {
+        const cnt = place.place_rating_count ? ` <small>(${Number(place.place_rating_count).toLocaleString()})</small>` : '';
+        meta += `<span class="rc-meta-chip">⭐ ${place.place_rating}${cnt}</span>`;
+    }
     if (place.place_price_level && PLACE_PRICE_LABELS[place.place_price_level]) {
         meta += `<span class="rc-meta-chip">${PLACE_PRICE_LABELS[place.place_price_level]}</span>`;
     }
@@ -5483,10 +5667,46 @@ function renderRestaurantCard(place, review) {
     }
 
     // Description
+    const descEl = document.getElementById('rc-description');
     if (place.place_description) {
-        const descEl = document.getElementById('rc-description');
         descEl.textContent = place.place_description;
         descEl.style.display = '';
+    } else {
+        descEl.style.display = 'none';
+    }
+
+    // Action buttons — Maps + Reel (same style as map popup)
+    const sourceEl = document.getElementById('rc-source');
+    const actionParts = [];
+    if (place.google_place_id) {
+        const encodedName = encodeURIComponent(place.name || '');
+        actionParts.push(`<a href="https://www.google.com/maps/search/?api=1&query=${encodedName}&query_place_id=${place.google_place_id}" target="_blank" class="popup-sec-btn">Maps</a>`);
+    } else if (place.latitude && place.longitude) {
+        actionParts.push(`<a href="https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}" target="_blank" class="popup-sec-btn">Maps</a>`);
+    }
+    if (place.source_url) {
+        actionParts.push(`<a href="${safeUrl(place.source_url)}" target="_blank" class="popup-sec-btn">Reel ↗</a>`);
+    }
+    if (actionParts.length) {
+        sourceEl.innerHTML = actionParts.join('');
+        sourceEl.style.display = '';
+    } else {
+        sourceEl.style.display = 'none';
+    }
+
+    // Personal notes
+    const notesEl = document.getElementById('rc-notes');
+    if (place.notes) {
+        notesEl.innerHTML = `<span class="rc-notes-icon">📝</span><span class="rc-notes-text">${escapeHtml(place.notes)}</span>`;
+        notesEl.style.display = '';
+    } else {
+        notesEl.style.display = 'none';
+    }
+
+    // Friends section — hide on share/group maps (no personal auth context)
+    const friendsSection = document.getElementById('rc-friends-section');
+    if (friendsSection) {
+        friendsSection.style.display = (IS_SHARE_MAP || IS_GROUP_MAP) ? 'none' : '';
     }
 
     // Your visit section
@@ -5496,21 +5716,7 @@ function renderRestaurantCard(place, review) {
 function renderRcYourVisit(place, review) {
     const el = document.getElementById('rc-your-visit');
 
-    if (place.is_visited) {
-        const visitDate = place.visited_at ? new Date(place.visited_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
-        const sentimentDisplay = review ? (SENTIMENT_EMOJI[review.sentiment] || '') : '';
-        const remarks = review ? (review.caption || review.overall_remarks || '') : '';
-        el.innerHTML = `
-            <div class="rc-visit-logged">
-                <div class="rc-visit-header">
-                    <span class="rc-visit-check">✓ Visited</span>
-                    ${visitDate ? `<span class="rc-visit-date">${visitDate}</span>` : ''}
-                </div>
-                ${sentimentDisplay ? `<div class="rc-visit-stars">${sentimentDisplay}</div>` : ''}
-                ${remarks ? `<p class="rc-visit-remarks">"${escapeHtml(remarks)}"</p>` : ''}
-                <button class="rc-edit-btn" onclick="openBeenHereSheet(${place.id})">Edit visit</button>
-            </div>`;
-    } else {
+    if (!place.is_visited) {
         el.innerHTML = `
             <div class="rc-visit-cta">
                 <p class="rc-visit-cta-text">Haven't been here yet?</p>
@@ -5518,6 +5724,96 @@ function renderRcYourVisit(place, review) {
                     🌱 Log my visit
                 </button>
             </div>`;
+        return;
+    }
+
+    const visitDate = place.visited_at
+        ? new Date(place.visited_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })
+        : '';
+
+    let html = `<div class="rc-visit-logged">`;
+
+    // Header: visited check + date + computed score badge
+    const score = computePlaceScore(review);
+    const scoreBadge = score !== null
+        ? `<span class="rc-score-badge" style="background:${scoreMarkerColor(score)}">${score.toFixed(1)}</span>`
+        : '';
+    html += `<div class="rc-visit-header">
+        <span class="rc-visit-check">✓ Visited${visitDate ? ` · <span class="rc-visit-date">${visitDate}</span>` : ''}</span>
+        ${scoreBadge}
+    </div>`;
+
+    if (review) {
+        // Sentiment
+        const sentEmoji = SENTIMENT_EMOJI[review.sentiment] || '';
+        const sentLabel = { loved: 'Loved it', okay: 'It was okay', meh: 'Meh' }[review.sentiment] || '';
+        if (sentEmoji) {
+            html += `<div class="rc-visit-sentiment">${sentEmoji} <strong>${sentLabel}</strong></div>`;
+        }
+
+        // Dimension scores
+        if (review.food_score || review.vibe_score || review.value_score) {
+            html += `<div class="rc-visit-scores">`;
+            if (review.food_score)  html += `<span class="rc-score-chip">Food <b>${review.food_score}</b></span>`;
+            if (review.vibe_score)  html += `<span class="rc-score-chip">Vibe <b>${review.vibe_score}</b></span>`;
+            if (review.value_score) html += `<span class="rc-score-chip">Value <b>${review.value_score}</b></span>`;
+            html += `</div>`;
+        }
+
+        // Photo grid (overall + dish photos combined)
+        const allPhotos = [
+            ...(review.overall_photos || []),
+            ...((review.dishes || []).flatMap(d => d.photos || []))
+        ];
+        if (allPhotos.length > 0) {
+            html += `<div class="rc-visit-photos">`;
+            allPhotos.forEach((photo, i) => {
+                html += `<div class="rc-visit-photo" style="background-image:url('${photo.url}')"
+                    data-photo-index="${i}" role="button" tabindex="0" aria-label="View photo ${i + 1}"></div>`;
+            });
+            html += `</div>`;
+        }
+
+        // Dishes
+        const dishes = review.dishes || [];
+        if (dishes.length > 0) {
+            html += `<div class="rc-visit-dishes">`;
+            dishes.forEach(d => {
+                html += `<div class="rc-visit-dish">
+                    <span class="rc-dish-name">${escapeHtml(d.name)}</span>
+                    ${d.rating != null ? `<span class="rc-dish-rating">${d.rating}<small>/10</small></span>` : ''}
+                </div>`;
+                if (d.remarks) {
+                    html += `<p class="rc-dish-remarks">${escapeHtml(d.remarks)}</p>`;
+                }
+            });
+            html += `</div>`;
+        }
+
+        // Caption
+        const caption = review.caption || review.overall_remarks || '';
+        if (caption) {
+            html += `<p class="rc-visit-remarks">"${escapeHtml(caption)}"</p>`;
+        }
+    }
+
+    html += `<button class="rc-edit-btn" onclick="openBeenHereSheet(${place.id})">✏️ Edit review</button>`;
+    html += `</div>`;
+
+    el.innerHTML = html;
+
+    // Attach photo viewer listeners after innerHTML is set
+    if (review) {
+        const allPhotos = [
+            ...(review.overall_photos || []),
+            ...((review.dishes || []).flatMap(d => d.photos || []))
+        ];
+        if (allPhotos.length > 0) {
+            el.querySelectorAll('.rc-visit-photo').forEach(div => {
+                const idx = parseInt(div.dataset.photoIndex, 10);
+                div.addEventListener('click', () => openPhotoViewer(allPhotos, idx, false));
+            });
+        }
     }
 }
 

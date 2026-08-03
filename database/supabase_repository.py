@@ -93,7 +93,27 @@ def add_place(
             query = query.eq("user_id", user_id).is_("group_id", "null")
         existing = query.execute()
         if existing.data:
-            return existing.data[0]
+            existing_row = existing.data[0]
+            # Patch Google Places metadata that may have been null when first saved
+            # (e.g. place saved before opening_hours feature, or API returned partial data)
+            updates = {}
+            if place_opening_hours and not existing_row.get("place_opening_hours"):
+                updates["place_opening_hours"] = place_opening_hours
+            if place_types and not existing_row.get("place_types"):
+                updates["place_types"] = place_types
+            if place_rating is not None and existing_row.get("place_rating") is None:
+                updates["place_rating"] = place_rating
+            if place_rating_count is not None and existing_row.get("place_rating_count") is None:
+                updates["place_rating_count"] = _coerce_int(place_rating_count)
+            if place_price_level and not existing_row.get("place_price_level"):
+                updates["place_price_level"] = place_price_level
+            if place_description and not existing_row.get("place_description"):
+                updates["place_description"] = place_description
+            if updates:
+                patched = supabase.table("places").update(updates).eq("id", existing_row["id"]).execute()
+                if patched.data:
+                    return patched.data[0]
+            return existing_row
 
     result = supabase.table("places").insert({
         "user_id": user_id,
@@ -684,24 +704,28 @@ def create_or_update_review(
 
         for dish_data in dishes:
             dish_id = dish_data.get("id")
-            dish_rating = dish_data.get("rating") or 1  # DB NOT NULL CHECK (>=1)
+            dish_rating = dish_data.get("rating")  # None = no rating (nullable column)
             if dish_id and dish_id in existing_dish_ids:
                 # Update existing dish
-                supabase.table("review_dishes").update({
+                update_payload = {
                     "dish_name": dish_data["name"],
-                    "rating": dish_rating,
                     "remarks": dish_data.get("remarks"),
                     "updated_at": now,
-                }).eq("id", dish_id).execute()
+                }
+                if dish_rating is not None:
+                    update_payload["rating"] = dish_rating
+                supabase.table("review_dishes").update(update_payload).eq("id", dish_id).execute()
                 updated_dish_ids.add(dish_id)
             else:
                 # Add new dish
-                supabase.table("review_dishes").insert({
+                insert_payload = {
                     "review_id": review_id,
                     "dish_name": dish_data["name"],
-                    "rating": dish_rating,
                     "remarks": dish_data.get("remarks"),
-                }).execute()
+                }
+                if dish_rating is not None:
+                    insert_payload["rating"] = dish_rating
+                supabase.table("review_dishes").insert(insert_payload).execute()
 
         # Delete removed dishes
         for dish_id in existing_dish_ids - updated_dish_ids:
