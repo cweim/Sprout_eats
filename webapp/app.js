@@ -945,11 +945,9 @@ function getMarkerIconForZoom(zoom, place) {
             </svg>
         </div>`;
     } else {
-        // White circle with sprout character PNG (white bg blends with circle)
-        const imgSz = Math.round(sz * 0.82);
-        innerHtml = `<div class="score-marker-dot" style="width:${sz}px;height:${sz}px;background:white;border:2px solid #A8D58A;box-sizing:border-box;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:50%;">
-            <img src="/images/white_bg_unvisited_icon.png" width="${imgSz}" height="${imgSz}" style="display:block;" draggable="false"/>
-        </div>`;
+        // White circle with sprout emoji
+        const emojiFontSz = Math.round(sz * 0.55);
+        innerHtml = `<div class="score-marker-dot" style="width:${sz}px;height:${sz}px;background:white;border:2px solid #A8D58A;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:${emojiFontSz}px;line-height:1;">🌱</div>`;
     }
 
     return L.divIcon({
