@@ -1079,7 +1079,7 @@ body {
     margin: -14px -16px 0;
 }
 
-/* Multi-photo grid (Google Maps style) */
+/* 2-photo side-by-side grid */
 .popup-photo-grid {
     height: 150px;
     display: flex;
@@ -1094,40 +1094,38 @@ body {
     background-position: center;
     flex: 1;
     position: relative;
+    cursor: pointer;
 }
 
-.popup-photo-grid--3 .popup-photo-main {
-    flex: 0 0 60%;
+/* 3+ photos: scrollable strip (aligned with list view) */
+.popup-photo-strip-wrap {
+    height: 150px;
+    margin: -14px -16px 0;
+    border-radius: 16px 16px 0 0;
+    overflow: hidden;
 }
-
-.popup-photo-side {
-    flex: 1;
+.popup-photo-strip {
     display: flex;
-    flex-direction: column;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 150px;
     gap: 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
 }
-
-.popup-photo-side .popup-photo-cell {
-    flex: 1;
+.popup-photo-strip::-webkit-scrollbar { display: none; }
+.popup-photo-strip-thumb {
+    flex-shrink: 0;
+    width: 120px;
+    height: 150px;
+    cursor: pointer;
+    overflow: hidden;
 }
-
-.popup-photo-has-more::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.42);
-}
-
-.popup-photo-more {
-    position: absolute;
-    inset: 0;
-    color: #fff;
-    font-size: 18px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1;
+.popup-photo-strip-thumb img {
+    width: 120px;
+    height: 150px;
+    object-fit: cover;
+    display: block;
 }
 
 /* Body */
@@ -2630,7 +2628,7 @@ body {
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    z-index: 4000;
+    z-index: 9000;
 }
 
 .place-menu-content {
@@ -5242,7 +5240,7 @@ button:disabled,
     user-select: none;
 }
 .plist-section-chevron {
-    font-size: 16px;
+    font-size: 20px;
     color: var(--hint-color);
     transition: transform 0.2s;
     transform: rotate(0deg);
@@ -5250,7 +5248,7 @@ button:disabled,
     margin-left: auto;
 }
 .plist-section--collapsed .plist-section-chevron {
-    transform: rotate(-90deg);
+    transform: rotate(90deg);
 }
 .plist-section--collapsed .plist-section-body {
     display: none;
@@ -5271,6 +5269,7 @@ button:disabled,
     border-radius: 10px;
 }
 
+/* ── Place card base ──────────────────────────────────────────── */
 .pcard {
     background: var(--card-bg);
     border-radius: 16px;
@@ -5282,11 +5281,42 @@ button:disabled,
     border: 1.5px solid transparent;
 }
 .pcard:active { transform: scale(0.98); }
+
+/* Visited: zero padding so photo strip is full-bleed */
 .pcard.pcard-visited {
+    padding: 0;
+    overflow: hidden;
     border-color: rgba(93, 193, 93, 0.25);
 }
 
-.pcard-top { margin-bottom: 10px; }
+/* ── Photo strip (visited cards) ──────────────────────────────── */
+.pcard-photo-strip {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    background: var(--secondary-bg);
+}
+.pcard-photo-strip::-webkit-scrollbar { display: none; }
+.pcard-photo-thumb { flex-shrink: 0; cursor: pointer; overflow: hidden; }
+.pcard-photo-thumb img { display: block; object-fit: cover; }
+
+.pcard-photo-strip.single .pcard-photo-thumb { width: 100%; }
+.pcard-photo-strip.single img { width: 100%; height: 200px; }
+
+.pcard-photo-strip.count-2 .pcard-photo-thumb { width: 50%; }
+.pcard-photo-strip.count-2 img { width: 100%; height: 180px; }
+
+.pcard-photo-strip.count-3 .pcard-photo-thumb { width: calc(100% / 3); }
+.pcard-photo-strip.count-3 img { width: 100%; height: 160px; }
+
+.pcard-photo-strip.scrollable .pcard-photo-thumb { width: 130px; }
+.pcard-photo-strip.scrollable img { width: 130px; height: 150px; }
+
+/* ── Card body ────────────────────────────────────────────────── */
+.pcard-body { padding: 12px 14px 12px; }
 
 .pcard-name-row {
     display: flex;
@@ -5313,85 +5343,115 @@ button:disabled,
     line-height: 1;
 }
 
-.pcard-address {
-    font-size: 0.8rem;
-    color: var(--hint-color);
-    margin: 0 0 6px;
-    line-height: 1.3;
+/* Composite score badge (in name row for visited) */
+.pcard-score-badge {
+    color: white;
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    flex-shrink: 0;
+    letter-spacing: 0.01em;
 }
 
-.pcard-meta {
+/* Subtitle: type · price · date */
+.pcard-subtitle {
+    font-size: 0.78rem;
+    color: var(--hint-color);
+    margin: 0 0 8px;
+}
+
+/* Sub-score chips: Food · Vibe · Value */
+.pcard-scores {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+.pcard-score-chip {
+    font-size: 0.75rem;
+    color: var(--hint-color);
+    background: var(--secondary-bg);
+    padding: 3px 8px;
+    border-radius: 10px;
+}
+
+/* Caption: review text (visited) or description (want-to-go) */
+.pcard-caption {
+    font-size: 0.88rem;
+    color: var(--text-color);
+    line-height: 1.45;
+    margin: 0 0 10px;
+}
+.pcard-caption--muted {
+    color: var(--hint-color);
+    font-size: 0.82rem;
+}
+
+/* Dish chips */
+.pcard-dishes {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-bottom: 7px;
+    margin-bottom: 8px;
 }
-.pcard-meta-item {
+.pcard-dish-chip {
     font-size: 0.78rem;
-    color: var(--hint-color);
     background: var(--secondary-bg);
-    padding: 2px 8px;
-    border-radius: 8px;
+    color: var(--sprout-forest);
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: 600;
 }
-.pcard-type { color: var(--sprout-forest); }
 
-.pcard-snippet {
-    font-size: 0.82rem;
+/* Sentiment line */
+.pcard-sentiment {
+    font-size: 0.85rem;
     color: var(--hint-color);
-    margin: 0;
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    font-style: italic;
+    margin-bottom: 10px;
 }
-.pcard-desc { font-style: normal; }
 
-.pcard-bottom {
+/* Action bar */
+.pcard-actions {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
     gap: 8px;
+    align-items: center;
     padding-top: 10px;
     border-top: 1px solid var(--border-color);
+    flex-wrap: wrap;
 }
-.pcard-status-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pcard-actions--wtg { margin-top: 10px; }
 
-.pcard-status {
+.pcard-action-btn {
     font-size: 0.78rem;
-    font-weight: 700;
-    padding: 4px 10px;
-    border-radius: 20px;
+    color: var(--hint-color);
+    text-decoration: none;
+    background: var(--secondary-bg);
+    border: none;
+    padding: 5px 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity 0.15s;
 }
-.pcard-status-wishlist {
-    background: rgba(30, 58, 43, 0.12);
-    color: var(--sprout-forest);
-}
-.pcard-status-visited {
-    background: rgba(93, 193, 93, 0.15);
-    color: #3a9a3a;
-}
-.pcard-user-rating { font-size: 0.78rem; }
+.pcard-action-btn:active { opacity: 0.7; }
 
-.pcard-log-btn {
+/* "Been here?" CTA for want-to-go */
+.pcard-been-here-btn {
+    margin-left: auto;
     background: var(--sprout-forest);
     color: white;
     border: none;
     border-radius: 20px;
-    padding: 6px 14px;
-    font-size: 0.8rem;
+    padding: 7px 16px;
+    font-size: 0.82rem;
     font-weight: 700;
     cursor: pointer;
     white-space: nowrap;
-    flex-shrink: 0;
+    font-family: inherit;
     transition: opacity 0.15s;
 }
-.pcard-log-btn:active { opacity: 0.8; }
-.pcard-log-btn-edit {
-    background: var(--secondary-bg);
-    color: var(--text-color);
-}
+.pcard-been-here-btn:active { opacity: 0.8; }
 
 /* ════════════════════════════════════════════════════════════════
    RESTAURANT CARD BOTTOM SHEET
@@ -5409,6 +5469,8 @@ button:disabled,
     padding: 16px;
     box-sizing: border-box;
 }
+/* Edit place sheet sits above the restaurant card sheet */
+#edit-place-overlay { z-index: 4000; }
 .rc-sheet {
     position: relative;
     width: 100%;
@@ -5444,6 +5506,14 @@ button:disabled,
     flex: 1;
     padding: 16px 16px 32px;
 }
+
+/* Hero photo strip — full-bleed cover at top of card */
+#rc-hero-strip {
+    margin: -16px -16px 16px;
+    overflow: hidden;
+    background: var(--secondary-bg);
+}
+#rc-hero-strip .pcard-photo-strip { border-radius: 0; }
 
 .rc-header {
     display: flex;
@@ -5510,22 +5580,55 @@ button:disabled,
     margin: 16px 0;
 }
 .rc-section { margin-bottom: 4px; }
+.rc-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+}
 .rc-section-title {
     font-size: 0.8rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--hint-color);
-    margin: 0 0 12px;
+    margin: 0;
 }
+.rc-edit-icon-btn {
+    background: none;
+    border: none;
+    font-size: 0.8rem;
+    color: var(--hint-color);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+.rc-edit-icon-btn:active { opacity: 0.7; }
 
-/* Action buttons row (Maps / Reel) */
-.rc-source {
+/* Action buttons row (🗺 Maps + 🎬 Reel) */
+.rc-actions {
     display: flex;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 14px;
     flex-wrap: wrap;
 }
+.rc-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 7px 16px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-color);
+    text-decoration: none;
+    transition: opacity 0.15s;
+}
+.rc-action-btn:active { opacity: 0.7; }
 
 /* Personal notes */
 .rc-notes-display {
@@ -5557,34 +5660,37 @@ button:disabled,
     flex-shrink: 0;
 }
 
-/* Your visit */
-.rc-visit-cta { text-align: center; padding: 4px 0 8px; }
-.rc-visit-cta-text { font-size: 0.88rem; color: var(--hint-color); margin: 0 0 12px; }
+/* Your visit — unvisited CTA */
+.rc-visit-cta { padding: 4px 0 8px; }
+.rc-visit-cta-text { font-size: 0.88rem; color: var(--hint-color); margin: 0 0 10px; }
 .rc-log-btn {
-    background: linear-gradient(135deg, var(--sprout-forest), var(--sprout-mid));
+    display: block;
+    width: 100%;
+    background: var(--sprout-forest);
     color: white;
     border: none;
-    border-radius: 14px;
-    padding: 14px 28px;
-    font-size: 1rem;
+    border-radius: 20px;
+    padding: 12px 16px;
+    font-size: 0.82rem;
     font-weight: 700;
     cursor: pointer;
-    width: 100%;
+    font-family: inherit;
     transition: opacity 0.15s;
-    box-shadow: 0 4px 14px rgba(30,58,43,0.3);
+    box-sizing: border-box;
+    box-shadow: 0 2px 8px rgba(30, 58, 43, 0.22);
 }
 .rc-log-btn:active { opacity: 0.85; }
 
-.rc-visit-logged {
-    background: rgba(93,193,93,0.08);
-    border: 1.5px solid rgba(93,193,93,0.25);
-    border-radius: 14px;
-    padding: 14px;
+/* Full-bleed photo strip inside rc-your-visit (16px scroll padding offset) */
+.rc-photo-strip-wrap {
+    margin: 0 -16px 12px;
+    border-radius: 0;
+    overflow: hidden;
 }
-.rc-visit-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+
+.rc-visit-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .rc-visit-check { font-weight: 700; color: #3a9a3a; font-size: 0.9rem; flex: 1; }
 .rc-visit-date { font-size: 0.8rem; color: var(--hint-color); font-weight: 400; }
-.rc-visit-stars { font-size: 1rem; margin-bottom: 6px; }
 .rc-visit-sentiment { font-size: 0.95rem; margin-bottom: 8px; }
 .rc-visit-scores {
     display: flex;
@@ -5600,22 +5706,6 @@ button:disabled,
     color: var(--text-color);
 }
 .rc-score-chip b { color: var(--sprout-forest); }
-.rc-visit-photos {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 3px;
-    border-radius: 10px;
-    overflow: hidden;
-    margin-bottom: 12px;
-}
-.rc-visit-photo {
-    aspect-ratio: 1;
-    background-size: cover;
-    background-position: center;
-    cursor: pointer;
-    transition: opacity 0.15s;
-}
-.rc-visit-photo:active { opacity: 0.8; }
 .rc-visit-dishes {
     border-top: 1px solid var(--border-color);
     padding-top: 8px;
@@ -5635,15 +5725,6 @@ button:disabled,
 .rc-dish-rating small { font-weight: 400; color: var(--hint-color); font-size: 0.75rem; }
 .rc-dish-remarks { font-size: 0.78rem; color: var(--hint-color); margin: -2px 0 4px; padding-left: 2px; }
 .rc-visit-remarks { font-size: 0.85rem; font-style: italic; color: var(--hint-color); margin: 4px 0 10px; }
-.rc-edit-btn {
-    background: none;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 5px 12px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    color: var(--hint-color);
-}
 
 .rc-loading { color: var(--hint-color); font-size: 0.85rem; }
 
@@ -5714,6 +5795,20 @@ button:disabled,
     line-height: 1.5;
 }
 .lv-textarea:focus { outline: none; border-color: var(--sprout-forest); }
+
+/* Edit Place Sheet input */
+.ep-input {
+    width: 100%;
+    border: 1.5px solid var(--border-color);
+    border-radius: 12px;
+    padding: 12px;
+    font-size: 0.9rem;
+    background: var(--secondary-bg);
+    color: var(--text-color);
+    font-family: inherit;
+    box-sizing: border-box;
+}
+.ep-input:focus { outline: none; border-color: var(--sprout-forest); }
 
 .lv-submit {
     width: 100%;

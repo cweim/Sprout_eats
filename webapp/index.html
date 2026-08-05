@@ -296,6 +296,7 @@
                         <button class="filter-option" data-sort="name">Name A-Z</button>
                         <button class="filter-option" data-sort="rating">Top Rated</button>
                         <button class="filter-option" data-sort="distance">Nearest</button>
+                        <button class="filter-option" data-sort="favourites">Favourites</button>
                     </div>
                 </div>
                 <div class="filter-section">
@@ -370,13 +371,35 @@
         </div>
     </div>
 
-    <!-- Place Overflow Menu -->
+    <!-- Place Overflow Menu (shared: list cards + RC card) -->
     <div id="place-menu" class="place-menu" style="display: none;" role="dialog" aria-modal="true" aria-label="Place options">
         <div class="place-menu-content">
             <button class="place-menu-item" id="menu-edit">✏️ Edit name & type</button>
             <button class="place-menu-item danger" id="menu-delete" aria-label="Delete this place">🗑️ Delete place</button>
             <button class="place-menu-item cancel" id="menu-cancel">Cancel</button>
         </div>
+    </div>
+
+    <!-- Edit Place Sheet -->
+    <div id="edit-place-overlay" class="rc-overlay" style="display:none" onclick="closeEditPlaceSheet()">
+    <div id="edit-place-sheet" class="rc-sheet" onclick="event.stopPropagation()" role="dialog" aria-label="Edit place">
+        <div class="rc-handle"></div>
+        <div class="rc-scroll">
+            <div class="lv-header">
+                <h3 class="lv-title">Edit place</h3>
+                <p id="ep-subtitle" class="lv-subtitle"></p>
+            </div>
+            <div class="lv-section">
+                <p class="lv-label">Name</p>
+                <input id="ep-name" type="text" class="ep-input" placeholder="Place name" />
+            </div>
+            <div class="lv-section">
+                <p class="lv-label">Type <span class="lv-optional">(optional)</span></p>
+                <input id="ep-type" type="text" class="ep-input" placeholder="e.g. restaurant, café, bar" />
+            </div>
+            <button class="rc-log-btn" onclick="saveEditPlace()">Save</button>
+        </div>
+    </div>
     </div>
 
     <!-- Review Sheet (Bottom Sheet) -->
@@ -484,36 +507,39 @@
     <div id="restaurant-card" class="rc-sheet" onclick="event.stopPropagation()" aria-modal="true" role="dialog" aria-label="Restaurant details">
         <div class="rc-handle"></div>
         <div class="rc-scroll">
-            <!-- Header -->
+            <!-- Hero: user photos (full-bleed at top, if visited + has photos) -->
+            <div id="rc-hero-strip" style="display:none"></div>
+            <!-- Header: name + ··· -->
             <div class="rc-header">
                 <div class="rc-title-block">
                     <h2 id="rc-name" class="rc-name"></h2>
-                    <p id="rc-address" class="rc-address"></p>
                 </div>
                 <div class="rc-header-actions">
-                    <button id="rc-maps-btn" class="rc-maps-btn" onclick="openInMaps()" aria-label="Open in Maps">🗺</button>
                     <button class="rc-more-btn" onclick="openRcMenu()" aria-label="More options">···</button>
                 </div>
             </div>
-            <!-- Meta row -->
+            <!-- Meta: rating · price · type chips -->
             <div id="rc-meta" class="rc-meta"></div>
-            <!-- Hours -->
+            <!-- Address -->
+            <p id="rc-address" class="rc-address"></p>
+            <!-- Opening hours (inline) -->
             <div id="rc-hours" class="rc-hours" style="display:none"></div>
-            <!-- Description -->
+            <!-- Editorial description -->
             <p id="rc-description" class="rc-description" style="display:none"></p>
-            <!-- Source (discovered from) -->
-            <div id="rc-source" class="rc-source" style="display:none"></div>
             <!-- Personal notes -->
             <div id="rc-notes" class="rc-notes-display" style="display:none"></div>
+            <!-- Action buttons: Maps + Reel -->
+            <div id="rc-actions" class="rc-actions" style="display:none"></div>
 
             <div class="rc-divider"></div>
 
-            <!-- Your visit -->
+            <!-- Your Review / Log Visit -->
             <div class="rc-section">
-                <h3 class="rc-section-title">Your Visit</h3>
-                <div id="rc-your-visit" class="rc-your-visit">
-                    <!-- Filled by JS -->
+                <div class="rc-section-header">
+                    <h3 class="rc-section-title">Your Review</h3>
+                    <button class="rc-edit-icon-btn" id="rc-edit-icon-btn" style="display:none" aria-label="Edit review">✏️ Edit</button>
                 </div>
+                <div id="rc-your-visit"></div>
             </div>
 
             <div class="rc-divider"></div>
@@ -522,7 +548,7 @@
             <div id="rc-friends-section" class="rc-section">
                 <h3 class="rc-section-title">Friends who've been</h3>
                 <div id="rc-friends-list" class="rc-friends-list">
-                    <p class="rc-friends-empty" id="rc-friends-empty">None of your friends have been here yet.</p>
+                    <p class="rc-friends-empty" id="rc-friends-empty" style="display:none">None of your friends have been here yet.</p>
                 </div>
             </div>
         </div>
@@ -555,15 +581,6 @@
             <button id="lv-submit-btn" class="lv-submit" onclick="submitLogVisit()">Save Visit</button>
         </div>
     </div>
-    </div>
-
-    <!-- Rc context menu -->
-    <div id="rc-menu" class="place-menu" style="display:none">
-        <div class="place-menu-backdrop" onclick="closeRcMenu()"></div>
-        <div class="place-menu-sheet">
-            <button class="place-menu-item" onclick="closeRcMenu(); deletePlaceFromCard()">🗑 Remove place</button>
-            <button class="place-menu-item" onclick="closeRcMenu()">Cancel</button>
-        </div>
     </div>
 
     <!-- Add Friend Modal -->
