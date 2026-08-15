@@ -4,7 +4,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form, Depends, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from api.telegram_auth import get_current_user, TelegramUser
 from api.limiter import limiter
@@ -243,7 +243,12 @@ async def get_group_share_place_reviews(request: Request, token: str, place_id: 
 
 @router.patch("/group-shares/{token}/places/{place_id}/visited")
 @limiter.limit("60/minute")
-async def toggle_group_share_place_visited(request: Request, token: str, place_id: int):
+async def toggle_group_share_place_visited(
+    request: Request,
+    token: str,
+    place_id: int,
+    user: TelegramUser = Depends(get_current_user),
+):
     group_id = _resolve_group_share(token)
     _require_group_place(group_id, place_id)
     return repository.toggle_group_place_visited(place_id)
@@ -923,6 +928,16 @@ class ProfileUpdate(BaseModel):
     avatar_url: Optional[str] = None
     clear_avatar: bool = False
 
+    @field_validator("avatar_url")
+    @classmethod
+    def validate_avatar_url(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        base = (app_config.SUPABASE_URL or "").rstrip("/")
+        if not base or not v.startswith(base + "/storage/"):
+            raise ValueError("avatar_url must be a Supabase storage URL")
+        return v
+
 
 @router.get("/me")
 async def get_my_profile(user: TelegramUser = Depends(get_current_user)):
@@ -1258,9 +1273,21 @@ async def log_visit_place(
 # Activity Likes
 # =============================================================================
 
+def _require_activity_access(user_id: int, activity_id: str) -> None:
+    """Raise 404 if activity not found, 403 if requester is not the owner or an accepted friend."""
+    owner_id = repository.get_activity_owner(activity_id)
+    if owner_id is None:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    if owner_id != user_id:
+        status = repository.get_friendship_status(user_id, owner_id)
+        if status != "accepted":
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+
 @router.post("/activities/{activity_id}/like")
 @limiter.limit("60/minute")
 async def like_activity(request: Request, activity_id: str, user: TelegramUser = Depends(get_current_user)):
+    _require_activity_access(user.id, activity_id)
     repository.like_activity(user.id, activity_id)
     return {"success": True}
 
@@ -1268,6 +1295,7 @@ async def like_activity(request: Request, activity_id: str, user: TelegramUser =
 @router.delete("/activities/{activity_id}/like")
 @limiter.limit("60/minute")
 async def unlike_activity(request: Request, activity_id: str, user: TelegramUser = Depends(get_current_user)):
+    _require_activity_access(user.id, activity_id)
     repository.unlike_activity(user.id, activity_id)
     return {"success": True}
 
@@ -1283,6 +1311,7 @@ async def get_comments(
     activity_id: str,
     user: TelegramUser = Depends(get_current_user),
 ):
+    _require_activity_access(user.id, activity_id)
     comments = repository.get_activity_comments(activity_id)
     return {"comments": comments}
 
@@ -1295,6 +1324,7 @@ async def add_comment(
     payload: dict,
     user: TelegramUser = Depends(get_current_user),
 ):
+    _require_activity_access(user.id, activity_id)
     body = (payload.get("body") or "").strip()
     if not body:
         raise HTTPException(status_code=400, detail="Comment cannot be empty")

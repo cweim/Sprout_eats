@@ -2497,6 +2497,13 @@ def get_friend_reviews_for_place(user_id: int, google_place_id: str) -> List[Dic
 # Activity Comments
 # =============================================================================
 
+def get_activity_owner(activity_id: str) -> Optional[int]:
+    """Return user_id of the activity owner, or None if not found."""
+    supabase = get_supabase()
+    result = supabase.table("user_activities").select("user_id").eq("id", activity_id).limit(1).execute()
+    return result.data[0]["user_id"] if result.data else None
+
+
 def get_activity_comments(activity_id: str) -> List[Dict[str, Any]]:
     """Return comments for a single activity, enriched with display_name."""
     supabase = get_supabase()

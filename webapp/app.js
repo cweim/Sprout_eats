@@ -6149,7 +6149,7 @@ async function loadFcComments(activityId) {
                 const time = formatTimeAgo(c.created_at);
                 const body = escapeHtml(c.body || '');
                 const av = c.avatar_url
-                    ? `<div class="fc-mini-avatar" style="background-image:url('${c.avatar_url}');background-size:cover;background-position:center;"></div>`
+                    ? `<div class="fc-mini-avatar" style="background-image:url('${escapeHtml(c.avatar_url)}');background-size:cover;background-position:center;"></div>`
                     : `<div class="fc-mini-avatar">${initials}</div>`;
                 return `<div class="fc-comment-item" onclick="event.stopPropagation()">${av}<div class="fc-comment-content"><span class="fc-comment-author">${name}</span><span class="fc-comment-time">${time}</span><div class="fc-comment-body">${body}</div><button class="fc-reply-btn" onclick="event.stopPropagation();replyToFcComment('${activityId}','${rawName.replace(/'/g,"\\'")}')">Reply</button></div></div>`;
             }).join('');
@@ -8133,7 +8133,7 @@ async function loadFriends() {
             const name = f.display_name || f.first_name || 'Friend';
             const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
             const avatarStyle = f.avatar_url
-                ? `style="background-image:url(${f.avatar_url});background-size:cover;background-position:center"`
+                ? `style="background-image:url('${escapeHtml(f.avatar_url)}');background-size:cover;background-position:center"`
                 : '';
             const avatarContent = f.avatar_url ? '' : initials;
             const btn = document.createElement('div');
@@ -8150,7 +8150,7 @@ async function loadFriends() {
                 const name = f.display_name || f.first_name || 'Friend';
                 const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
                 const avatarStyle = f.avatar_url
-                    ? `style="background-image:url(${f.avatar_url});background-size:cover;background-position:center"`
+                    ? `style="background-image:url('${escapeHtml(f.avatar_url)}');background-size:cover;background-position:center"`
                     : '';
                 const avatarContent = f.avatar_url ? '' : initials;
                 const card = document.createElement('div');
@@ -8281,7 +8281,7 @@ async function doSearchFriends(query) {
             const name = u.display_name || u.first_name || 'User';
             const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
             const avatarHtml = u.avatar_url
-                ? `<div class="fr-avatar" style="background-image:url('${u.avatar_url}');background-size:cover;background-position:center"></div>`
+                ? `<div class="fr-avatar" style="background-image:url('${escapeHtml(u.avatar_url)}');background-size:cover;background-position:center"></div>`
                 : `<div class="fr-avatar fr-avatar--initials">${initials}</div>`;
             const isFriend   = u.friendship_status === 'accepted';
             const isPending  = u.friendship_status === 'pending';
@@ -8354,7 +8354,7 @@ async function loadFriendRequestsModal() {
             const name = escapeHtml(r.display_name || r.first_name || 'User');
             const initials = (r.display_name || r.first_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
             const avatarHtml = r.avatar_url
-                ? `<div class="fr-avatar" style="background-image:url('${r.avatar_url}');background-size:cover;background-position:center"></div>`
+                ? `<div class="fr-avatar" style="background-image:url('${escapeHtml(r.avatar_url)}');background-size:cover;background-position:center"></div>`
                 : `<div class="fr-avatar fr-avatar--initials">${initials}</div>`;
             return `
             <div class="friend-request-card" id="req-${r.friendship_id}">
