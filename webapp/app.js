@@ -8719,7 +8719,7 @@ async function shareInviteLink() {
         const res = await fetch('/api/invite-link', { headers: getAuthHeaders() });
         if (!res.ok) throw new Error();
         const data = await res.json();
-        const link = data.invite_link || data.link;
+        const link = data.invite_link || data.link || 'https://t.me/sprout_eats_bot';
 
         const myName = document.getElementById('profile-display-name')?.textContent?.trim() || 'A friend';
         // Link embedded in text so WhatsApp/iMessage render it as a tappable link
