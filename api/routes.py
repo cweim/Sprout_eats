@@ -1,6 +1,7 @@
 import logging
 import math
 from typing import Optional, List
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form, Depends, Request
@@ -11,7 +12,9 @@ from api.limiter import limiter
 from database import supabase_repository as repository
 from database.supabase_client import upload_photo as storage_upload_photo, delete_photo as storage_delete_photo
 from services.places import search_place
+from services.deep_links import build_webapp_url
 import config as app_config
+from api.analytics import ALLOWED_CLIENT_EVENTS, ALLOWED_ENTITY_TYPES, sanitise_event_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -52,17 +55,56 @@ class PlaceCreate(BaseModel):
     latitude: float
     longitude: float
     google_place_id: Optional[str] = None
+    source_url: Optional[str] = None
     place_types: Optional[str] = None
     place_rating: Optional[float] = None
     place_rating_count: Optional[int] = None
     place_price_level: Optional[str] = None
     place_opening_hours: Optional[str] = None
+    country_code: Optional[str] = None
+    city: Optional[str] = None
+    neighborhood: Optional[str] = None
+    primary_cuisine: Optional[str] = None
 
 
 class ReminderActionResponse(BaseModel):
     """Response model for reminder preference actions."""
     success: bool
     message: str
+
+
+class AnalyticsEventRequest(BaseModel):
+    event_name: str
+    event_id: Optional[UUID] = None
+    session_id: Optional[str] = None
+    entity_type: Optional[str] = None
+    entity_id: Optional[str] = None
+    metadata: dict = Field(default_factory=dict)
+
+
+@router.post("/events")
+@limiter.limit("120/minute")
+async def record_client_event(
+    request: Request,
+    event: AnalyticsEventRequest,
+    user: TelegramUser = Depends(get_current_user),
+):
+    """Accept a small, privacy-safe allowlist of Mini App interaction events."""
+    if event.event_name not in ALLOWED_CLIENT_EVENTS:
+        raise HTTPException(status_code=400, detail="Unsupported analytics event")
+    if event.entity_type and event.entity_type not in ALLOWED_ENTITY_TYPES:
+        raise HTTPException(status_code=400, detail="Unsupported entity type")
+    stored = repository.create_app_event(
+        user_id=user.id,
+        event_name=event.event_name,
+        event_source="mini_app",
+        entity_type=event.entity_type,
+        entity_id=(event.entity_id or "")[:120] or None,
+        metadata=sanitise_event_metadata(event.metadata),
+        event_id=str(event.event_id) if event.event_id else None,
+        session_id=(event.session_id or "")[:120] or None,
+    )
+    return {"accepted": True, "event_id": stored.get("event_id") if stored else str(event.event_id or "")}
 
 
 def place_to_dict(place: dict) -> dict:
@@ -87,6 +129,10 @@ def place_to_dict(place: dict) -> dict:
         "place_price_level": place.get("place_price_level"),
         "place_opening_hours": place.get("place_opening_hours"),
         "place_description": place.get("place_description"),
+        "country_code": place.get("country_code"),
+        "city": place.get("city"),
+        "neighborhood": place.get("neighborhood"),
+        "primary_cuisine": place.get("primary_cuisine"),
         "source_language": place.get("source_language"),
         "source_transcript": place.get("source_transcript"),
         "source_transcript_en": place.get("source_transcript_en"),
@@ -143,7 +189,50 @@ async def get_group_places(
     page: int = 1,
     per_page: int = 100,
 ):
-    """Get saved places for a Telegram group map."""
+    """Reject deprecated URLs that exposed guessable Telegram chat IDs."""
+    raise HTTPException(status_code=410, detail="Ask the bot for a new secure Group Map link")
+
+
+@router.get("/groups/{group_id}/places/{place_id}/reviews")
+@limiter.limit("120/minute")
+async def get_group_place_reviews(request: Request, group_id: int, place_id: int):
+    raise HTTPException(status_code=410, detail="Ask the bot for a new secure Group Map link")
+
+
+@router.patch("/groups/{group_id}/places/{place_id}/visited")
+@limiter.limit("60/minute")
+async def toggle_group_place_visited(request: Request, group_id: int, place_id: int):
+    raise HTTPException(status_code=410, detail="Ask the bot for a new secure Group Map link")
+
+
+def _resolve_group_share(token: str) -> int:
+    group_id = repository.get_group_map_share_id(token)
+    if group_id is None:
+        raise HTTPException(status_code=404, detail="Group map link not found")
+    return group_id
+
+
+def _require_group_place(group_id: int, place_id: int):
+    place = repository.get_group_place_by_id(place_id)
+    if not place or int(place.get("group_id") or 0) != group_id:
+        raise HTTPException(status_code=404, detail="Place not found on this group map")
+    return place
+
+
+@router.get("/group-shares/{token}/places")
+@limiter.limit("120/minute")
+async def get_group_share_places(
+    request: Request,
+    token: str,
+    page: int = 1,
+    per_page: int = 100,
+):
+    """Read a group map through an opaque, non-enumerable share token."""
+    group_id = _resolve_group_share(token)
+    try:
+        repository.create_app_event(None, "shared_map_opened", "shared_link", "map", f"group:{group_id}", {"source": "group_share"})
+    except Exception:
+        logger.debug("Could not record group shared_map_opened", exc_info=True)
     total = repository.get_group_place_count(group_id)
     offset = (page - 1) * per_page
     places = repository.get_group_places(group_id, limit=per_page, offset=offset)
@@ -153,24 +242,24 @@ async def get_group_places(
         "page": page,
         "per_page": per_page,
         "has_more": (offset + len(places)) < total,
-        "group_id": group_id,
     }
 
 
-@router.get("/groups/{group_id}/places/{place_id}/reviews")
+@router.get("/group-shares/{token}/places/{place_id}/reviews")
 @limiter.limit("120/minute")
-async def get_group_place_reviews(request: Request, group_id: int, place_id: int):
-    """Get all reviews for a group place."""
+async def get_group_share_place_reviews(request: Request, token: str, place_id: int):
+    group_id = _resolve_group_share(token)
+    _require_group_place(group_id, place_id)
     reviews = repository.get_group_place_reviews(place_id)
     return {"reviews": reviews, "total": len(reviews)}
 
 
-@router.patch("/groups/{group_id}/places/{place_id}/visited")
+@router.patch("/group-shares/{token}/places/{place_id}/visited")
 @limiter.limit("60/minute")
-async def toggle_group_place_visited(request: Request, group_id: int, place_id: int):
-    """Toggle visited status for a group place (no auth — group_id acts as access token)."""
-    result = repository.toggle_group_place_visited(place_id)
-    return result
+async def toggle_group_share_place_visited(request: Request, token: str, place_id: int):
+    group_id = _resolve_group_share(token)
+    _require_group_place(group_id, place_id)
+    return repository.toggle_group_place_visited(place_id)
 
 
 @router.get("/my-share")
@@ -189,6 +278,10 @@ async def get_shared_places(request: Request, token: str, page: int = 1, per_pag
     user_id = repository.get_map_share_owner(token)
     if not user_id:
         raise HTTPException(status_code=404, detail="Share not found")
+    try:
+        repository.create_app_event(None, "shared_map_opened", "shared_link", "map", str(user_id), {"source": "profile_share"})
+    except Exception:
+        logger.debug("Could not record shared_map_opened", exc_info=True)
     offset = (page - 1) * per_page
     places = repository.get_all_places(user_id, limit=per_page, offset=offset)
     total = repository.count_user_places(user_id)
@@ -245,6 +338,51 @@ async def get_nearby_places(
 
     nearby.sort(key=lambda p: p['distance_km'])
     return {"places": nearby, "count": len(nearby), "radius_km": radius_km}
+
+
+@router.get("/places/discover-search")
+@limiter.limit("60/minute")
+async def discover_search_places(
+    request: Request,
+    q: str,
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    user: TelegramUser = Depends(get_current_user),
+):
+    """Search places by name across all users (Discover tab). DB-first; caller falls back to Google."""
+    if not q or len(q.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Query too short")
+    raw = repository.search_places_global(q.strip(), limit=30)
+    friend_ids = repository.get_friend_ids(user.id)
+
+    seen_gp: set = set()
+    out = []
+    for place in raw:
+        gp = place.get("google_place_id")
+        key = gp or place.get("name", "").lower()
+        if key in seen_gp:
+            continue
+        seen_gp.add(key)
+        friends_count = repository.count_friends_at_place(friend_ids, gp) if gp else 0
+        out.append({
+            "name": place.get("name"),
+            "address": place.get("address"),
+            "latitude": place.get("latitude"),
+            "longitude": place.get("longitude"),
+            "google_place_id": gp,
+            "place_types": place.get("place_types"),
+            "place_rating": place.get("place_rating"),
+            "place_price_level": place.get("place_price_level"),
+            "country_code": place.get("country_code"),
+            "city": place.get("city"),
+            "neighborhood": place.get("neighborhood"),
+            "primary_cuisine": place.get("primary_cuisine"),
+            "friends_count": friends_count,
+        })
+        if len(out) >= 10:
+            break
+
+    return {"results": out, "count": len(out)}
 
 
 @router.get("/places/{place_id}")
@@ -390,6 +528,10 @@ async def search_places_api(
                     "place_rating_count": p.rating_count,
                     "place_price_level": p.price_level,
                     "place_opening_hours": p.opening_hours,
+                    "country_code": p.country_code,
+                    "city": p.city,
+                    "neighborhood": p.neighborhood,
+                    "primary_cuisine": p.primary_cuisine,
                 }
                 for p in places
             ],
@@ -407,23 +549,31 @@ async def create_place(
     user: TelegramUser = Depends(get_current_user)
 ):
     """Add a new place manually."""
-    saved_place = repository.add_place(
+    outcome = repository.add_place_with_outcome(
         user_id=user.id,
         name=place.name,
         address=place.address,
         latitude=place.latitude,
         longitude=place.longitude,
         google_place_id=place.google_place_id,
-        source_url=None,
-        source_platform="manual",
+        source_url=place.source_url,
+        source_platform="social" if place.source_url else "manual",
         place_types=place.place_types,
         place_rating=place.place_rating,
         place_rating_count=place.place_rating_count,
         place_price_level=place.place_price_level,
         place_opening_hours=place.place_opening_hours,
+        country_code=place.country_code,
+        city=place.city,
+        neighborhood=place.neighborhood,
+        primary_cuisine=place.primary_cuisine,
     )
 
-    return {"place": place_to_dict(saved_place), "message": "Place added!"}
+    return {
+        "place": place_to_dict(outcome["place"]),
+        "created": outcome["created"],
+        "message": "Place added!" if outcome["created"] else "Already in your saves",
+    }
 
 
 @router.delete("/places/{place_id}")
@@ -433,12 +583,6 @@ async def delete_place(place_id: int, user: TelegramUser = Depends(get_current_u
     if not deleted:
         raise HTTPException(status_code=404, detail="Place not found")
     return {"success": True, "message": "Place deleted"}
-
-
-@router.get("/health")
-async def health_check():
-    """Health check endpoint (no auth required)."""
-    return {"status": "ok"}
 
 
 # =============================================================================
@@ -465,6 +609,7 @@ class ReviewRequest(BaseModel):
     vibe_score: Optional[int] = Field(None, ge=1, le=10)
     value_score: Optional[int] = Field(None, ge=1, le=10)
     caption: Optional[str] = None
+    is_public: bool = True
     # Legacy fields (kept for backwards compat; derived from sentiment when absent)
     overall_rating: Optional[int] = Field(None, ge=1, le=5)
     price_rating: int = Field(0, ge=0, le=5)
@@ -551,6 +696,7 @@ def review_to_dict(review: dict) -> dict:
         "vibe_score": review.get("vibe_score"),
         "value_score": review.get("value_score"),
         "caption": review.get("caption"),
+        "is_public": review.get("is_public", True),
         "overall_rating": review.get("overall_rating"),
         "price_rating": review.get("price_rating"),
         "overall_remarks": review.get("overall_remarks"),
@@ -608,7 +754,20 @@ async def create_or_update_review(
         vibe_score=request.vibe_score,
         value_score=request.value_score,
         caption=request.caption,
+        is_public=request.is_public,
     )
+
+    try:
+        repository.create_app_event(
+            user_id=user.id,
+            event_name="review_submitted",
+            event_source="mini_app",
+            entity_type="place",
+            entity_id=str(place_id),
+            metadata={"google_place_id": place.get("google_place_id"), "result": "updated" if review.get("updated_at") else "created"},
+        )
+    except Exception:
+        logger.warning("Could not record review_submitted analytics", exc_info=True)
 
     # Log to activity feed
     place = repository.get_place_by_id(user.id, place_id)
@@ -616,6 +775,7 @@ async def create_or_update_review(
         user_id=user.id,
         activity_type="reviewed",
         place_id=place_id,
+        is_public=request.is_public,
         metadata={
             "place_name": place.get("name") if place else None,
             "address": place.get("address") if place else None,
@@ -774,6 +934,8 @@ class ProfileUpdate(BaseModel):
     display_name: Optional[str] = None
     bio: Optional[str] = None
     is_public: Optional[bool] = None
+    avatar_url: Optional[str] = None
+    clear_avatar: bool = False
 
 
 @router.get("/me")
@@ -787,15 +949,47 @@ async def get_my_profile(user: TelegramUser = Depends(get_current_user)):
 
 @router.patch("/me")
 async def update_my_profile(update: ProfileUpdate, user: TelegramUser = Depends(get_current_user)):
-    """Update display name, bio, or privacy setting."""
-    updated = repository.update_user_profile(
+    """Update display name, bio, privacy setting, or avatar URL."""
+    repository.update_user_profile(
         user.id,
         display_name=update.display_name,
         bio=update.bio,
         is_public=update.is_public,
+        avatar_url=update.avatar_url,
+        clear_avatar=update.clear_avatar,
     )
     profile = repository.get_my_profile(user.id)
     return {"profile": profile}
+
+
+@router.post("/me/avatar")
+async def upload_my_avatar(
+    file: UploadFile = File(...),
+    user: TelegramUser = Depends(get_current_user)
+):
+    """Upload a profile avatar image to Supabase Storage."""
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Avatar too large (max 5MB)")
+    try:
+        from database.supabase_client import upload_avatar as storage_upload_avatar
+        file_url, _ = storage_upload_avatar(
+            user_id=user.id,
+            file_content=content,
+            filename=file.filename or "avatar.jpg"
+        )
+        repository.update_user_profile(user.id, avatar_url=file_url)
+    except Exception as e:
+        logger.error(f"Avatar upload failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload avatar")
+    profile = repository.get_my_profile(user.id)
+    return {"profile": profile}
+
+
+@router.get("/me/stats/social")
+async def get_my_social_stats(user: TelegramUser = Depends(get_current_user)):
+    """Get social stats: shared discoveries and trendsetter score."""
+    return repository.get_social_stats(user.id)
 
 
 @router.get("/users/search")
@@ -813,12 +1007,67 @@ async def search_users(q: str = "", user: TelegramUser = Depends(get_current_use
 
 @router.get("/users/{target_user_id}/profile")
 async def get_user_profile(target_user_id: int, user: TelegramUser = Depends(get_current_user)):
-    """Get another user's public profile."""
+    """Get another user's public profile. Friend view includes place/review summary."""
+    friendship_status = repository.get_friendship_status(user.id, target_user_id)
+    is_friend = friendship_status == "accepted"
+
+    # Friends can always view each other's profile regardless of is_public
     profile = repository.get_public_profile(target_user_id)
     if not profile:
-        raise HTTPException(status_code=404, detail="User not found or profile is private")
-    friendship_status = repository.get_friendship_status(user.id, target_user_id)
-    return {"profile": profile, "friendship_status": friendship_status}
+        if not is_friend:
+            raise HTTPException(status_code=404, detail="User not found or profile is private")
+        # Accepted friend with private profile — fetch basic info without is_public gate
+        profile = repository.get_basic_profile(target_user_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="User not found")
+
+    response: dict = {
+        "profile": profile,
+        "friendship_status": friendship_status,
+        "friendship_id": repository.get_friendship_id(user.id, target_user_id),
+    }
+
+    if is_friend:
+        from database.supabase_client import get_supabase
+        all_places = repository.get_all_places(target_user_id, limit=60)
+        visited = [p for p in all_places if p.get("is_visited")]
+        saved_count = len([p for p in all_places if not p.get("is_visited")])
+
+        # Fetch review scores for friend's places (lightweight — no dishes/photos)
+        _supabase = get_supabase()
+        _reviews_res = _supabase.table("reviews").select(
+            "place_id,food_score,vibe_score,value_score,sentiment,overall_rating,caption,is_public"
+        ).eq("user_id", target_user_id).execute()
+        reviews_by_place: dict = {}
+        for rv in (_reviews_res.data or []):
+            reviews_by_place[rv["place_id"]] = rv
+
+        def _friend_place_dict(p: dict) -> dict:
+            d = place_to_dict(p)
+            rv = reviews_by_place.get(p.get("id"))
+            if rv:
+                d["food_score"]     = rv.get("food_score")
+                d["vibe_score"]     = rv.get("vibe_score")
+                d["value_score"]    = rv.get("value_score")
+                d["sentiment"]      = rv.get("sentiment")
+                d["overall_rating"] = rv.get("overall_rating")
+                if rv.get("is_public", True):
+                    d["caption"] = (rv.get("caption") or "")[:120]
+            return d
+
+        response["friend_places"] = [_friend_place_dict(p) for p in all_places[:60]]
+        response["stats"] = {
+            "visited_count": len(visited),
+            "saved_count": saved_count,
+        }
+    else:
+        stats = profile.get("stats", {})
+        response["teaser"] = {
+            "places_visited": stats.get("visited_count", 0),
+            "reviews_count": stats.get("review_count", 0),
+        }
+
+    return response
 
 
 # =============================================================================
@@ -856,6 +1105,10 @@ async def send_friend_request(body: FriendRequestBody, user: TelegramUser = Depe
     friendship = repository.send_friend_request(user.id, body.target_user_id)
     if not friendship:
         raise HTTPException(status_code=409, detail="Friend request already exists")
+    try:
+        repository.create_app_event(user.id, "invite_sent", "mini_app", "invite", str(friendship.get("id")), {})
+    except Exception:
+        logger.warning("Could not record invite_sent analytics", exc_info=True)
     return {"friendship": friendship}
 
 
@@ -866,6 +1119,10 @@ async def accept_friend_request(friendship_id: str, user: TelegramUser = Depends
     if not result:
         raise HTTPException(status_code=404, detail="Request not found or already handled")
     repository.log_activity(user.id, "friend_added", metadata={"friendship_id": friendship_id})
+    try:
+        repository.create_app_event(user.id, "friend_added", "mini_app", "invite", friendship_id, {})
+    except Exception:
+        logger.warning("Could not record friend_added analytics", exc_info=True)
     return {"friendship": result}
 
 
@@ -915,6 +1172,18 @@ async def get_friend_reviews_for_restaurant(
     return {"reviews": reviews, "count": len(reviews)}
 
 
+@router.get("/restaurant/{google_place_id}")
+async def get_restaurant_for_deep_link(
+    google_place_id: str,
+    user: TelegramUser = Depends(get_current_user),
+):
+    """Resolve a Google Place ID for a notification/deep-link restaurant card."""
+    place = repository.get_public_place_by_google_id(google_place_id)
+    if not place:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    return {"place": place_to_dict(place)}
+
+
 # =============================================================================
 # Invite Link Helper
 # =============================================================================
@@ -936,6 +1205,7 @@ async def get_invite_link(user: TelegramUser = Depends(get_current_user)):
 async def _notify_friends_of_visit(user_id: int, place_name: str, google_place_id: Optional[str]):
     """Fire-and-forget: send Telegram notification to all friends via Bot API."""
     friend_ids = repository.get_friend_ids(user_id)
+    friend_ids = repository.filter_friend_activity_notification_recipients(friend_ids)
     if not friend_ids:
         return
     user = repository.get_user_by_id(user_id)
@@ -947,7 +1217,7 @@ async def _notify_friends_of_visit(user_id: int, place_name: str, google_place_i
 
     reply_markup = None
     if app_config.WEBAPP_URL and google_place_id:
-        app_url = f"{app_config.WEBAPP_URL}?startapp=gplace_{google_place_id}"
+        app_url = build_webapp_url(app_config.WEBAPP_URL, "gplace", google_place_id)
         reply_markup = {"inline_keyboard": [[{"text": "See their visit 👀", "web_app": {"url": app_url}}]]}
 
     async with httpx.AsyncClient(timeout=5) as client:
@@ -993,12 +1263,177 @@ async def log_visit_place(
 # =============================================================================
 
 @router.post("/activities/{activity_id}/like")
-async def like_activity(activity_id: int, user: TelegramUser = Depends(get_current_user)):
+async def like_activity(activity_id: str, user: TelegramUser = Depends(get_current_user)):
     repository.like_activity(user.id, activity_id)
     return {"success": True}
 
 
 @router.delete("/activities/{activity_id}/like")
-async def unlike_activity(activity_id: int, user: TelegramUser = Depends(get_current_user)):
+async def unlike_activity(activity_id: str, user: TelegramUser = Depends(get_current_user)):
     repository.unlike_activity(user.id, activity_id)
     return {"success": True}
+
+
+# =============================================================================
+# Activity Comments
+# =============================================================================
+
+@router.get("/activities/{activity_id}/comments")
+async def get_comments(
+    activity_id: str,
+    user: TelegramUser = Depends(get_current_user),
+):
+    comments = repository.get_activity_comments(activity_id)
+    return {"comments": comments}
+
+
+@router.post("/activities/{activity_id}/comments")
+async def add_comment(
+    activity_id: str,
+    payload: dict,
+    user: TelegramUser = Depends(get_current_user),
+):
+    body = (payload.get("body") or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Comment cannot be empty")
+    comment = repository.add_activity_comment(user.id, activity_id, body)
+    return {"comment": comment}
+
+
+# =============================================================================
+# Collections
+# =============================================================================
+
+@router.post("/collections")
+async def create_collection(
+    payload: dict,
+    user: TelegramUser = Depends(get_current_user),
+):
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Collection name is required")
+    emoji = (payload.get("emoji") or "📍").strip() or "📍"
+    description = (payload.get("description") or "").strip() or None
+    col = repository.create_collection(user.id, name, emoji, description)
+    return {"collection": col}
+
+
+@router.get("/collections")
+async def list_collections(user: TelegramUser = Depends(get_current_user)):
+    cols = repository.get_collections(user.id)
+    return {"collections": cols}
+
+
+@router.get("/collections/{collection_id}")
+async def get_collection(
+    collection_id: int,
+    user: TelegramUser = Depends(get_current_user),
+):
+    col = repository.get_collection(collection_id, user.id)
+    if col is None:
+        raise HTTPException(status_code=404, detail="Collection not found or no access")
+    return {"collection": col}
+
+
+@router.patch("/collections/{collection_id}")
+async def update_collection(
+    collection_id: int,
+    payload: dict,
+    user: TelegramUser = Depends(get_current_user),
+):
+    col = repository.update_collection(collection_id, user.id, **payload)
+    if col is None:
+        raise HTTPException(status_code=404, detail="Collection not found or no access")
+    return {"collection": col}
+
+
+@router.delete("/collections/{collection_id}")
+async def delete_collection(
+    collection_id: int,
+    user: TelegramUser = Depends(get_current_user),
+):
+    ok = repository.delete_collection(collection_id, user.id)
+    if not ok:
+        raise HTTPException(status_code=403, detail="Only the owner can delete a collection")
+    return {"success": True}
+
+
+@router.post("/collections/{collection_id}/places")
+async def add_place_to_collection(
+    collection_id: int,
+    payload: dict,
+    user: TelegramUser = Depends(get_current_user),
+):
+    place_id = payload.get("place_id")
+    if not place_id:
+        raise HTTPException(status_code=400, detail="place_id required")
+    cp = repository.add_place_to_collection(collection_id, user.id, int(place_id))
+    if cp is None:
+        raise HTTPException(status_code=404, detail="Place not found or no access to collection")
+    return {"collection_place": cp}
+
+
+@router.delete("/collections/{collection_id}/places/{collection_place_id}")
+async def remove_place_from_collection(
+    collection_id: int,
+    collection_place_id: int,
+    user: TelegramUser = Depends(get_current_user),
+):
+    ok = repository.remove_place_from_collection(collection_id, user.id, collection_place_id)
+    if not ok:
+        raise HTTPException(status_code=403, detail="No access to this collection")
+    return {"success": True}
+
+
+@router.get("/collections/{collection_id}/places")
+async def list_collection_places(
+    collection_id: int,
+    user: TelegramUser = Depends(get_current_user),
+):
+    places = repository.get_collection_places(collection_id, user.id)
+    return {"places": places}
+
+
+@router.get("/places/{place_id}/collections")
+async def get_place_collections(
+    place_id: int,
+    user: TelegramUser = Depends(get_current_user),
+):
+    cols = repository.get_place_collections(user.id, place_id)
+    return {"collections": cols}
+
+
+@router.post("/collections/{collection_id}/members")
+async def invite_member(
+    collection_id: int,
+    payload: dict,
+    user: TelegramUser = Depends(get_current_user),
+):
+    target_user_id = payload.get("target_user_id")
+    if not target_user_id:
+        raise HTTPException(status_code=400, detail="target_user_id required")
+    result = repository.invite_to_collection(collection_id, user.id, int(target_user_id))
+    if result is None:
+        raise HTTPException(status_code=403, detail="No access to this collection")
+    return {"result": result}
+
+
+@router.delete("/collections/{collection_id}/members/{target_user_id}")
+async def remove_member(
+    collection_id: int,
+    target_user_id: int,
+    user: TelegramUser = Depends(get_current_user),
+):
+    ok = repository.remove_collection_member(collection_id, user.id, target_user_id)
+    if not ok:
+        raise HTTPException(status_code=403, detail="Cannot remove this member")
+    return {"success": True}
+
+
+@router.get("/users/{target_user_id}/collections")
+async def get_user_public_collections(
+    target_user_id: int,
+    user: TelegramUser = Depends(get_current_user),
+):
+    cols = repository.get_public_collections(target_user_id)
+    return {"collections": cols}

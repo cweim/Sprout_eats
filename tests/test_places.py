@@ -6,6 +6,29 @@ from services.places import extract_location_queries
 
 
 class TestSearchPlace:
+    async def test_search_place_extracts_structured_insight_dimensions(self, monkeypatch):
+        monkeypatch.setattr("config.GOOGLE_API_KEY", "test_api_key")
+        mock_response = {"places": [{
+            "displayName": {"text": "Masala Garden"},
+            "formattedAddress": "1 Test Road, Singapore",
+            "location": {"latitude": 1.3, "longitude": 103.8},
+            "id": "structured_1",
+            "types": ["indian_restaurant", "restaurant"],
+            "addressComponents": [
+                {"longText": "Singapore", "shortText": "SG", "types": ["country"]},
+                {"longText": "Singapore", "shortText": "Singapore", "types": ["locality"]},
+                {"longText": "Tanjong Pagar", "shortText": "Tanjong Pagar", "types": ["neighborhood"]},
+            ],
+        }]}
+        with aioresponses() as mocked:
+            mocked.post(PLACES_TEXT_SEARCH_URL, payload=mock_response, repeat=True)
+            result = await search_place("Masala Garden")
+
+        assert result.country_code == "SG"
+        assert result.city == "Singapore"
+        assert result.neighborhood == "Tanjong Pagar"
+        assert result.primary_cuisine == "Indian"
+
     async def test_search_place_success(self, monkeypatch):
         monkeypatch.setattr("config.GOOGLE_API_KEY", "test_api_key")
 

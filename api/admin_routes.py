@@ -1,5 +1,6 @@
 """Admin dashboard API routes."""
 
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -9,6 +10,7 @@ import config
 from api.admin_auth import get_current_admin, AdminUser
 from database import supabase_repository as repository
 from database.supabase_client import get_supabase
+from api.analytics import add_period_comparison, parse_analytics_range
 
 
 router = APIRouter(prefix="/admin/api")
@@ -74,6 +76,110 @@ async def get_dashboard_overview(admin: AdminUser = Depends(get_current_admin)):
     return repository.get_dashboard_overview()
 
 
+@router.get("/analytics/overview")
+async def get_analytics_overview(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    source: Optional[str] = None,
+    city: Optional[str] = None,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Return date-filtered product analytics with previous-period comparison."""
+    try:
+        start_dt, end_dt = parse_analytics_range(start, end)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    duration = end_dt - start_dt
+    current = repository.get_admin_analytics_snapshot(start_dt, end_dt, source=source, city=city)
+    previous = repository.get_admin_analytics_snapshot(start_dt - duration, start_dt, source=source, city=city)
+    return add_period_comparison(current, previous)
+
+
+@router.get("/analytics/retention")
+async def get_analytics_retention(
+    weeks: int = 8,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    return {"cohorts": repository.get_admin_retention_cohorts(max(1, min(weeks, 26)))}
+
+
+@router.get("/insights/rankings")
+async def get_insight_rankings(
+    metric: str = "overall",
+    city: Optional[str] = None,
+    cuisine: Optional[str] = None,
+    limit: int = 10,
+    min_reviews: int = 1,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    if metric not in {"overall", "food", "vibe", "value", "loved", "saves"}:
+        raise HTTPException(status_code=400, detail="Unsupported ranking metric")
+    rows = repository.get_admin_restaurant_rankings(
+        metric=metric,
+        city=city,
+        cuisine=cuisine,
+        limit=max(1, min(limit, 100)),
+        min_reviews=max(1, min(min_reviews, 100)),
+    )
+    return {
+        "rankings": rows,
+        "metric": metric,
+        "preview_minimum": min_reviews,
+        "publication_minimum": 10,
+        "methodology": "Public reviews only; one latest review per diner and restaurant; Bayesian prior weight 5.",
+    }
+
+
+@router.get("/content/posts")
+async def get_content_posts(
+    platform: Optional[str] = None, account: Optional[str] = None,
+    city: Optional[str] = None, cuisine: Optional[str] = None,
+    start: Optional[datetime] = None, end: Optional[datetime] = None,
+    sort: str = "saves", limit: int = 50, offset: int = 0,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    if sort not in {"saves", "visits", "reviews", "score", "recent"}:
+        raise HTTPException(status_code=400, detail="Unsupported content sort")
+    if start and end and start >= end:
+        raise HTTPException(status_code=400, detail="start must be before end")
+    page_size, page_offset = max(1, min(limit, 100)), max(0, offset)
+    rows, total = repository.get_admin_content_posts(
+        platform=platform, account=account, city=city, cuisine=cuisine,
+        start=start, end=end, sort=sort, limit=page_size, offset=page_offset,
+    )
+    return {"posts": rows, "total": total, "limit": page_size, "offset": page_offset}
+
+
+@router.get("/content/accounts")
+async def get_content_accounts(
+    platform: Optional[str] = None, search: Optional[str] = None,
+    start: Optional[datetime] = None, end: Optional[datetime] = None,
+    sort: str = "saves", limit: int = 50, offset: int = 0,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    if sort not in {"saves", "visits", "reviews", "score"}:
+        raise HTTPException(status_code=400, detail="Unsupported account sort")
+    if start and end and start >= end:
+        raise HTTPException(status_code=400, detail="start must be before end")
+    page_size, page_offset = max(1, min(limit, 100)), max(0, offset)
+    rows, total = repository.get_admin_source_accounts(
+        platform=platform, search=search, start=start, end=end,
+        sort=sort, limit=page_size, offset=page_offset,
+    )
+    return {"accounts": rows, "total": total, "limit": page_size, "offset": page_offset}
+
+
+@router.get("/content/posts/{content_source_id}")
+async def get_content_post_detail(
+    content_source_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    detail = repository.get_admin_content_post_detail(content_source_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Content post not found")
+    return {"post": detail}
+
+
 @router.get("/feedback")
 async def get_feedback_reports(
     status: Optional[str] = None,
@@ -126,6 +232,36 @@ async def get_places(
     return {"places": places, "total": total, "limit": limit, "offset": offset}
 
 
+@router.get("/save-activity")
+async def get_save_activity(
+    platform: Optional[str] = None,
+    city: Optional[str] = None,
+    search: Optional[str] = None,
+    user_id: Optional[int] = None,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+    limit: int = 100,
+    offset: int = 0,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Return the chronological save feed across every Sprout user."""
+    if start and end and start >= end:
+        raise HTTPException(status_code=400, detail="start must be before end")
+    page_size = max(1, min(limit, 100))
+    page_offset = max(0, offset)
+    rows, total = repository.get_admin_save_activity(
+        platform=platform,
+        city=city,
+        search=search,
+        user_id=user_id,
+        start=start,
+        end=end,
+        limit=page_size,
+        offset=page_offset,
+    )
+    return {"places": rows, "total": total, "limit": page_size, "offset": page_offset}
+
+
 @router.get("/users/{user_id}/places")
 async def get_user_places(
     user_id: int,
@@ -141,15 +277,68 @@ async def get_user_places(
 @router.get("/restaurants")
 async def get_restaurants(
     platform: Optional[str] = None,
+    city: Optional[str] = None,
+    search: Optional[str] = None,
+    sort: str = "saves",
     limit: int = 50,
     offset: int = 0,
     admin: AdminUser = Depends(get_current_admin),
 ):
-    """List places grouped by restaurant (google_place_id or name)."""
-    groups, total = repository.list_places_grouped_by_restaurant(
-        platform=platform, limit=limit, offset=offset
+    """List database-aggregated restaurant stats across all users."""
+    allowed_sorts = {"saves", "savers", "visits", "reviews", "score", "latest"}
+    if sort not in allowed_sorts:
+        raise HTTPException(status_code=400, detail="Unsupported restaurant sort")
+    page_size = max(1, min(limit, 100))
+    page_offset = max(0, offset)
+    groups, total = repository.get_admin_restaurant_directory(
+        platform=platform,
+        city=city,
+        search=search,
+        sort=sort,
+        limit=page_size,
+        offset=page_offset,
     )
-    return {"restaurants": groups, "total": total, "limit": limit, "offset": offset}
+    return {"restaurants": groups, "total": total, "limit": page_size, "offset": page_offset}
+
+
+@router.get("/restaurants/{restaurant_key}/reviews")
+async def get_restaurant_reviews(
+    restaurant_key: str,
+    limit: int = 20,
+    offset: int = 0,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Return the paginated public review feed for one restaurant."""
+    page_size = max(1, min(limit, 100))
+    page_offset = max(0, offset)
+    reviews, total = repository.get_admin_restaurant_reviews(
+        restaurant_key, limit=page_size, offset=page_offset
+    )
+    return {"reviews": reviews, "total": total, "limit": page_size, "offset": page_offset}
+
+
+@router.get("/restaurants/{restaurant_key}/sources")
+async def get_restaurant_sources(
+    restaurant_key: str, limit: int = 20, offset: int = 0,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    page_size, page_offset = max(1, min(limit, 100)), max(0, offset)
+    rows, total = repository.get_admin_restaurant_content_sources(
+        restaurant_key, limit=page_size, offset=page_offset
+    )
+    return {"sources": rows, "total": total, "limit": page_size, "offset": page_offset}
+
+
+@router.get("/restaurants/{restaurant_key}")
+async def get_restaurant_detail(
+    restaurant_key: str,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Return the cross-user aggregate story for one restaurant."""
+    detail = repository.get_admin_restaurant_detail(restaurant_key)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    return {"restaurant": detail}
 
 
 @router.get("/failed-extractions")

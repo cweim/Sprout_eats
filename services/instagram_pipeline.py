@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import config
@@ -184,8 +185,30 @@ async def extract_instagram_metadata_no_cookie_direct(url: str) -> dict[str, Any
         await _leave_instagram_queue(success=success)
 
 
-async def run_instagram_place_pipeline(url: str) -> dict[str, Any]:
-    extraction = await extract_instagram_metadata_no_cookie(url)
+async def run_instagram_place_pipeline(
+    url: str,
+    *,
+    on_stage: Callable[[str], Awaitable[None]] | None = None,
+) -> dict[str, Any]:
+    try:
+        extraction = await asyncio.wait_for(
+            extract_instagram_metadata_no_cookie(url),
+            timeout=config.BOT_METADATA_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Instagram metadata extraction timed out for %s", url)
+        return {
+            "status": "timed_out",
+            "timed_out_stage": "metadata",
+            "metadata_source": None,
+            "metadata_candidate": None,
+            "slots": [],
+            "suggestions": [],
+            "places": [],
+            "unresolved_suggestions": [],
+            "error": "Instagram metadata extraction timed out",
+        }
+
     candidate = extraction.get("metadata_candidate")
     if not candidate:
         return {
@@ -213,7 +236,13 @@ async def run_instagram_place_pipeline(url: str) -> dict[str, Any]:
             "error": None,
         }
 
-    suggestions = await resolve_place_slots(slots)
+    if on_stage:
+        await on_stage("resolving")
+    suggestions = await resolve_place_slots(
+        slots,
+        timeout_seconds=config.BOT_PLACE_RESOLUTION_TIMEOUT_SECONDS,
+        max_concurrency=config.BOT_PLACE_RESOLUTION_CONCURRENCY,
+    )
     places = []
     unresolved_suggestions = []
     for suggestion in suggestions:
@@ -222,9 +251,14 @@ async def run_instagram_place_pipeline(url: str) -> dict[str, Any]:
         else:
             unresolved_suggestions.append(suggestion)
 
-    status = "resolved" if places else "metadata_only"
+    resolution_timed_out = any(suggestion.status == "timed_out" for suggestion in suggestions)
+    if resolution_timed_out:
+        status = "partial" if places else "timed_out"
+    else:
+        status = "resolved" if places else "metadata_only"
     return {
         "status": status,
+        "timed_out_stage": "resolution" if resolution_timed_out else None,
         "metadata_source": candidate.source,
         "metadata_candidate": candidate,
         "slots": slots,

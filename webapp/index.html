@@ -19,10 +19,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <!-- App styles - Forest Green & Cream theme -->
-    <link rel="stylesheet" href="styles.css?v=71">
+    <link rel="stylesheet" href="styles.css?v=94">
 </head>
 <body>
-    <header class="app-header" id="app-header">
+    <header class="app-header" id="app-header" style="display:none">
         <h1 id="page-title" class="page-title">sprout</h1>
         <div class="header-actions">
             <button id="btn-header-filter" class="header-icon-btn" aria-label="Filter" style="display:none">⚙️</button>
@@ -50,9 +50,10 @@
                     <span class="map-filter-sep"></span>
                     <button class="map-filter-chip" id="open-now-chip" data-filter="open-now" aria-pressed="false">Open Now</button>
                 </div>
-                <div id="map-cuisine-wrap" class="map-cuisine-select-wrap" style="display:none">
-                    <select id="map-cuisine-filter" class="map-cuisine-select">
-                        <option value="">All types</option>
+                <div id="map-collection-wrap" class="map-cuisine-select-wrap" style="display:none">
+                    <select id="map-collection-filter" class="map-cuisine-select"
+                            onchange="onMapCollectionChange(this.value)">
+                        <option value="">All places</option>
                     </select>
                 </div>
             </div>
@@ -86,6 +87,7 @@
                         <span class="filter-count" style="display: none;">0</span>
                     </button>
                 </div>
+                <div id="collection-filter-row" class="collection-filter-row" style="display:none"></div>
                 <div id="visited-filter" class="visited-filter">
                     <button class="visited-chip active" data-filter="all" aria-pressed="true">All <span class="chip-count"></span></button>
                     <button class="visited-chip" data-filter="unvisited" aria-pressed="false">To Visit <span class="chip-count"></span></button>
@@ -171,61 +173,151 @@
 
         <!-- Feed View -->
         <div id="feed-view" class="view">
-            <div id="feed-list" class="feed-list"></div>
-            <div id="feed-loading" class="feed-loading" style="display:none">Loading...</div>
-            <div id="feed-empty" class="feed-empty" style="display:none">
-                <p class="feed-empty-title">No activity yet</p>
-                <p class="feed-empty-sub">Add friends to see their food adventures here.</p>
-                <button class="btn-primary" onclick="switchTab('profile')">Find Friends</button>
+            <!-- Discover search bar -->
+            <div class="discover-search-wrap">
+                <div class="search-bar">
+                    <span class="search-icon" aria-hidden="true">
+                        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                            <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+                            <line x1="10.5" y1="10.5" x2="13.5" y2="13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                    </span>
+                    <input type="text" id="discover-search-input"
+                           placeholder="Search restaurants & people"
+                           aria-label="Search restaurants & people"
+                           oninput="onDiscoverSearchInput(this.value)"
+                           onfocus="onDiscoverSearchFocus()">
+                    <button id="discover-search-clear" class="search-clear-btn"
+                            style="display:none"
+                            onclick="clearDiscoverSearch()"
+                            aria-label="Clear">×</button>
+                </div>
+            </div>
+
+            <!-- Search suggestions (shown on focus, before typing) -->
+            <div id="discover-search-suggestions" style="display:none">
+                <div id="dss-recent-section" style="display:none">
+                    <div class="dss-section-hd">
+                        <span>Recent</span>
+                        <button onclick="clearDiscoverRecentSearches()">Clear</button>
+                    </div>
+                    <div id="dss-recent-list"></div>
+                </div>
+                <div class="dss-section">
+                    <div class="dss-section-hd"><span>Explore</span></div>
+                    <div class="dss-pills" id="dss-pills"></div>
+                </div>
+            </div>
+
+            <!-- Search results (shown when search active) -->
+            <div id="discover-results" style="display:none">
+                <div id="discover-results-list"></div>
+                <div id="discover-results-empty" style="display:none">
+                    <p style="padding:16px;color:var(--hint-color);text-align:center">No results found.</p>
+                </div>
+            </div>
+
+            <!-- Friends feed (shown when search empty) -->
+            <div id="feed-section">
+                <div id="feed-list" class="feed-list"></div>
+                <div id="feed-loading" class="feed-loading" style="display:none">Loading...</div>
+                <div id="feed-empty" class="feed-empty" style="display:none">
+                    <div class="feed-empty-icon">🌱</div>
+                    <p class="feed-empty-title">Nothing here yet</p>
+                    <p class="feed-empty-sub">Add friends to see their food picks — or explore on your own.</p>
+                    <div class="feed-empty-chips" id="feed-empty-cuisine-chips"></div>
+                    <button class="btn-secondary" onclick="switchTab('profile')">Find Friends</button>
+                </div>
             </div>
         </div>
 
         <!-- Profile View -->
         <div id="profile-view" class="view">
-            <div class="profile-header">
-                <div class="profile-avatar-circle" id="profile-avatar-circle"></div>
-                <div class="profile-info">
-                    <h2 id="profile-display-name" class="profile-name"></h2>
-                    <p id="profile-username" class="profile-username"></p>
-                    <p id="profile-bio" class="profile-bio"></p>
+            <!-- PROFILE CARD: contact card layout -->
+            <div class="stats-card profile-hero-card" id="stats-card-section">
+                <!-- Zone 1: Identity -->
+                <div class="profile-contact-row">
+                    <div class="profile-avatar-wrap" onclick="openAvatarSheet()">
+                        <div class="profile-avatar-circle" id="profile-avatar-circle"></div>
+                        <div class="profile-avatar-edit-badge">✏️</div>
+                    </div>
+                    <div class="profile-contact-info">
+                        <div class="profile-contact-name-row">
+                            <h2 id="profile-display-name" class="profile-name"></h2>
+                            <button class="profile-edit-btn-sm" onclick="openEditProfile()">Edit →</button>
+                        </div>
+                        <p id="profile-username" class="profile-username"></p>
+                        <div class="profile-bio-row">
+                            <p id="profile-bio" class="profile-bio"></p>
+                            <p id="profile-member-since" class="profile-member-since"></p>
+                        </div>
+                    </div>
                 </div>
-                <button id="btn-edit-profile" class="btn-icon-sm" onclick="openEditProfile()" aria-label="Edit profile">✏️</button>
+                <!-- Zone 2: Stats -->
+                <div class="profile-stats-row">
+                    <div class="stats-inline-stat">
+                        <span class="stat-num" id="stat-saved">—</span>
+                        <span class="stat-label">Saved</span>
+                    </div>
+                    <div class="profile-stats-sep"></div>
+                    <div class="stats-inline-stat">
+                        <span class="stat-num" id="stat-visited">—</span>
+                        <span class="stat-label">Visited</span>
+                    </div>
+                    <div class="profile-stats-sep"></div>
+                    <div class="stats-inline-stat">
+                        <span class="stat-num" id="stat-streak">0</span>
+                        <span class="stat-label" id="stat-streak-label">wk streak</span>
+                    </div>
+                </div>
+                <!-- Zone 3: Featured insight (one personalized card) -->
+                <div id="featured-insight-card" class="featured-insight-card"></div>
+                <button class="stats-more-btn" onclick="openStatsSheet()" aria-label="Open full stats">See your food story →</button>
             </div>
-            <div class="profile-stats">
-                <div class="stat-card">
-                    <span class="stat-num" id="stat-visited">—</span>
-                    <span class="stat-label">Visited</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-num" id="stat-saved">—</span>
-                    <span class="stat-label">Saved</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-num" id="stat-reviews">—</span>
-                    <span class="stat-label">Reviews</span>
-                </div>
-            </div>
-            <!-- My Visits -->
+
+            <!-- D. MY VISITS: calendar + photo grid -->
             <div class="profile-section" id="my-visits-section" style="display:none">
                 <div class="profile-section-header">
                     <h3 class="profile-section-title">My Visits</h3>
+                    <div class="visits-view-toggle">
+                        <button id="visits-toggle-grid" class="visits-toggle-btn active" onclick="switchVisitsView('grid')">Grid</button>
+                        <button id="visits-toggle-cal" class="visits-toggle-btn" onclick="switchVisitsView('calendar')">Calendar</button>
+                    </div>
                 </div>
-                <div id="my-visits-list" class="my-visits-list"></div>
+                <!-- Grid view (default) -->
+                <div id="visits-grid-view">
+                    <div id="visit-photo-grid" class="visit-photo-grid"></div>
+                    <button id="visits-see-all" class="profile-see-all-btn" style="display:none" onclick="openVisitsFullList()"></button>
+                    <div id="my-visits-list" class="my-visits-list" style="display:none"></div>
+                </div>
+                <!-- Calendar view -->
+                <div id="visits-calendar-view" style="display:none">
+                    <div id="visit-calendar" class="visit-calendar"></div>
+                </div>
             </div>
-            <!-- Friends section -->
+
+            <!-- E. FRIENDS: horizontal avatar row -->
             <div class="profile-section">
                 <div class="profile-section-header">
                     <h3 class="profile-section-title">Friends <span id="friends-count" class="friends-count-badge"></span></h3>
-                    <button class="btn-secondary-sm" onclick="openAddFriendModal()">+ Add</button>
+                    <button id="friends-see-all" class="profile-see-all-btn" style="display:none" onclick="openFriendsFullList()">See all</button>
                 </div>
-                <div id="friend-requests-banner" class="friend-requests-banner" style="display:none">
-                    <span id="friend-requests-label"></span>
-                    <button class="btn-text" onclick="showFriendRequests()">View</button>
-                </div>
-                <div id="friends-list" class="friends-list">
+                <div id="friend-requests-banner" class="friend-requests-banner" style="display:none"></div>
+                <div id="friends-list" class="friends-row">
                     <p class="friends-empty" id="friends-empty" style="display:none">No friends yet. Add friends to see their reviews!</p>
                 </div>
+                <div id="friends-full-list" class="friends-full-list" style="display:none"></div>
             </div>
+
+            <!-- Collections -->
+            <div class="profile-section" id="collections-section">
+                <div class="profile-section-header">
+                    <h3 class="profile-section-title">Collections</h3>
+                    <button class="profile-section-action" onclick="openCreateCollection()" aria-label="Create collection">＋</button>
+                </div>
+                <div id="collections-list"></div>
+            </div>
+
             <!-- Invite link -->
             <div class="profile-section">
                 <button class="btn-full-secondary" onclick="shareInviteLink()">🔗 Invite a Friend</button>
@@ -233,6 +325,60 @@
         </div>
 
     </main>
+
+    <!-- Create Collection Sheet -->
+    <div id="create-collection-overlay" class="modal-overlay" style="display:none" onclick="closeCreateCollection(event)" role="dialog" aria-modal="true" aria-label="Create collection">
+        <div class="modal-sheet" style="padding:0 16px 24px">
+            <div class="modal-header">
+                <h3>New Collection</h3>
+                <button class="modal-close" onclick="closeCreateCollection()" aria-label="Close">×</button>
+            </div>
+            <div style="margin-bottom:16px">
+                <p class="col-form-label">Emoji</p>
+                <div id="col-emoji-row" class="col-emoji-row">
+                    <button class="col-emoji-btn active" data-emoji="📍">📍</button>
+                    <button class="col-emoji-btn" data-emoji="🍜">🍜</button>
+                    <button class="col-emoji-btn" data-emoji="🌃">🌃</button>
+                    <button class="col-emoji-btn" data-emoji="❤️">❤️</button>
+                    <button class="col-emoji-btn" data-emoji="🕯️">🕯️</button>
+                    <button class="col-emoji-btn" data-emoji="☕">☕</button>
+                    <button class="col-emoji-btn" data-emoji="🎉">🎉</button>
+                    <button class="col-emoji-btn" data-emoji="✈️">✈️</button>
+                    <button class="col-emoji-btn" data-emoji="🏖️">🏖️</button>
+                    <button class="col-emoji-btn" data-emoji="⭐">⭐</button>
+                </div>
+            </div>
+            <div style="margin-bottom:20px">
+                <p class="col-form-label">Name</p>
+                <input id="col-name-input" class="col-name-input" type="text" placeholder="e.g. Date Night Spots" maxlength="60">
+            </div>
+            <button class="sheet-btn primary" onclick="submitCreateCollection()">Create Collection</button>
+        </div>
+    </div>
+
+    <!-- Collection Detail Sheet -->
+    <div id="collection-sheet-overlay" class="modal-overlay" style="display:none" onclick="closeCollectionSheet(event)" role="dialog" aria-modal="true">
+        <div class="modal-sheet collection-sheet" id="collection-sheet-inner">
+            <div class="modal-header" style="padding-bottom:8px">
+                <h3 id="col-sheet-title" style="display:flex;align-items:center;gap:8px"></h3>
+                <button class="modal-close" onclick="closeCollectionSheet()" aria-label="Close">×</button>
+            </div>
+            <div id="col-sheet-meta" class="col-sheet-meta"></div>
+            <div id="col-sheet-actions" class="col-sheet-actions"></div>
+            <div id="col-sheet-body" class="col-sheet-body sheet-body"></div>
+        </div>
+    </div>
+
+    <!-- Add to Collection Sheet -->
+    <div id="add-to-col-overlay" class="modal-overlay" style="display:none" onclick="closeAddToCollectionSheet(event)" role="dialog" aria-modal="true" aria-label="Add to collection">
+        <div class="modal-sheet" style="padding:0 0 16px">
+            <div class="modal-header" style="padding:16px 16px 8px">
+                <h3>Add to Collection</h3>
+                <button class="modal-close" onclick="closeAddToCollectionSheet()" aria-label="Close">×</button>
+            </div>
+            <div id="add-to-col-list" class="col-sheet-body sheet-body"></div>
+        </div>
+    </div>
 
     <!-- Search Google Modal -->
     <div id="search-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="search-modal-title">
@@ -418,17 +564,17 @@
                 <!-- Sentiment (required) -->
                 <div class="review-section review-section-sentiment">
                     <div class="sentiment-row" id="sentiment-group">
-                        <button type="button" class="sentiment-btn" data-sentiment="loved">
-                            <span class="sentiment-emoji">🤩</span>
-                            <span class="sentiment-label">Loved it</span>
+                        <button type="button" class="sentiment-btn" data-sentiment="meh">
+                            <span class="sentiment-emoji">😐</span>
+                            <span class="sentiment-label">Meh</span>
                         </button>
                         <button type="button" class="sentiment-btn" data-sentiment="okay">
                             <span class="sentiment-emoji">👍</span>
                             <span class="sentiment-label">It was okay</span>
                         </button>
-                        <button type="button" class="sentiment-btn" data-sentiment="meh">
-                            <span class="sentiment-emoji">😐</span>
-                            <span class="sentiment-label">Meh</span>
+                        <button type="button" class="sentiment-btn" data-sentiment="loved">
+                            <span class="sentiment-emoji">🤩</span>
+                            <span class="sentiment-label">Loved it</span>
                         </button>
                     </div>
                 </div>
@@ -476,6 +622,18 @@
                     <div id="overall-photos" class="photo-grid"></div>
                 </div>
 
+                <!-- Privacy toggle -->
+                <div class="review-section review-section-privacy">
+                    <label class="review-privacy-label" for="review-is-public">
+                        <span class="review-label">Share with friends</span>
+                        <span class="review-label-optional">Friends can see this in their feed</span>
+                    </label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="review-is-public" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
                 <div id="review-form-error" class="review-form-error" style="display: none;" role="alert"></div>
             </div>
 
@@ -486,23 +644,32 @@
         </div>
     </div>
 
-    <!-- Photo Fullscreen Viewer -->
-    <div id="photo-viewer" class="photo-viewer" style="display: none;" role="dialog" aria-modal="true" aria-label="Photo viewer">
-        <div class="photo-viewer-header">
-            <span id="photo-viewer-counter" class="photo-counter" aria-live="polite">1 / 3</span>
-            <button id="photo-viewer-close" class="photo-viewer-close" aria-label="Close">×</button>
-        </div>
-        <div class="photo-viewer-body">
-            <button id="photo-viewer-prev" class="photo-nav photo-nav-prev" aria-label="Previous">‹</button>
-            <img id="photo-viewer-img" src="" alt="Photo">
-            <button id="photo-viewer-next" class="photo-nav photo-nav-next" aria-label="Next">›</button>
-        </div>
-        <div class="photo-viewer-footer">
-            <button id="photo-viewer-delete" class="photo-viewer-delete">Delete Photo</button>
+
+    <!-- Restaurant Card Sheet -->
+    <!-- Friend Review Detail Sheet -->
+    <div id="frd-overlay" class="rc-overlay" style="display:none" onclick="closeFriendReviewDetail()">
+        <div id="frd-sheet" class="rc-sheet frd-sheet" onclick="event.stopPropagation()">
+            <div class="rc-handle"></div>
+            <div class="rc-scroll">
+                <div class="frd-header">
+                    <div id="frd-avatar" class="fc-avatar"></div>
+                    <div class="frd-meta">
+                        <span id="frd-name" class="frd-name"></span>
+                        <span id="frd-time" class="frd-time"></span>
+                    </div>
+                    <button class="frd-close" onclick="closeFriendReviewDetail()">✕</button>
+                </div>
+                <div class="rc-divider"></div>
+                <div id="frd-place-name" class="frd-place-name"></div>
+                <div id="frd-sentiment" class="frd-sentiment-row"></div>
+                <div id="frd-scores" class="rcfr-scores" style="margin-top:8px"></div>
+                <p id="frd-caption" class="frd-caption"></p>
+                <div id="frd-dishes" class="fc-dish-chips" style="margin-top:8px"></div>
+                <div id="frd-photos" class="frd-photos"></div>
+            </div>
         </div>
     </div>
 
-    <!-- Restaurant Card Sheet -->
     <div id="restaurant-card-overlay" class="rc-overlay" style="display:none" onclick="closeRestaurantCard()">
     <div id="restaurant-card" class="rc-sheet" onclick="event.stopPropagation()" aria-modal="true" role="dialog" aria-label="Restaurant details">
         <div class="rc-handle"></div>
@@ -515,6 +682,7 @@
                     <h2 id="rc-name" class="rc-name"></h2>
                 </div>
                 <div class="rc-header-actions">
+                    <button class="rc-edit-icon-btn" id="rc-edit-icon-btn" style="display:none" aria-label="Edit review">✏️ Edit</button>
                     <button class="rc-more-btn" onclick="openRcMenu()" aria-label="More options">···</button>
                 </div>
             </div>
@@ -533,22 +701,23 @@
 
             <div class="rc-divider"></div>
 
-            <!-- Your Review / Log Visit -->
-            <div class="rc-section">
+            <!-- Featured Review (friend's post — hidden by default) -->
+            <div id="rc-featured-section" class="rc-section" style="display:none">
                 <div class="rc-section-header">
-                    <h3 class="rc-section-title">Your Review</h3>
-                    <button class="rc-edit-icon-btn" id="rc-edit-icon-btn" style="display:none" aria-label="Edit review">✏️ Edit</button>
+                    <h3 class="rc-section-title" id="rc-featured-title">Friend's Review</h3>
+                    <button class="rc-edit-review-btn" id="rc-edit-review-btn" style="display:none" onclick="openReviewFromRc(rcCurrentPlaceId)">✏️ Edit</button>
                 </div>
-                <div id="rc-your-visit"></div>
+                <div id="rc-featured-review"></div>
             </div>
+            <div class="rc-divider" id="rc-featured-divider" style="display:none"></div>
 
-            <div class="rc-divider"></div>
-
-            <!-- Friends -->
-            <div id="rc-friends-section" class="rc-section">
-                <h3 class="rc-section-title">Friends who've been</h3>
-                <div id="rc-friends-list" class="rc-friends-list">
-                    <p class="rc-friends-empty" id="rc-friends-empty" style="display:none">None of your friends have been here yet.</p>
+            <!-- People Who've Been -->
+            <div id="rc-people-section" class="rc-section">
+                <div class="rc-section-header">
+                    <h3 class="rc-section-title">People Who've Been</h3>
+                    <span id="rc-friends-avg" class="rc-friends-avg-chip" style="display:none"></span>
+                </div>
+                <div id="rc-people-list" class="rc-people-list">
                 </div>
             </div>
         </div>
@@ -585,15 +754,23 @@
 
     <!-- Add Friend Modal -->
     <div id="add-friend-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="add-friend-title">
-        <div class="modal-sheet">
+        <div class="modal-sheet modal-sheet--tall">
             <div class="modal-header">
-                <h3 id="add-friend-title">Add Friend</h3>
+                <h3 id="add-friend-title">Find People</h3>
                 <button class="modal-close" onclick="closeAddFriendModal()" aria-label="Close">×</button>
             </div>
             <div class="modal-body">
-                <input type="text" id="friend-search-input" class="search-input" placeholder="Search by @username..." autocomplete="off" oninput="searchFriends(this.value)">
+                <div class="af-search-wrap">
+                    <span class="af-search-icon">
+                        <svg width="14" height="14" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/><line x1="10.5" y1="10.5" x2="13.5" y2="13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </span>
+                    <input type="text" id="friend-search-input" class="af-search-input" placeholder="Name or @username..." autocomplete="off" oninput="searchFriends(this.value)">
+                </div>
                 <div id="friend-search-results" class="friend-search-results"></div>
-                <div id="friend-search-empty" class="friend-search-empty" style="display:none">No users found</div>
+                <div id="friend-search-empty" class="friend-search-empty" style="display:none">
+                    <p>No people found</p>
+                    <p class="hint">Try their first name or @username</p>
+                </div>
             </div>
         </div>
     </div>
@@ -609,6 +786,118 @@
         </div>
     </div>
 
+    <!-- Stats Sheet (center modal) -->
+    <div id="stats-sheet-overlay" class="rc-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="stats-sheet-title" onclick="closeStatsSheet()">
+        <div id="stats-sheet" class="rc-sheet stats-rc-sheet" onclick="event.stopPropagation()">
+            <div class="rc-header" style="padding:16px 20px 0;display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
+                <div class="stats-sheet-title-block">
+                    <h3 id="stats-sheet-title" class="rc-title">Your Food Story</h3>
+                    <p id="stats-sheet-since-note" class="stats-sheet-since-note"></p>
+                </div>
+                <button class="rc-close-btn" onclick="closeStatsSheet()" aria-label="Close">×</button>
+            </div>
+            <div class="rc-body stats-sheet-body">
+                <div class="stats-sheet-hero">
+                    <div class="stats-sheet-counts">
+                        <div class="stats-sheet-count">
+                            <span class="stats-sheet-num" id="stats-sheet-saved">—</span>
+                            <span class="stats-sheet-label">Saved</span>
+                        </div>
+                        <div class="stats-sheet-count">
+                            <span class="stats-sheet-num" id="stats-sheet-visited">—</span>
+                            <span class="stats-sheet-label">Visited</span>
+                        </div>
+                        <div class="stats-sheet-count">
+                            <span class="stats-sheet-num" id="stats-sheet-streak">—</span>
+                            <span class="stats-sheet-label" id="stats-sheet-streak-label">wk streak</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="stats-divider"></div>
+                <div id="stats-full-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Avatar Change Sheet -->
+    <div id="avatar-sheet" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" onclick="closeAvatarSheet(event)">
+        <div class="modal-sheet avatar-sheet-content">
+            <div class="modal-header">
+                <h3>Profile Photo</h3>
+                <button class="modal-close" onclick="closeAvatarSheet()" aria-label="Close">×</button>
+            </div>
+            <div class="avatar-sheet-body">
+                <label class="avatar-action-btn" for="avatar-file-input">
+                    <span class="avatar-action-icon">📸</span>
+                    <span>Upload new photo</span>
+                </label>
+                <input type="file" id="avatar-file-input" accept="image/*" style="display:none" onchange="onAvatarFileChosen(this)">
+                <button class="avatar-action-btn" onclick="useAvatarTelegramPhoto()" id="avatar-telegram-btn" style="display:none">
+                    <span class="avatar-action-icon">🔄</span>
+                    <span>Use Telegram photo</span>
+                </button>
+                <button class="avatar-action-btn avatar-action-btn--danger" onclick="removeAvatar()">
+                    <span class="avatar-action-icon">🗑️</span>
+                    <span>Remove photo</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Picker -->
+    <div id="share-picker" class="modal-overlay" style="display:none" onclick="closeSharePicker(event)" role="dialog" aria-modal="true" aria-label="Share">
+        <div class="modal-sheet share-picker-sheet">
+            <div class="share-picker-handle"></div>
+            <p class="share-picker-title">Share Place</p>
+            <p id="share-picker-name" class="share-picker-name"></p>
+            <div class="share-picker-row">
+                <button class="spb" onclick="_doShareTelegram()">
+                    <span class="spb-icon">
+                        <!-- Telegram logo -->
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="16" cy="16" r="16" fill="#2AABEE"/>
+                            <path d="M7.2 15.6l14.4-5.6c.7-.2 1.3.2 1 1.3l-2.4 11.4c-.2.8-.7 1-1.3.6l-3.7-2.7-1.8 1.7c-.2.2-.4.3-.8.3l.3-4 7.1-6.4c.3-.3-.1-.4-.5-.2L10.3 18l-3.7-1.2c-.8-.3-.8-.8.6-1.2z" fill="white"/>
+                        </svg>
+                    </span>
+                    <span class="spb-label">Telegram</span>
+                </button>
+                <button class="spb" onclick="_doShareWhatsApp()">
+                    <span class="spb-icon">
+                        <!-- WhatsApp logo -->
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="16" cy="16" r="16" fill="#25D366"/>
+                            <path d="M16 7.5c-4.7 0-8.5 3.8-8.5 8.5 0 1.6.4 3 1.1 4.3L7 25l4.9-1.3c1.2.7 2.6 1 4.1 1 4.7 0 8.5-3.8 8.5-8.5S20.7 7.5 16 7.5zm5 11.8c-.2.5-1 1-1.5 1.1-.4 0-.7.1-2.5-.5-2-.7-3.4-2.7-3.5-2.9-.1-.1-1-1.4-1-2.6 0-1.2.6-1.8.9-2 .2-.3.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.5.8 1.8.8 2 .1.1.1.3 0 .5l-.3.4c-.1.1-.3.3-.1.6.2.3.9 1.3 1.9 2.1 1.3 1 2.3 1.3 2.6 1.5.3.1.5.1.7-.1l.5-.7c.2-.2.4-.2.7-.1l2 1c.2.1.3.2.3.3.1.3-.1 1.1-.3 1.3z" fill="white"/>
+                        </svg>
+                    </span>
+                    <span class="spb-label">WhatsApp</span>
+                </button>
+                <button class="spb" onclick="_doShareCopy()">
+                    <span class="spb-icon">
+                        <!-- Copy icon -->
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="16" cy="16" r="16" fill="var(--secondary-bg)" stroke="var(--border-color)" stroke-width="1.5"/>
+                            <rect x="11" y="13" width="9" height="10" rx="1.5" stroke="var(--text-color)" stroke-width="1.5"/>
+                            <path d="M13 13V11a1 1 0 011-1h6a1 1 0 011 1v8a1 1 0 01-1 1h-2" stroke="var(--text-color)" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                    </span>
+                    <span class="spb-label">Copy</span>
+                </button>
+                <button class="spb" onclick="_doShareMore()">
+                    <span class="spb-icon">
+                        <!-- More / native share icon -->
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="16" cy="16" r="16" fill="var(--secondary-bg)" stroke="var(--border-color)" stroke-width="1.5"/>
+                            <path d="M16 9v9M13 11l3-3 3 3" stroke="var(--text-color)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M11 17v4a1 1 0 001 1h8a1 1 0 001-1v-4" stroke="var(--text-color)" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                    </span>
+                    <span class="spb-label">More</span>
+                </button>
+            </div>
+            <button class="share-picker-cancel" onclick="closeSharePicker()">Cancel</button>
+        </div>
+    </div>
+
     <!-- Edit Profile Modal -->
     <div id="edit-profile-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true">
         <div class="modal-sheet">
@@ -621,9 +910,6 @@
                 <input type="text" id="edit-display-name" class="form-input" placeholder="Your name" maxlength="50">
                 <label class="form-label">Bio</label>
                 <textarea id="edit-bio" class="form-textarea" placeholder="Food lover, explorer..." maxlength="150" rows="3"></textarea>
-                <label class="form-label form-label-check">
-                    <input type="checkbox" id="edit-is-public"> Public profile (friends can find you)
-                </label>
             </div>
             <div class="modal-footer">
                 <button class="btn-primary" onclick="saveProfile()">Save</button>
@@ -633,12 +919,12 @@
 
     <!-- Bottom Navigation -->
     <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
-        <button class="nav-tab" data-tab="home" onclick="switchTab('home')" aria-label="Home">
+        <button class="nav-tab" data-tab="home" onclick="switchTab('home')" aria-label="Discover">
             <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
                 <polyline points="9 22 9 12 15 12 15 22"/>
             </svg>
-            <span class="nav-label">Home</span>
+            <span class="nav-label">Discover</span>
             <span class="nav-badge" id="nav-feed-badge" style="display:none"></span>
         </button>
         <button class="nav-tab active" data-tab="saved" onclick="switchTab('saved')" aria-label="Saved">
@@ -657,6 +943,153 @@
         </button>
     </nav>
 
-    <script src="app.js?v=95"></script>
+    <!-- Stats Drill-Down Sheet (second layer, opens over food story) -->
+    <div id="stats-drilldown-overlay" class="rc-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="stats-drilldown-title" onclick="closeStatsDrilldown()">
+        <div id="stats-drilldown" class="rc-sheet stats-rc-sheet" onclick="event.stopPropagation()">
+            <div class="rc-header" style="padding:16px 20px 0;display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
+                <h3 id="stats-drilldown-title" class="rc-title"></h3>
+                <button class="rc-close-btn" onclick="closeStatsDrilldown()" aria-label="Close">×</button>
+            </div>
+            <div class="rc-body stats-sheet-body" id="stats-drilldown-body"></div>
+        </div>
+    </div>
+
+    <!-- Other User Profile Sheet -->
+    <div id="user-profile-overlay" class="rc-overlay" style="display:none" onclick="closeUserProfileSheet()">
+        <div id="user-profile-sheet" class="rc-sheet" onclick="event.stopPropagation()" role="dialog" aria-label="User profile">
+            <div class="rc-handle"></div>
+            <div class="rc-scroll">
+
+                <!-- Hero card: mirrors own profile layout -->
+                <div class="up-hero-card">
+                    <div class="profile-contact-row">
+                        <div class="profile-avatar-wrap">
+                            <div class="up-avatar-circle" id="up-avatar"></div>
+                        </div>
+                        <div class="profile-contact-info">
+                            <div class="profile-contact-name-row">
+                                <h2 id="up-name" class="profile-name"></h2>
+                                <div id="up-action-area" class="up-action-inline"></div>
+                            </div>
+                            <p id="up-username" class="profile-username"></p>
+                            <div class="profile-bio-row">
+                                <p id="up-bio" class="profile-bio"></p>
+                                <p id="up-member-since" class="profile-member-since"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Big-number stats row (friends only) -->
+                    <div id="up-stats-row" class="profile-stats-row" style="display:none">
+                        <div class="stats-inline-stat">
+                            <span class="stat-num" id="up-stat-saved">—</span>
+                            <span class="stat-label">Saved</span>
+                        </div>
+                        <div class="profile-stats-sep"></div>
+                        <div class="stats-inline-stat">
+                            <span class="stat-num" id="up-stat-visited">—</span>
+                            <span class="stat-label">Visited</span>
+                        </div>
+                        <div class="profile-stats-sep"></div>
+                        <div class="stats-inline-stat">
+                            <span class="stat-num" id="up-stat-streak">0</span>
+                            <span class="stat-label" id="up-stat-streak-label">wk streak</span>
+                        </div>
+                    </div>
+
+                    <!-- Insight card + food story button (friends only) -->
+                    <div id="up-insight-card" class="featured-insight-card" style="display:none"></div>
+                    <button id="up-food-story-btn" class="stats-more-btn up-food-story-btn" style="display:none" onclick="openUpFoodStory()">See their food story →</button>
+                </div>
+
+                <div class="rc-divider"></div>
+
+                <!-- Friend view: Grid / Calendar / Map -->
+                <div id="up-friend-content" style="display:none">
+                    <div class="up-view-toggle">
+                        <button id="up-toggle-grid" class="up-view-btn up-view-btn--active" onclick="switchUpView('grid')">Grid</button>
+                        <button id="up-toggle-cal"  class="up-view-btn" onclick="switchUpView('cal')">Calendar</button>
+                        <button id="up-toggle-map"  class="up-view-btn" onclick="switchUpView('map')">Map</button>
+                    </div>
+                    <div id="up-grid-view">
+                        <div id="up-photo-grid" class="visit-photo-grid"></div>
+                    </div>
+                    <div id="up-cal-view" style="display:none">
+                        <div id="up-calendar" class="up-calendar"></div>
+                    </div>
+                    <div id="up-map-view" style="display:none">
+                        <div id="up-map-inner" style="height:320px;border-radius:12px;overflow:hidden;margin-bottom:16px"></div>
+                    </div>
+                </div>
+
+                <!-- Stranger view -->
+                <div id="up-stranger-content" style="display:none">
+                    <div class="up-locked">
+                        <p class="up-locked-title">Add friend to see their food story</p>
+                        <p id="up-locked-sub" class="up-locked-sub"></p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Friend Food Story Sheet -->
+    <div id="up-food-story-overlay" class="rc-overlay" style="display:none" onclick="closeUpFoodStory()">
+        <div id="up-food-story-sheet" class="rc-sheet" onclick="event.stopPropagation()">
+            <div class="rc-handle"></div>
+            <div class="rc-scroll">
+                <h3 id="up-food-story-title" class="up-food-story-title"></h3>
+                <div id="up-food-story-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shared Restaurant View -->
+    <div id="shared-rc-overlay" class="rc-overlay" style="display:none" onclick="closeSharedRestaurant()">
+        <div id="shared-rc-sheet" class="rc-sheet" onclick="event.stopPropagation()" role="dialog" aria-label="Restaurant review">
+            <div class="rc-handle"></div>
+            <div class="rc-scroll">
+                <div class="src-place-header">
+                    <h2 id="src-place-name" class="src-place-name"></h2>
+                    <p id="src-place-address" class="src-place-address"></p>
+                    <a id="src-maps-link" class="src-maps-link" target="_blank" rel="noopener">Open in Google Maps ↗</a>
+                </div>
+                <div class="rc-divider"></div>
+                <div class="src-review-block">
+                    <div class="src-reviewer-row">
+                        <div id="src-avatar" class="fc-avatar"></div>
+                        <div class="src-reviewer-info">
+                            <span id="src-actor-name" class="src-actor-name"></span>
+                            <span id="src-time" class="src-time"></span>
+                        </div>
+                    </div>
+                    <div id="src-sentiment" class="src-sentiment-row"></div>
+                    <div id="src-scores" class="fc-scores" style="margin-top:8px"></div>
+                    <p id="src-caption" class="src-caption"></p>
+                    <div id="src-photos" class="fc-photos"></div>
+                </div>
+                <div class="rc-divider"></div>
+                <div class="src-cta-row">
+                    <button id="src-save-btn" class="primary-btn src-save-btn" onclick="sharedRcSave()">Save to my list</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Avatar Crop / Pan / Zoom Editor -->
+    <div id="avatar-crop-overlay" style="display:none">
+        <div class="avatar-crop-header">
+            <button class="avatar-crop-cancel-btn" onclick="cancelAvatarCrop()">Cancel</button>
+            <span class="avatar-crop-title">Move and Scale</span>
+            <button class="avatar-crop-confirm-btn" onclick="confirmAvatarCrop()">Use Photo</button>
+        </div>
+        <div class="avatar-crop-canvas-wrap">
+            <canvas id="avatar-crop-canvas"></canvas>
+        </div>
+    </div>
+
+    <script src="analytics.js?v=1"></script>
+    <script src="app.js?v=126"></script>
 </body>
 </html>

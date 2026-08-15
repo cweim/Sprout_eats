@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -98,7 +99,7 @@ async def test_run_instagram_place_pipeline_returns_resolved(monkeypatch):
             "error": None,
         }
 
-    async def fake_resolve(slots):
+    async def fake_resolve(slots, **kwargs):
         return [suggestion]
 
     monkeypatch.setattr("services.instagram_pipeline.extract_instagram_metadata_no_cookie", fake_extract)
@@ -112,6 +113,93 @@ async def test_run_instagram_place_pipeline_returns_resolved(monkeypatch):
     assert result["slots"] == [slot]
     assert result["places"] == [selected]
     assert result["unresolved_suggestions"] == []
+
+
+@pytest.mark.asyncio
+async def test_run_instagram_place_pipeline_times_out_metadata(monkeypatch):
+    async def never_finishes(url: str):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        "services.instagram_pipeline.config.BOT_METADATA_TIMEOUT_SECONDS",
+        0.01,
+    )
+    monkeypatch.setattr(
+        "services.instagram_pipeline.extract_instagram_metadata_no_cookie",
+        never_finishes,
+    )
+
+    result = await run_instagram_place_pipeline("https://www.instagram.com/reel/ABC123/")
+
+    assert result["status"] == "timed_out"
+    assert result["timed_out_stage"] == "metadata"
+    assert result["places"] == []
+
+
+@pytest.mark.asyncio
+async def test_run_instagram_place_pipeline_reports_resolving_stage(monkeypatch):
+    candidate = make_candidate()
+    slot = SimpleNamespace(source="caption_pin", name_candidate="Test Cafe")
+    stages = []
+
+    async def fake_extract(url: str):
+        return {
+            "status": "ok",
+            "metadata_candidate": candidate,
+            "candidates": [candidate],
+            "error": None,
+        }
+
+    async def fake_resolve(slots, **kwargs):
+        return []
+
+    async def record_stage(stage: str):
+        stages.append(stage)
+
+    monkeypatch.setattr("services.instagram_pipeline.extract_instagram_metadata_no_cookie", fake_extract)
+    monkeypatch.setattr("services.instagram_pipeline.metadata_candidate_to_runtime_record", lambda c, source_url: {})
+    monkeypatch.setattr("services.instagram_pipeline.extract_place_evidence_from_metadata", lambda record: [slot])
+    monkeypatch.setattr("services.instagram_pipeline.resolve_place_slots", fake_resolve)
+
+    await run_instagram_place_pipeline(
+        "https://www.instagram.com/reel/ABC123/",
+        on_stage=record_stage,
+    )
+
+    assert stages == ["resolving"]
+
+
+@pytest.mark.asyncio
+async def test_run_instagram_place_pipeline_keeps_partial_resolution(monkeypatch):
+    candidate = make_candidate()
+    resolved_slot = SimpleNamespace(source="caption_pin", name_candidate="Fast Cafe")
+    timed_out_slot = SimpleNamespace(source="caption_pin", name_candidate="Slow Cafe")
+    selected = SimpleNamespace(name="Fast Cafe")
+    suggestions = [
+        SimpleNamespace(status="resolved", selected=selected),
+        SimpleNamespace(status="timed_out", selected=None),
+    ]
+
+    async def fake_extract(url: str):
+        return {"metadata_candidate": candidate, "error": None}
+
+    async def fake_resolve(slots, **kwargs):
+        return suggestions
+
+    monkeypatch.setattr("services.instagram_pipeline.extract_instagram_metadata_no_cookie", fake_extract)
+    monkeypatch.setattr("services.instagram_pipeline.metadata_candidate_to_runtime_record", lambda c, source_url: {})
+    monkeypatch.setattr(
+        "services.instagram_pipeline.extract_place_evidence_from_metadata",
+        lambda record: [resolved_slot, timed_out_slot],
+    )
+    monkeypatch.setattr("services.instagram_pipeline.resolve_place_slots", fake_resolve)
+
+    result = await run_instagram_place_pipeline("https://www.instagram.com/reel/ABC123/")
+
+    assert result["status"] == "partial"
+    assert result["timed_out_stage"] == "resolution"
+    assert result["places"] == [selected]
+    assert result["unresolved_suggestions"] == [suggestions[1]]
 
 
 def test_is_retryable_instagram_error():

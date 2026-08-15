@@ -88,6 +88,12 @@ def upload_photo(user_id: int, review_id: int, file_content: bytes, filename: st
     return _upload_bucket_file(bucket, f"{user_id}/{review_id}", file_content, filename)
 
 
+def upload_avatar(user_id: int, file_content: bytes, filename: str) -> tuple[str, str]:
+    """Upload a profile avatar to Supabase Storage. Returns (public_url, storage_path)."""
+    bucket = get_storage_bucket()
+    return _upload_bucket_file(bucket, f"avatars/{user_id}", file_content, filename)
+
+
 def upload_feedback_attachment(user_id: int, report_id: int, file_content: bytes, filename: str) -> tuple[str, str]:
     """Upload a feedback attachment to Supabase Storage."""
     bucket = get_feedback_bucket()

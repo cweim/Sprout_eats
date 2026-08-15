@@ -4,203 +4,140 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sprout Admin</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=5">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-    <div id="login-screen" class="screen">
+    <div id="login-screen" class="screen auth-screen">
         <div class="auth-card">
-            <h1>Sprout Admin</h1>
-            <p>Sign in with your admin email.</p>
+            <img src="/images/sprout-happy.png" class="auth-sprout" alt="">
+            <span class="eyebrow">Sprout workspace</span>
+            <h1>Welcome back</h1>
+            <p>Sign in to understand how diners discover their next favourite place.</p>
             <form id="login-form">
-                <label>Email</label>
-                <input id="email" type="email" required>
-                <label>Password</label>
-                <input id="password" type="password" required>
-                <button type="submit">Sign In</button>
-                <div id="login-error" class="error"></div>
+                <label for="email">Email</label><input id="email" type="email" autocomplete="email" required>
+                <label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required>
+                <button type="submit">Sign in</button><div id="login-error" class="error" role="alert"></div>
             </form>
         </div>
     </div>
 
     <div id="app-screen" class="screen hidden">
-        <header class="topbar">
-            <div>
-                <h1>Sprout Admin</h1>
-                <p id="admin-email"></p>
+        <aside class="sidebar">
+            <div class="brand"><img src="/images/sprout-happy.png" alt=""><div><strong>sprout</strong><span>Admin garden</span></div></div>
+            <div class="mobile-nav">
+                <label for="mobile-tab-select">Dashboard section</label>
+                <div class="mobile-nav-controls"><select id="mobile-tab-select" aria-label="Dashboard section">
+                    <optgroup label="Understand">
+                        <option value="overview">Overview</option><option value="growth">Growth</option><option value="journey">Journey</option><option value="revenue">Revenue signals</option><option value="insights">Sprout Insights</option><option value="content">Content</option>
+                    </optgroup>
+                    <optgroup label="Operations">
+                        <option value="feedback">Feedback</option><option value="failed-links">Failed links</option><option value="users">Users</option><option value="places">Save Activity</option><option value="restaurants">Restaurants</option>
+                    </optgroup>
+                </select><button id="mobile-sign-out" type="button" aria-label="Sign out" title="Sign out">↪</button></div>
             </div>
-            <button id="sign-out" class="ghost">Sign Out</button>
-        </header>
+            <nav class="tab-nav" aria-label="Admin sections">
+                <span class="nav-label">Understand</span>
+                <button class="tab-btn active" data-tab="overview"><span>⌂</span> Overview</button>
+                <button class="tab-btn" data-tab="growth"><span>↗</span> Growth</button>
+                <button class="tab-btn" data-tab="journey"><span>⌁</span> Journey</button>
+                <button class="tab-btn" data-tab="revenue"><span>◎</span> Revenue signals</button>
+                <button class="tab-btn" data-tab="insights"><span>✦</span> Sprout Insights</button>
+                <button class="tab-btn" data-tab="content"><span>▶</span> Content</button>
+                <span class="nav-label">Operations</span>
+                <button class="tab-btn" data-tab="feedback"><span>☵</span> Feedback</button>
+                <button class="tab-btn" data-tab="failed-links"><span>!</span> Failed links</button>
+                <button class="tab-btn" data-tab="users"><span>♙</span> Users</button>
+                <button class="tab-btn" data-tab="places"><span>⌖</span> Save Activity</button>
+                <button class="tab-btn" data-tab="restaurants"><span>♨</span> Restaurants</button>
+            </nav>
+            <div class="sidebar-footer"><span id="admin-email"></span><button id="sign-out" class="ghost">Sign out</button></div>
+        </aside>
 
         <main class="layout">
-            <section class="overview">
-                <h2>Overview</h2>
-                <div id="overview-cards" class="cards"></div>
+            <header class="topbar">
+                <div class="topbar-title"><span class="eyebrow">Sprout pulse</span><h1 id="page-heading">Overview</h1></div>
+                <button id="mobile-filter-toggle" class="secondary mobile-filter-toggle" type="button" aria-expanded="false" aria-controls="global-filters">Filters <span aria-hidden="true">⌄</span></button>
+                <div id="global-filters" class="global-filters">
+                    <label>From<input id="analytics-start" type="date"></label>
+                    <label>To<input id="analytics-end" type="date"></label>
+                    <label>Source<select id="analytics-source"><option value="">All sources</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="manual">Manual</option><option value="mini_app">Mini App</option><option value="telegram_bot">Telegram bot</option></select></label>
+                    <label>City<input id="analytics-city" type="search" placeholder="All cities"></label>
+                    <button id="analytics-apply" class="filter-apply">Apply</button>
+                </div>
+            </header>
+
+            <div id="analytics-notice" class="notice hidden"></div>
+
+            <section class="tab-panel" data-panel="overview">
+                <div class="hero-card">
+                    <div><span class="eyebrow">North-star metric</span><h2>Weekly Value Users</h2><p>People who saved, visited, reviewed, opened directions, or shared.</p></div>
+                    <div><strong id="north-star-value">—</strong><span id="north-star-delta" class="delta neutral">Loading</span></div>
+                </div>
+                <div id="overview-cards" class="cards kpi-grid"></div>
+                <div class="dashboard-grid">
+                    <article class="panel-card chart-card span-2"><div class="card-heading"><div><span class="eyebrow">Value over time</span><h2>Healthy usage, not opens</h2></div><div class="legend"><span class="dot forest"></span>Value users <span class="dot coral"></span>Saves</div></div><div id="activity-chart" class="chart"></div></article>
+                    <article class="panel-card"><div class="card-heading"><div><span class="eyebrow">Review mix</span><h2>How diners felt</h2></div></div><div id="sentiment-chart"></div></article>
+                    <article class="panel-card span-3"><div class="card-heading"><div><span class="eyebrow">Journey</span><h2>From inspiration to trusted review</h2></div></div><div id="overview-funnel" class="funnel"></div></article>
+                </div>
             </section>
 
-            <div class="tab-container">
-                <nav class="tab-nav">
-                    <button class="tab-btn active" data-tab="feedback">Feedback</button>
-                    <button class="tab-btn" data-tab="users">Users</button>
-                    <button class="tab-btn" data-tab="places">Places</button>
-                    <button class="tab-btn" data-tab="restaurants">Restaurants</button>
-                    <button class="tab-btn" data-tab="failed-links">Failed Links</button>
-                </nav>
+            <section class="tab-panel hidden" data-panel="growth">
+                <div class="section-intro"><div><span class="eyebrow">Growth quality</span><h2>Are new diners building a habit?</h2><p>Activation means the first successful save within 24 hours.</p></div></div>
+                <div id="growth-cards" class="cards kpi-grid"></div>
+                <article class="panel-card"><div class="card-heading"><div><span class="eyebrow">Cohorts</span><h2>D7 and D30 meaningful-action retention</h2></div></div><div id="retention-table" class="retention-wrap"></div></article>
+            </section>
 
-                <!-- Feedback tab -->
-                <section class="tab-panel" data-panel="feedback">
-                    <div class="panel-header">
-                        <h2>Feedback Inbox</h2>
-                        <div class="filters">
-                            <select id="filter-status">
-                                <option value="">All statuses</option>
-                                <option value="new">New</option>
-                                <option value="triaged">Triaged</option>
-                                <option value="in_progress">In Progress</option>
-                                <option value="resolved">Resolved</option>
-                                <option value="wont_fix">Won't Fix</option>
-                            </select>
-                            <select id="filter-category">
-                                <option value="">All categories</option>
-                                <option value="bug">Bug</option>
-                                <option value="feature_request">Feature Request</option>
-                                <option value="places_not_found">Places Not Found</option>
-                                <option value="general_feedback">General Feedback</option>
-                            </select>
-                            <select id="filter-source">
-                                <option value="">All sources</option>
-                                <option value="telegram_bot">Telegram Bot</option>
-                                <option value="mini_app">Mini App</option>
-                            </select>
-                            <input id="filter-search" type="search" placeholder="Search text or link">
-                        </div>
-                    </div>
+            <section class="tab-panel hidden" data-panel="journey">
+                <div class="section-intro"><div><span class="eyebrow">Product journey</span><h2>Where does intent leak?</h2></div></div>
+                <article class="panel-card"><div id="journey-funnel" class="funnel funnel-large"></div></article>
+                <div class="dashboard-grid two"><article class="panel-card"><div class="card-heading"><h2>Saves by source</h2></div><div id="source-bars"></div></article><article class="panel-card"><div class="card-heading"><h2>Extraction failure reasons</h2></div><div id="failure-bars"></div></article><article class="panel-card"><div class="card-heading"><h2>Top cuisines</h2></div><div id="cuisine-bars"></div></article><article class="panel-card"><div class="card-heading"><h2>Top cities</h2></div><div id="city-bars"></div></article></div>
+            </section>
 
-                    <div class="content-grid">
-                        <div class="report-list-wrap">
-                            <div id="feedback-summary" class="summary"></div>
-                            <div id="report-list" class="report-list"></div>
-                        </div>
-                        <div id="report-detail" class="report-detail empty">
-                            <p>Select a report to inspect it.</p>
-                        </div>
-                    </div>
-                </section>
+            <section class="tab-panel hidden" data-panel="revenue">
+                <div class="section-intro"><div><span class="eyebrow">Monetisation readiness</span><h2>Demand restaurants may eventually pay to understand</h2><p>Organic ranking remains separate from commercial attribution.</p></div></div>
+                <div id="revenue-cards" class="cards kpi-grid"></div>
+                <div class="callout"><strong>Qualified Restaurant Intent</strong><p>Unique diner–restaurant interactions containing a directions click, reservation click, or visit. This is the strongest current demand signal.</p></div>
+                <article class="panel-card"><div class="card-heading"><div><span class="eyebrow">Demand leaders</span><h2>Restaurants creating intent</h2></div></div><div id="revenue-rankings"></div></article>
+            </section>
 
-                <!-- Users tab -->
-                <section class="tab-panel hidden" data-panel="users">
-                    <div class="panel-header">
-                        <h2>Users</h2>
-                        <button id="users-refresh-btn" class="secondary">Refresh</button>
-                    </div>
-                    <div id="users-summary" class="summary"></div>
-                    <div class="content-grid">
-                        <div class="report-list-wrap">
-                            <div id="users-list" class="report-list"></div>
-                        </div>
-                        <div id="user-detail" class="report-detail empty">
-                            <p>Select a user to see their saves.</p>
-                        </div>
-                    </div>
-                    <div id="users-empty" class="empty-state hidden">No users yet.</div>
-                </section>
+            <section class="tab-panel hidden" data-panel="insights">
+                <div class="section-intro split"><div><span class="eyebrow">Sprout Insights</span><h2>Turn trusted diner data into stories</h2><p>Private reviews are always excluded. Ten independent reviews are required to publish.</p></div><button id="download-insight" disabled>Download story card</button></div>
+                <div class="insight-controls"><label>Rank by<select id="insight-metric"><option value="overall">Best overall</option><option value="food">Best food</option><option value="value">Best value</option><option value="vibe">Best vibe</option><option value="loved">Most loved</option><option value="saves">Most saved</option></select></label><label>City<input id="insight-city" placeholder="All cities"></label><label>Cuisine<input id="insight-cuisine" placeholder="All cuisines"></label><label>Preview minimum<select id="insight-min"><option value="1">1 review (internal)</option><option value="5">5 reviews</option><option value="10">10 reviews (publishable)</option></select></label><button id="insight-apply" class="filter-apply">Build ranking</button></div>
+                <div class="insights-layout"><article class="panel-card"><div id="insight-method" class="notice inline"></div><div id="insight-rankings"></div></article><aside id="story-card" class="story-card"><span class="story-brand">sprout ✦</span><p class="story-kicker">DINER-POWERED PICKS</p><h3 id="story-title">Top restaurants on Sprout</h3><div id="story-list"></div><p id="story-footnote">Public reviews · Updated today</p></aside></div>
+            </section>
 
-                <!-- Places tab -->
-                <section class="tab-panel hidden" data-panel="places">
-                    <div class="panel-header">
-                        <h2>Recently Saved Places</h2>
-                        <div class="filters">
-                            <select id="places-filter-platform">
-                                <option value="">All platforms</option>
-                                <option value="instagram">Instagram</option>
-                                <option value="tiktok">TikTok</option>
-                            </select>
-                            <button id="places-refresh-btn" class="secondary">Refresh</button>
-                        </div>
-                    </div>
-                    <div id="places-summary" class="summary"></div>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Name</th>
-                                <th>Address</th>
-                                <th>Platform</th>
-                                <th>Visited</th>
-                                <th>Source</th>
-                            </tr>
-                        </thead>
-                        <tbody id="places-tbody"></tbody>
-                    </table>
-                    <div id="places-empty" class="empty-state hidden">No places saved yet.</div>
-                    <div id="places-pagination" class="pagination"></div>
-                </section>
+            <section class="tab-panel hidden" data-panel="content">
+                <div class="section-intro split"><div><span class="eyebrow">Content → table</span><h2>Content attribution</h2><p>Which Instagram and TikTok posts lead to saves, visits and satisfying dining experiences on Sprout.</p></div><div class="content-view-toggle"><button id="content-posts-view" class="active" type="button">Posts</button><button id="content-accounts-view" class="secondary" type="button">Source accounts</button></div></div>
+                <div class="insight-controls content-controls"><label>Platform<select id="content-platform"><option value="">All platforms</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option></select></label><label>Account<input id="content-account" type="search" placeholder="All accounts"></label><label>City<input id="content-city" type="search" placeholder="All cities"></label><label>Cuisine<input id="content-cuisine" type="search" placeholder="All cuisines"></label><label>Sort<select id="content-sort"><option value="saves">Most saves</option><option value="visits">Most visits</option><option value="reviews">Most reviews</option><option value="score">Best outcomes</option><option value="recent">Most recent</option></select></label><button id="content-apply" class="filter-apply">Apply</button></div>
+                <div id="content-summary" class="summary"></div>
+                <div id="content-posts-panel" class="table-scroll"><table class="data-table"><thead><tr><th>Post</th><th>Account</th><th>Format</th><th>Saves</th><th>Rediscoveries</th><th>Visits</th><th>Reviews</th><th>Loved</th><th>Outcome</th></tr></thead><tbody id="content-posts-tbody"></tbody></table></div>
+                <div id="content-accounts-panel" class="table-scroll hidden"><table class="data-table"><thead><tr><th>Source account</th><th>Posts</th><th>Saves</th><th>Rediscoveries</th><th>Unique users</th><th>Restaurants</th><th>Visits</th><th>Reviews</th><th>Loved</th><th>Outcome</th></tr></thead><tbody id="content-accounts-tbody"></tbody></table></div>
+                <div id="content-pagination" class="pagination"></div>
+            </section>
 
-                <!-- Restaurants tab -->
-                <section class="tab-panel hidden" data-panel="restaurants">
-                    <div class="panel-header">
-                        <h2>Restaurants</h2>
-                        <div class="filters">
-                            <select id="restaurants-filter-platform">
-                                <option value="">All platforms</option>
-                                <option value="instagram">Instagram</option>
-                                <option value="tiktok">TikTok</option>
-                            </select>
-                            <button id="restaurants-refresh-btn" class="secondary">Refresh</button>
-                        </div>
-                    </div>
-                    <div id="restaurants-summary" class="summary"></div>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Address</th>
-                                <th>Saves</th>
-                                <th>Users</th>
-                                <th>Saved By</th>
-                                <th>Last Saved</th>
-                            </tr>
-                        </thead>
-                        <tbody id="restaurants-tbody"></tbody>
-                    </table>
-                    <div id="restaurants-empty" class="empty-state hidden">No places saved yet.</div>
-                    <div id="restaurants-pagination" class="pagination"></div>
-                </section>
+            <section class="tab-panel hidden" data-panel="feedback"><div class="panel-header"><h2>Feedback inbox</h2><div class="filters"><select id="filter-status"><option value="">All statuses</option><option value="new">New</option><option value="triaged">Triaged</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option><option value="wont_fix">Won't fix</option></select><select id="filter-category"><option value="">All categories</option><option value="bug">Bug</option><option value="feature_request">Feature request</option><option value="places_not_found">Places not found</option><option value="general_feedback">General feedback</option></select><select id="filter-source"><option value="">All sources</option><option value="telegram_bot">Telegram bot</option><option value="mini_app">Mini App</option></select><input id="filter-search" type="search" placeholder="Search feedback"></div></div><div class="content-grid"><div class="report-list-wrap"><div id="feedback-summary" class="summary"></div><div id="report-list" class="report-list"></div></div><div id="report-detail" class="report-detail empty"><p>Select a report to inspect it.</p></div></div></section>
 
-                <!-- Failed Links tab -->
-                <section class="tab-panel hidden" data-panel="failed-links">
-                    <div class="panel-header">
-                        <h2>Failed Links</h2>
-                        <div class="filters">
-                            <select id="failed-filter-platform">
-                                <option value="">All platforms</option>
-                                <option value="instagram">Instagram</option>
-                                <option value="tiktok">TikTok</option>
-                                <option value="other">Other</option>
-                            </select>
-                            <button id="failed-refresh-btn" class="secondary">Refresh</button>
-                        </div>
-                    </div>
-                    <div id="failed-summary" class="summary"></div>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Platform</th>
-                                <th>Reason</th>
-                                <th>URL</th>
-                                <th>Caption preview</th>
-                            </tr>
-                        </thead>
-                        <tbody id="failed-tbody"></tbody>
-                    </table>
-                    <div id="failed-empty" class="empty-state hidden">No failed extractions recorded yet.</div>
-                    <div id="failed-pagination" class="pagination"></div>
-                </section>
-            </div><!-- /.tab-container -->
+            <section class="tab-panel hidden" data-panel="users"><div class="panel-header"><h2>Users</h2><button id="users-refresh-btn" class="secondary">Refresh</button></div><div id="users-summary" class="summary"></div><div class="content-grid"><div class="report-list-wrap"><div id="users-list" class="report-list"></div></div><div id="user-detail" class="report-detail empty"><p>Select a user to see their saves.</p></div></div><div id="users-empty" class="empty-state hidden">No users yet.</div></section>
+
+            <section class="tab-panel hidden" data-panel="places"><div class="panel-header"><div><span class="eyebrow">Across all users</span><h2>Save activity</h2><p class="muted">A chronological feed of places saved by every Sprout diner.</p></div><div class="filters"><input id="places-filter-search" type="search" placeholder="Restaurant or diner"><input id="places-filter-city" type="search" placeholder="All cities"><select id="places-filter-platform"><option value="">All platforms</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="manual">Manual</option></select><button id="places-refresh-btn" class="secondary">Refresh</button></div></div><div id="places-summary" class="summary"></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Date</th><th>Diner</th><th>Restaurant</th><th>City</th><th>Platform</th><th>Visited</th><th>Source</th></tr></thead><tbody id="places-tbody"></tbody></table></div><div id="places-empty" class="empty-state hidden">No saves match these filters.</div><div id="places-pagination" class="pagination"></div></section>
+
+            <section class="tab-panel hidden" data-panel="restaurants"><div class="panel-header"><div><span class="eyebrow">Cross-user restaurant intelligence</span><h2>Restaurants</h2><p class="muted">Click a restaurant to inspect its saves, visits, sentiment, scores, sources and reviews.</p></div><div class="filters"><input id="restaurants-filter-search" type="search" placeholder="Search restaurants"><input id="restaurants-filter-city" type="search" placeholder="All cities"><select id="restaurants-filter-platform"><option value="">All platforms</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="manual">Manual</option></select><select id="restaurants-sort"><option value="saves">Most saves</option><option value="savers">Most savers</option><option value="visits">Most visits</option><option value="reviews">Most reviews</option><option value="score">Highest score</option><option value="latest">Latest activity</option></select><button id="restaurants-refresh-btn" class="secondary">Refresh</button></div></div><div id="restaurants-summary" class="summary"></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Restaurant</th><th>City / cuisine</th><th>Saves</th><th>Savers</th><th>Visits</th><th>Reviews</th><th>Score</th><th>Last saved</th></tr></thead><tbody id="restaurants-tbody"></tbody></table></div><div id="restaurants-empty" class="empty-state hidden">No restaurants match these filters.</div><div id="restaurants-pagination" class="pagination"></div></section>
+
+            <section class="tab-panel hidden" data-panel="failed-links"><div class="panel-header"><div><h2>Failed links</h2><p class="muted">Every terminal extraction failure, with enough context to diagnose it.</p></div><div class="filters"><select id="failed-filter-platform"><option value="">All platforms</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="other">Other</option></select><button id="failed-refresh-btn" class="secondary">Refresh</button></div></div><div id="failed-summary" class="summary"></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Date</th><th>Platform / flow</th><th>Stage</th><th>Reason</th><th>URL</th><th>Diagnostics</th></tr></thead><tbody id="failed-tbody"></tbody></table></div><div id="failed-empty" class="empty-state hidden">No failed extractions recorded yet.</div><div id="failed-pagination" class="pagination"></div></section>
         </main>
     </div>
-
-    <script src="app.js"></script>
+    <div id="restaurant-drawer-backdrop" class="drawer-backdrop hidden"></div>
+    <aside id="restaurant-drawer" class="restaurant-drawer hidden" role="dialog" aria-modal="true" aria-labelledby="restaurant-drawer-title">
+        <div class="drawer-header"><div><span class="eyebrow">Restaurant overview</span><h2 id="restaurant-drawer-title">Restaurant</h2></div><button id="restaurant-drawer-close" class="drawer-close" type="button" aria-label="Close restaurant overview">×</button></div>
+        <div id="restaurant-drawer-body" class="drawer-body"><div class="loading-cell">Loading restaurant story…</div></div>
+    </aside>
+    <div id="content-drawer-backdrop" class="drawer-backdrop hidden"></div>
+    <aside id="content-drawer" class="restaurant-drawer hidden" role="dialog" aria-modal="true" aria-labelledby="content-drawer-title"><div class="drawer-header"><div><span class="eyebrow">Content outcome</span><h2 id="content-drawer-title">Post</h2></div><button id="content-drawer-close" class="drawer-close" type="button" aria-label="Close content overview">×</button></div><div id="content-drawer-body" class="drawer-body"><div class="loading-cell">Loading content outcomes…</div></div></aside>
+    <canvas id="export-canvas" width="1080" height="1350" class="hidden"></canvas>
+    <script src="app.js?v=5"></script>
 </body>
 </html>

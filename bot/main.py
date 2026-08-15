@@ -14,6 +14,8 @@ from telegram.ext import (
 import config
 from bot.handlers import (
     start_command,
+    settings_command,
+    notification_setting_callback,
     clear_callback,
     action_callback,
     toggle_place_callback,
@@ -22,6 +24,10 @@ from bot.handlers import (
     cancel_selection_callback,
     incorrect_place_callback,
     correction_pick_callback,
+    change_place_callback,
+    correction_session_callback,
+    undo_place_callback,
+    restore_place_callback,
     delete_place_callback,
     unresolved_pick_callback,
     cancel_extraction_callback,
@@ -34,6 +40,7 @@ from bot.handlers import (
     handle_group_url,
     vote_group_place_callback,
     grp_cancel_name_callback,
+    cancel_group_extraction_callback,
 )
 
 # Configure logging
@@ -68,6 +75,7 @@ async def post_init(application):
     await application.bot.set_my_commands([
         BotCommand("start", "\U0001f44b Start here"),
         BotCommand("feedback", "\U0001f6e0\ufe0f Send feedback or report a bug"),
+        BotCommand("settings", "\u2699\ufe0f Notification settings"),
     ])
     # Set the menu button to show commands instead of a web app
     await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
@@ -105,17 +113,23 @@ def main():
 
     # Add handlers
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("settings", settings_command))
+    app.add_handler(CallbackQueryHandler(notification_setting_callback, pattern=r"^notify:(on|off)$"))
     app.add_handler(CallbackQueryHandler(set_name_tg_callback, pattern="^set_name_tg$"))
     app.add_handler(CallbackQueryHandler(clear_callback, pattern="^clear_"))
     app.add_handler(CallbackQueryHandler(action_callback, pattern="^action_"))
-    app.add_handler(CallbackQueryHandler(toggle_place_callback, pattern="^toggle_place_"))
-    app.add_handler(CallbackQueryHandler(save_selected_callback, pattern="^save_selected$"))
-    app.add_handler(CallbackQueryHandler(save_all_callback, pattern="^save_all$"))
-    app.add_handler(CallbackQueryHandler(cancel_selection_callback, pattern="^cancel_selection$"))
+    app.add_handler(CallbackQueryHandler(toggle_place_callback, pattern=r"^(toggle_place_\d+|ps:[a-f0-9]{8}:t:\d+)$"))
+    app.add_handler(CallbackQueryHandler(save_selected_callback, pattern=r"^(save_selected|ps:[a-f0-9]{8}:sel)$"))
+    app.add_handler(CallbackQueryHandler(save_all_callback, pattern=r"^(save_all|ps:[a-f0-9]{8}:all)$"))
+    app.add_handler(CallbackQueryHandler(cancel_selection_callback, pattern=r"^(cancel_selection|ps:[a-f0-9]{8}:cancel)$"))
     app.add_handler(CallbackQueryHandler(incorrect_place_callback, pattern="^incorrect_place_"))
     app.add_handler(CallbackQueryHandler(correction_pick_callback, pattern="^correction_pick_"))
+    app.add_handler(CallbackQueryHandler(change_place_callback, pattern=r"^cp:[a-f0-9]{8}:open$"))
+    app.add_handler(CallbackQueryHandler(correction_session_callback, pattern=r"^cp:[a-f0-9]{8}:(manual|pick:\d+)$"))
+    app.add_handler(CallbackQueryHandler(undo_place_callback, pattern=r"^undo:\d+$"))
+    app.add_handler(CallbackQueryHandler(restore_place_callback, pattern=r"^restore:\d+$"))
     app.add_handler(CallbackQueryHandler(delete_place_callback, pattern="^delete_place_"))
-    app.add_handler(CallbackQueryHandler(unresolved_pick_callback, pattern="^unresolved_pick_"))
+    app.add_handler(CallbackQueryHandler(unresolved_pick_callback, pattern=r"^(unresolved_pick_\d+|ur:[a-f0-9]{8}:\d+)$"))
     app.add_handler(CallbackQueryHandler(cancel_extraction_callback, pattern="^cancel_extraction_"))
     app.add_handler(CallbackQueryHandler(handle_dismiss, pattern=r'^dismiss$'))
     app.add_handler(CallbackQueryHandler(handle_review_callback, pattern=r'^review:'))
@@ -126,6 +140,7 @@ def main():
     # Group map handlers
     app.add_handler(ChatMemberHandler(handle_group_welcome, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(CallbackQueryHandler(grp_cancel_name_callback, pattern=r"^grp_cancel_name_"))
+    app.add_handler(CallbackQueryHandler(cancel_group_extraction_callback, pattern=r"^grp_cancel:[a-f0-9]{8}:\d+$"))
     app.add_handler(CallbackQueryHandler(vote_group_place_callback, pattern=r"^grp_vote_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS, handle_group_url))
 

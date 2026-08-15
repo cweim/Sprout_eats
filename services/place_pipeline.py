@@ -28,12 +28,18 @@ ADDRESS_HINT_RE = re.compile(
 LOCATION_ONLY_CUE_RE = re.compile(
     r"\b("
     r"level|lvl|floor|flr|next\s+to|near|opposite|beside|inside|within|"
-    r"mall|shopping\s+centre|shopping\s+center|city|plaza|"
+    r"mrt|metro\s+station|train\s+station|"
+    r"mall|shopping\s+centre|shopping\s+center|city|plaza|village|"
     r"centre|center|tower|building|financial|house"
     r")\b",
     re.IGNORECASE,
 )
 PRICE_RE = re.compile(r"(?:[$€£]\s*\d+|\bRM\s*\d+|\(\s*RM|\$\d+)", re.IGNORECASE)
+NON_AREA_PARENTHETICAL_RE = re.compile(
+    r"\b(counter|seats?|seating|menu|course|halal|non[- ]halal|"
+    r"homebased|takeaway|take-out|dine-in)\b",
+    re.IGNORECASE,
+)
 HASHTAG_RE = re.compile(r"#[A-Za-z_]\w*")
 MENTION_RE = re.compile(r"@([\w.]+)")
 
@@ -187,6 +193,13 @@ def previous_meaningful_line(lines: list[str], start_index: int) -> Optional[str
 
 def strip_non_address_parentheticals(text: str) -> str:
     """Remove descriptive parentheticals while keeping branch/address hints."""
+    text = re.sub(
+        r"\[\s*(?:non[- ]?halal|halal|muslim[- ]owned)\s*\]",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
     def replace(match: re.Match) -> str:
         inner = clean_text(match.group(1))
         if has_address_hint(inner) or re.search(r"\b(?:ion|raffles|orchard|amoy|pudu|pj|kl)\b", inner, re.IGNORECASE):
@@ -314,6 +327,8 @@ def is_address_only_name(name: str) -> bool:
     if normalized in {"singapore", "malaysia", "kuala lumpur", "petaling jaya"}:
         return True
     if normalized.startswith(("malaysia", "singapore", "federal territory", "wilayah persekutuan")):
+        return True
+    if re.fullmatch(r"\d+[a-z]?", normalized):
         return True
     return has_address_hint(normalized) and len(tokenize_meaningful_words(normalized)) <= 3
 
@@ -486,7 +501,11 @@ def extract_mention_slots(caption: str, *, country_hint: Optional[str] = None) -
         mention_name = normalize_handle(mention)
         mention_context_match = re.search(rf"@{re.escape(mention)}([^.\n]*)", caption)
         mention_context = mention_context_match.group(0) if mention_context_match else f"@{mention}"
-        area = extract_parenthesized_area(mention_context) or country_hint
+        area = (
+            extract_parenthesized_area(mention_context)
+            or extract_explicit_area(mention_context)
+            or country_hint
+        )
 
         if not area and not has_food_context(mention_context) and not caption_has_food:
             continue
@@ -513,9 +532,30 @@ def has_food_context(text: str) -> bool:
 def extract_parenthesized_area(text: str) -> Optional[str]:
     matches = re.findall(r"\(([^)]{3,60})\)", text)
     for match in matches:
-        if not PRICE_RE.search(match) and not re.search(r"\d{5,6}", match):
+        if (
+            not PRICE_RE.search(match)
+            and not re.search(r"\d{5,6}", match)
+            and not NON_AREA_PARENTHETICAL_RE.search(match)
+        ):
             return clean_text(match)
     return None
+
+
+def extract_explicit_area(text: str) -> Optional[str]:
+    """Extract a bounded, location-shaped phrase introduced by 'at' or 'located in'."""
+    match = re.search(
+        r"\b(?:at|located\s+(?:at|in))\s+([^.!?\n]{3,80})",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    candidate = clean_text(match.group(1))
+    if len(candidate.split()) > 8:
+        return None
+    if not LOCATION_ONLY_CUE_RE.search(candidate) and not infer_country_hint(candidate):
+        return None
+    return candidate
 
 
 def infer_country_hint(text: str) -> Optional[str]:
@@ -817,27 +857,26 @@ async def resolve_place_slots(
     slots: list[PlaceEvidence],
     *,
     per_slot_results: int = 5,
+    timeout_seconds: float | None = None,
+    max_concurrency: int = 1,
 ) -> list[PlaceSlotSuggestion]:
-    suggestions: list[PlaceSlotSuggestion] = []
-
-    for slot in slots:
+    async def resolve_slot(slot: PlaceEvidence) -> PlaceSlotSuggestion:
         if not slot.should_resolve:
-            suggestions.append(
-                PlaceSlotSuggestion(
-                    evidence=slot,
-                    status="brand_or_multiple_locations",
-                    reason="Source says multiple locations; not forcing one branch.",
-                )
+            return PlaceSlotSuggestion(
+                evidence=slot,
+                status="brand_or_multiple_locations",
+                reason="Source says multiple locations; not forcing one branch.",
             )
-            continue
 
         if not slot.query:
-            suggestions.append(
-                PlaceSlotSuggestion(evidence=slot, status="unresolved", reason="No query")
+            return PlaceSlotSuggestion(
+                evidence=slot,
+                status="unresolved",
+                reason="No query",
             )
-            continue
 
-        results = await search_place(slot.query, max_results=per_slot_results)
+        async with semaphore:
+            results = await search_place(slot.query, max_results=per_slot_results)
         candidates = results if isinstance(results, list) else ([results] if results else [])
         accepted: list[PlaceResult] = []
 
@@ -854,15 +893,46 @@ async def resolve_place_slots(
 
         accepted.sort(key=lambda item: (item.confidence_score, item.rating or 0, item.rating_count or 0), reverse=True)
 
-        suggestions.append(
-            PlaceSlotSuggestion(
-                evidence=slot,
-                status="resolved" if accepted else "unresolved",
-                candidates=accepted if accepted else candidates,
-                selected=accepted[0] if accepted else None,
-                reason=None if accepted else "No Google result passed slot validation",
-            )
+        return PlaceSlotSuggestion(
+            evidence=slot,
+            status="resolved" if accepted else "unresolved",
+            candidates=accepted if accepted else candidates,
+            selected=accepted[0] if accepted else None,
+            reason=None if accepted else "No Google result passed slot validation",
         )
+
+    if not slots:
+        return []
+
+    semaphore = asyncio.Semaphore(max(1, max_concurrency))
+    if timeout_seconds is None and max_concurrency <= 1:
+        return [await resolve_slot(slot) for slot in slots]
+
+    tasks = [asyncio.create_task(resolve_slot(slot)) for slot in slots]
+    done, pending = await asyncio.wait(tasks, timeout=timeout_seconds)
+
+    if pending:
+        logger.warning(
+            "Place resolution timed out with %d of %d slots still pending",
+            len(pending),
+            len(tasks),
+        )
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    suggestions: list[PlaceSlotSuggestion] = []
+    for slot, task in zip(slots, tasks):
+        if task in pending:
+            suggestions.append(
+                PlaceSlotSuggestion(
+                    evidence=slot,
+                    status="timed_out",
+                    reason="Place lookup timed out",
+                )
+            )
+            continue
+        suggestions.append(task.result())
 
     return suggestions
 

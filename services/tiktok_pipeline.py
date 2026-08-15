@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
+import config
 from services.metadata_normalizer import metadata_candidate_to_runtime_record
 from services.place_pipeline import extract_place_evidence_from_metadata, resolve_place_slots
 from services.tiktok_public import (
@@ -54,15 +56,36 @@ def _choose_best_error(candidates: list[Any]) -> str | None:
     return errored[0].error
 
 
-async def run_tiktok_place_pipeline(url: str) -> dict[str, Any]:
-    candidates = list(
-        await asyncio.gather(
-            extract_tiktok_public_html(url),
-            extract_tiktok_oembed(url),
-            extract_tiktok_api(url),
-            extract_tiktok_ytdlp(url),
+async def run_tiktok_place_pipeline(
+    url: str,
+    *,
+    on_stage: Callable[[str], Awaitable[None]] | None = None,
+) -> dict[str, Any]:
+    try:
+        candidates = list(
+            await asyncio.wait_for(
+                asyncio.gather(
+                    extract_tiktok_public_html(url),
+                    extract_tiktok_oembed(url),
+                    extract_tiktok_api(url),
+                    extract_tiktok_ytdlp(url),
+                ),
+                timeout=config.BOT_METADATA_TIMEOUT_SECONDS,
+            )
         )
-    )
+    except asyncio.TimeoutError:
+        logger.warning("TikTok metadata extraction timed out for %s", url)
+        return {
+            "status": "timed_out",
+            "timed_out_stage": "metadata",
+            "metadata_source": None,
+            "metadata_candidate": None,
+            "slots": [],
+            "suggestions": [],
+            "places": [],
+            "unresolved_suggestions": [],
+            "error": "TikTok metadata extraction timed out",
+        }
 
     best = _choose_best_candidate(candidates)
     if not best:
@@ -92,7 +115,13 @@ async def run_tiktok_place_pipeline(url: str) -> dict[str, Any]:
             "error": None,
         }
 
-    suggestions = await resolve_place_slots(slots)
+    if on_stage:
+        await on_stage("resolving")
+    suggestions = await resolve_place_slots(
+        slots,
+        timeout_seconds=config.BOT_PLACE_RESOLUTION_TIMEOUT_SECONDS,
+        max_concurrency=config.BOT_PLACE_RESOLUTION_CONCURRENCY,
+    )
     places = []
     unresolved_suggestions = []
     for suggestion in suggestions:
@@ -101,9 +130,14 @@ async def run_tiktok_place_pipeline(url: str) -> dict[str, Any]:
         else:
             unresolved_suggestions.append(suggestion)
 
-    status = "resolved" if places else "metadata_only"
+    resolution_timed_out = any(suggestion.status == "timed_out" for suggestion in suggestions)
+    if resolution_timed_out:
+        status = "partial" if places else "timed_out"
+    else:
+        status = "resolved" if places else "metadata_only"
     return {
         "status": status,
+        "timed_out_stage": "resolution" if resolution_timed_out else None,
         "metadata_source": best.source,
         "metadata_candidate": best,
         "slots": slots,

@@ -515,6 +515,10 @@ class PlaceResult:
     price_level: Optional[str] = None  # "FREE", "INEXPENSIVE", etc.
     opening_hours: Optional[str] = None  # JSON array of 7 weekday description strings
     description: Optional[str] = None   # Editorial summary from Google Places
+    country_code: Optional[str] = None
+    city: Optional[str] = None
+    neighborhood: Optional[str] = None
+    primary_cuisine: Optional[str] = None
     confidence_score: int = 0
     confidence_label: str = "possible"
     confidence_reason: Optional[str] = None
@@ -561,7 +565,7 @@ async def search_place(
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": config.GOOGLE_API_KEY,
-        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location,places.id,places.types,places.rating,places.userRatingCount,places.priceLevel,places.regularOpeningHours,places.editorialSummary",
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.addressComponents,places.location,places.id,places.types,places.rating,places.userRatingCount,places.priceLevel,places.regularOpeningHours,places.editorialSummary",
     }
 
     body = {
@@ -631,6 +635,28 @@ async def search_place(
                 editorial = place.get("editorialSummary", {})
                 description = editorial.get("text") if isinstance(editorial, dict) else None
 
+                components = place.get("addressComponents", []) or []
+                component_by_type = {}
+                for component in components:
+                    for component_type in component.get("types", []) or []:
+                        component_by_type.setdefault(component_type, component)
+                country = component_by_type.get("country", {})
+                locality = (
+                    component_by_type.get("locality")
+                    or component_by_type.get("postal_town")
+                    or component_by_type.get("administrative_area_level_2")
+                    or {}
+                )
+                neighborhood = (
+                    component_by_type.get("neighborhood")
+                    or component_by_type.get("sublocality_level_1")
+                    or {}
+                )
+                cuisine_type = next(
+                    (t for t in types if t.endswith("_restaurant") and t not in {"restaurant", "fast_food_restaurant"}),
+                    None,
+                )
+
                 results.append(
                     PlaceResult(
                         name=place.get("displayName", {}).get("text", ""),
@@ -644,6 +670,10 @@ async def search_place(
                         price_level=price_level,
                         opening_hours=opening_hours,
                         description=description,
+                        country_code=country.get("shortText"),
+                        city=locality.get("longText"),
+                        neighborhood=neighborhood.get("longText"),
+                        primary_cuisine=(cuisine_type.removesuffix("_restaurant").replace("_", " ").title() if cuisine_type else None),
                     )
                 )
 

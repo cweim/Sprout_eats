@@ -5,8 +5,10 @@ import html
 import re
 import uuid
 import warnings
+from functools import wraps
 from io import BytesIO
 from urllib.parse import quote
+from weakref import WeakValueDictionary
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.error import BadRequest
 from telegram.warnings import PTBUserWarning
@@ -37,6 +39,8 @@ from services.instagram_pipeline import (
     run_instagram_place_pipeline,
 )
 from services.tiktok_pipeline import run_tiktok_place_pipeline
+from services.deep_links import build_webapp_url
+from bot.telemetry import record_bot_event
 from database import supabase_repository as repository
 from database.supabase_client import (
     upload_photo as storage_upload_photo,
@@ -45,6 +49,26 @@ from database.supabase_client import (
 from database.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
+
+_user_flow_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
+
+
+def _get_user_flow_lock(user_id: int) -> asyncio.Lock:
+    lock = _user_flow_locks.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _user_flow_locks[user_id] = lock
+    return lock
+
+
+def serialized_user_flow(handler):
+    """Serialize state-changing bot callbacks for one Telegram user."""
+    @wraps(handler)
+    async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        async with _get_user_flow_lock(update.effective_user.id):
+            return await handler(update, context)
+
+    return wrapped
 
 warnings.filterwarnings(
     "ignore",
@@ -236,7 +260,7 @@ def build_google_maps_url(place) -> str:
     return f"https://www.google.com/maps/search/?api=1&query={quote(name)}"
 
 
-def build_saved_place_message(place, source_url: str | None = None) -> str:
+def build_saved_place_message(place, source_url: str | None = None, *, created: bool = True) -> str:
     """Build a concise saved-place confirmation with labeled links."""
     name = html.escape(str(get_place_value(place, "name", "this place")))
     address = get_place_value(place, "address")
@@ -244,7 +268,8 @@ def build_saved_place_message(place, source_url: str | None = None) -> str:
     rating_count = get_place_value(place, "rating_count") or get_place_value(place, "place_rating_count")
     types = get_place_value(place, "types") or get_place_value(place, "place_types")
 
-    lines = [f"✅ Saved <b>{name}</b>"]
+    status = "✅ Saved" if created else "✓ Already in your saves"
+    lines = [f"{status} <b>{name}</b>"]
     if address:
         lines.append(f"📍 {html.escape(str(address))}")
 
@@ -258,14 +283,34 @@ def build_saved_place_message(place, source_url: str | None = None) -> str:
     if meta_parts:
         lines.append(" · ".join(meta_parts))
 
-    links = [
-        f'<a href="{build_google_maps_url(place)}">Google Maps</a>'
-    ]
-    if source_url:
-        links.append(f'<a href="{source_url}">Original</a>')
-    lines.append("🔗 " + " · ".join(links))
-
     return "\n".join(lines)
+
+
+def build_saved_place_keyboard(
+    place,
+    *,
+    saved_place_id: int,
+    correction_session_id: str,
+    created: bool,
+    source_url: str | None = None,
+) -> InlineKeyboardMarkup:
+    """One coherent action surface for a save confirmation."""
+    rows = []
+    if config.WEBAPP_URL:
+        rows.append([InlineKeyboardButton(
+            "🌱 Open in Sprout",
+            web_app=WebAppInfo(url=build_webapp_url(config.WEBAPP_URL, "place", saved_place_id)),
+        )])
+    links = [InlineKeyboardButton("📍 Maps", url=build_google_maps_url(place))]
+    if source_url:
+        links.append(InlineKeyboardButton("▶️ Original", url=source_url))
+    rows.append(links)
+    edit_row = []
+    if created:
+        edit_row.append(InlineKeyboardButton("↩️ Undo", callback_data=f"undo:{saved_place_id}"))
+    edit_row.append(InlineKeyboardButton("Change Place", callback_data=f"cp:{correction_session_id}:open"))
+    rows.append(edit_row)
+    return InlineKeyboardMarkup(rows)
 
 
 async def safe_edit_status(status_msg, text: str):
@@ -274,6 +319,43 @@ async def safe_edit_status(status_msg, text: str):
         await status_msg.edit_text(text)
     except Exception:
         logger.warning("Could not edit status message", exc_info=True)
+
+
+def log_failed_link(
+    *,
+    user_id: int,
+    url: str,
+    platform: str,
+    reason: str,
+    failure_stage: str,
+    flow: str = "private",
+    caption_preview: str = "",
+    error_message: str | None = None,
+    request_id: str | None = None,
+    details: dict | None = None,
+) -> None:
+    """Best-effort failure capture; diagnostics must never break the user flow."""
+    try:
+        repository.log_failed_extraction(
+            user_id,
+            url,
+            platform=platform,
+            caption_preview=caption_preview,
+            reason=reason,
+            failure_stage=failure_stage,
+            flow=flow,
+            error_message=error_message,
+            request_id=request_id,
+            details=details,
+        )
+    except Exception:
+        logger.warning(
+            "Could not record failed link: user_id=%s platform=%s reason=%s",
+            user_id,
+            platform,
+            reason,
+            exc_info=True,
+        )
 
 
 def ensure_bot_user(update: Update):
@@ -300,6 +382,7 @@ async def notify_friends_of_review(
 ) -> None:
     """Send bot notification to all friends when someone writes a review."""
     friend_ids = repository.get_friend_ids(reviewer_id)
+    friend_ids = repository.filter_friend_activity_notification_recipients(friend_ids)
     if not friend_ids:
         return
     reviewer = repository.get_user_by_id(reviewer_id)
@@ -314,7 +397,7 @@ async def notify_friends_of_review(
         try:
             keyboard = None
             if bot_username and google_place_id:
-                app_url = f"{config.WEBAPP_URL}?startapp=place_{google_place_id}" if config.WEBAPP_URL else None
+                app_url = build_webapp_url(config.WEBAPP_URL, "gplace", google_place_id) if config.WEBAPP_URL else None
                 if app_url:
                     keyboard = InlineKeyboardMarkup([[
                         InlineKeyboardButton("See Review 👀", web_app=WebAppInfo(url=app_url))
@@ -392,7 +475,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         place = repository.get_group_place_by_id(place_id)
         if place and config.WEBAPP_URL:
             place_name = place.get("name", "")
-            review_url = f"{config.WEBAPP_URL}?startapp=review_{place_id}&pn={quote(place_name)}"
+            review_url = build_webapp_url(config.WEBAPP_URL, "review", place_id, pn=place_name)
             await update.message.reply_text(
                 f"How was <b>{html.escape(place_name)}</b>? Leave a review 👇",
                 parse_mode="HTML",
@@ -414,30 +497,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         import asyncio
         asyncio.create_task(_fetch_and_store_avatar(context.bot, user_id))
 
-        # Check if display_name already set (e.g. user did /start again)
+        first_name = update.effective_user.first_name or "there"
+        text = (
+            f"Hey {first_name}! 👋 Sprout turns food videos into places you can actually find later.\n\n"
+            "Send an Instagram Reel or TikTok link. I’ll identify the restaurant or cafe, "
+            "save it to your map, and let you correct the match if needed."
+        )
+        keyboard = [[InlineKeyboardButton("❓ See how it works", callback_data="action_howto")]]
+        if config.WEBAPP_URL:
+            keyboard.append([InlineKeyboardButton("🌱 Open Sprout", web_app=WebAppInfo(url=config.WEBAPP_URL))])
+        # Naming is optional and must never block the first save.
         existing_user = repository.get_my_profile(user_id)
-        if existing_user and existing_user.get("display_name"):
-            # Already named — show normal welcome
-            text = (
-                "Hey! 👋 I save food places from Instagram Reels and TikTok.\n\n"
-                "Send me a video link and I'll extract the restaurant or cafe "
-                "and pin it to your personal map. 🗺️"
-            )
-            keyboard = []
-            if config.WEBAPP_URL:
-                keyboard.append([InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))])
-            keyboard.append([InlineKeyboardButton("❓ How it works", callback_data="action_howto")])
-        else:
-            # New user — ask for display name
-            first_name = update.effective_user.first_name or "there"
-            context.user_data["waiting_display_name"] = True
-            text = (
-                f"Hey {first_name}! 👋 I save food places from Instagram Reels and TikTok.\n\n"
-                "First — what should friends call you on Sprout?"
-            )
-            keyboard = [[
-                InlineKeyboardButton(f"Use {first_name} ✓", callback_data=f"set_name_tg")
-            ]]
+        if not (existing_user and existing_user.get("display_name")):
+            keyboard.append([InlineKeyboardButton(f"Use {first_name} as my name", callback_data="set_name_tg")])
     else:
         # Returning user — show personalised summary
         recent = repository.get_most_recent_place(user_id)
@@ -467,6 +539,37 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard.append([InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))])
 
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show bot-controlled social notification preferences."""
+    ensure_bot_user(update)
+    enabled = repository.get_friend_activity_notification_enabled(update.effective_user.id)
+    await update.message.reply_text(
+        f"Notifications\n\nFriend visits and reviews: {'On' if enabled else 'Off'}",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                "Turn off" if enabled else "Turn on",
+                callback_data=f"notify:{'off' if enabled else 'on'}",
+            )
+        ]]),
+    )
+
+
+async def notification_setting_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    enabled = query.data == "notify:on"
+    repository.set_friend_activity_notification_enabled(update.effective_user.id, enabled)
+    await query.answer("Updated")
+    await query.edit_message_text(
+        f"Notifications\n\nFriend visits and reviews: {'On' if enabled else 'Off'}",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                "Turn off" if enabled else "Turn on",
+                callback_data=f"notify:{'off' if enabled else 'on'}",
+            )
+        ]]),
+    )
 
 
 async def clear_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -666,15 +769,34 @@ async def prompt_tiktok_manual_fallback(
     context: ContextTypes.DEFAULT_TYPE,
     source_url: str,
     *,
+    user_id: int | None = None,
     unresolved_candidates: list[dict] | None = None,
 ) -> None:
     _set_tiktok_fallback_pending(context, source_url)
     if unresolved_candidates:
-        context.user_data["pending_unresolved_slots"] = unresolved_candidates[:6]
+        session_id = uuid.uuid4().hex[:8] if user_id is not None else "legacy"
+        candidates = unresolved_candidates[:6]
+        if user_id is not None:
+            repository.save_bot_session_v2(
+                user_id,
+                "unresolved_selection",
+                session_id,
+                {
+                    "pending_unresolved_slots": candidates,
+                    "pending_url": source_url,
+                    "pending_platform": "tiktok",
+                },
+            )
+        else:
+            context.user_data["pending_unresolved_slots"] = candidates
         await status_msg.edit_text(
             "I found possible place matches, but couldn't verify them confidently enough to auto-save.\n"
             f"{build_reviewable_candidate_message(unresolved_candidates)}\n\n"
-            "Reply with a number to pick one, or type the place name to search manually."
+            "Tap a suggestion, or type the place name to search manually.",
+            reply_markup=build_reviewable_candidate_keyboard(
+                unresolved_candidates,
+                session_id=session_id,
+            ),
         )
     else:
         await status_msg.edit_text(
@@ -692,16 +814,40 @@ def _set_instagram_fallback_pending(context: ContextTypes.DEFAULT_TYPE, source_u
     }
 
 
-async def prompt_instagram_manual_fallback(status_msg, context: ContextTypes.DEFAULT_TYPE, source_url: str, *, unresolved_candidates: list[dict] | None = None) -> None:
+async def prompt_instagram_manual_fallback(
+    status_msg,
+    context: ContextTypes.DEFAULT_TYPE,
+    source_url: str,
+    *,
+    user_id: int | None = None,
+    unresolved_candidates: list[dict] | None = None,
+) -> None:
     context.user_data["pending_url"] = source_url
     context.user_data["pending_platform"] = "instagram"
     if unresolved_candidates:
-        context.user_data["pending_unresolved_slots"] = unresolved_candidates[:6]
+        session_id = uuid.uuid4().hex[:8] if user_id is not None else "legacy"
+        candidates = unresolved_candidates[:6]
+        if user_id is not None:
+            repository.save_bot_session_v2(
+                user_id,
+                "unresolved_selection",
+                session_id,
+                {
+                    "pending_unresolved_slots": candidates,
+                    "pending_url": source_url,
+                    "pending_platform": "instagram",
+                },
+            )
+        else:
+            context.user_data["pending_unresolved_slots"] = candidates
         await status_msg.edit_text(
             "I found possible place matches, but couldn't verify them confidently enough to auto-save.\n"
             f"{build_reviewable_candidate_message(unresolved_candidates)}\n\n"
             "Tap a suggestion to save it, or reply with the place name.",
-            reply_markup=build_reviewable_candidate_keyboard(unresolved_candidates),
+            reply_markup=build_reviewable_candidate_keyboard(
+                unresolved_candidates,
+                session_id=session_id,
+            ),
         )
         return
 
@@ -728,7 +874,12 @@ async def _save_single_place_result(
     source_transcript_en: str | None = None,
     alt_candidates: list | None = None,
 ):
-    saved_place = repository.add_place(
+    record_bot_event(
+        user_id, "extraction_resolved", entity_type="extraction",
+        entity_id=context.user_data.get("active_extraction_task_id"),
+        metadata={"platform": source_platform, "result": "candidate_found"},
+    )
+    outcome = repository.add_place_with_outcome(
         user_id=user_id,
         name=place.name,
         address=place.address,
@@ -747,33 +898,63 @@ async def _save_single_place_result(
         place_price_level=place.price_level,
         place_opening_hours=place.opening_hours,
         place_description=place.description,
+        country_code=getattr(place, "country_code", None),
+        city=getattr(place, "city", None),
+        neighborhood=getattr(place, "neighborhood", None),
+        primary_cuisine=getattr(place, "primary_cuisine", None),
         source_language=source_language,
         source_transcript=source_transcript,
         source_transcript_en=source_transcript_en,
     )
 
-    await update.message.reply_location(
-        latitude=place.latitude,
-        longitude=place.longitude,
-    )
-
-    confirmation = build_saved_place_message(place, source_url=source_url)
-
+    saved_place = outcome.get("place")
+    created = bool(outcome.get("created"))
     saved_place_id = get_saved_place_id(saved_place)
-    correction_keyboard = None
-    if saved_place_id:
-        correction_keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton(
-                "This is incorrect",
-                callback_data=f"incorrect_place_{saved_place_id}",
+    if not saved_place_id:
+        log_failed_link(
+            user_id=user_id,
+            url=source_url,
+            platform=source_platform,
+            reason="save_failed",
+            failure_stage="persistence",
+            request_id=context.user_data.get("active_extraction_task_id"),
+            details={"place_name": place.name},
+        )
+        await update.message.reply_text("I found the place, but couldn't save it. Please try again.")
+        return None
+
+    correction_session_id = uuid.uuid4().hex[:8]
+    serialised_candidates = []
+    for candidate in alt_candidates or []:
+        serialised_candidates.append({
+            key: get_place_value(candidate, key)
+            for key in (
+                "name", "address", "latitude", "longitude", "place_id", "types",
+                "rating", "rating_count", "price_level", "opening_hours",
+                "confidence_score", "matched_source_type", "description",
+                "country_code", "city", "neighborhood", "primary_cuisine",
             )
-        ]])
-        context.user_data["correction_place_context"] = {
+        })
+    repository.save_bot_session_v2(
+        user_id,
+        "place_correction",
+        correction_session_id,
+        {
             "place_id": saved_place_id,
             "source_url": source_url,
             "source_platform": source_platform,
-            "candidates": alt_candidates or [],
-        }
+            "candidates": serialised_candidates,
+        },
+    )
+
+    confirmation = build_saved_place_message(saved_place or place, source_url=source_url, created=created)
+    correction_keyboard = build_saved_place_keyboard(
+        saved_place or place,
+        saved_place_id=saved_place_id,
+        correction_session_id=correction_session_id,
+        created=created,
+        source_url=source_url,
+    )
 
     await update.message.reply_text(
         confirmation,
@@ -781,12 +962,22 @@ async def _save_single_place_result(
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
+    if created:
+        record_bot_event(
+            user_id, "extraction_succeeded", entity_type="extraction",
+            entity_id=context.user_data.get("active_extraction_task_id") or saved_place_id,
+            metadata={"platform": source_platform, "result": "saved"},
+        )
+    else:
+        record_bot_event(user_id, "place_duplicate", entity_type="place", entity_id=saved_place_id, metadata={"platform": source_platform})
+    return outcome
 
 
 async def _start_multi_place_selection(
     context: ContextTypes.DEFAULT_TYPE,
     status_msg,
     *,
+    user_id: int,
     places: list,
     source_url: str,
     source_platform: str,
@@ -800,7 +991,8 @@ async def _start_multi_place_selection(
     match_source: str | None = None,
     unresolved_message: str | None = None,
 ):
-    context.user_data["pending_places"] = [
+    session_id = uuid.uuid4().hex[:8]
+    pending_places = [
         {
             "name": p.name,
             "address": p.address,
@@ -817,12 +1009,14 @@ async def _start_multi_place_selection(
             "confidence_reason": p.confidence_reason,
             "matched_query": p.matched_query,
             "matched_source_type": p.matched_source_type,
+            "country_code": getattr(p, "country_code", None),
+            "city": getattr(p, "city", None),
+            "neighborhood": getattr(p, "neighborhood", None),
+            "primary_cuisine": getattr(p, "primary_cuisine", None),
         }
         for p in places
     ]
-    context.user_data["pending_url"] = source_url
-    context.user_data["pending_platform"] = source_platform
-    context.user_data["pending_video_meta"] = {
+    video_meta = {
         "source_title": source_title,
         "source_uploader": source_uploader,
         "source_duration": source_duration,
@@ -835,30 +1029,65 @@ async def _start_multi_place_selection(
     }
 
     high_confidence_indices = {
-        i for i, place in enumerate(context.user_data["pending_places"])
+        i for i, place in enumerate(pending_places)
         if place.get("confidence_label") == "high"
     }
-    context.user_data["selected_indices"] = high_confidence_indices or {0}
-    _persist_place_session(context, update.effective_user.id)
+    selected = high_confidence_indices or {0}
+    session = {
+        "pending_places": pending_places,
+        "selected_indices": list(selected),
+        "pending_video_meta": video_meta,
+        "pending_url": source_url,
+        "pending_platform": source_platform,
+        "request_id": context.user_data.get("active_extraction_task_id"),
+    }
+    _persist_place_session(context, user_id, session_id, session)
+    record_bot_event(
+        user_id, "extraction_resolved", entity_type="extraction",
+        entity_id=session.get("request_id") or session_id,
+        metadata={"platform": source_platform, "result": "candidates_presented"},
+    )
 
-    selected = context.user_data["selected_indices"]
-    keyboard = build_selection_keyboard(context.user_data["pending_places"], selected)
+    keyboard = build_selection_keyboard(pending_places, selected, session_id=session_id)
     review_text = build_selection_message(
-        context.user_data["pending_places"],
+        pending_places,
         selected,
-        context.user_data["pending_video_meta"],
+        video_meta,
     )
 
     await status_msg.edit_text(review_text, reply_markup=keyboard)
 
 
-async def _handle_instagram_no_cookie_url(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, status_msg) -> bool:
+async def _handle_instagram_no_cookie_url(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    status_msg,
+    *,
+    request_id: str | None = None,
+) -> bool:
     user_id = update.effective_user.id
     await status_msg.edit_text("Reading the caption... 📝")
-    pipeline = await run_instagram_place_pipeline(text)
 
-    if pipeline["status"] == "failed":
-        logger.warning("Instagram no-cookie pipeline failed: user_id=%s url=%s error=%s", user_id, text, pipeline.get("error"))
+    async def show_stage(stage: str) -> None:
+        if stage == "resolving":
+            await status_msg.edit_text("Resolving place names... 🔎")
+
+    pipeline = await run_instagram_place_pipeline(text, on_stage=show_stage)
+
+    if pipeline["status"] == "failed" or pipeline.get("timed_out_stage") == "metadata":
+        logger.warning("Instagram no-cookie pipeline failed: user_id=%s error=%s", user_id, pipeline.get("error"))
+        timed_out = pipeline.get("timed_out_stage") == "metadata"
+        log_failed_link(
+            user_id=user_id,
+            url=text,
+            platform="instagram",
+            reason="metadata_timeout" if timed_out else "metadata_failed",
+            failure_stage="metadata",
+            error_message=pipeline.get("error"),
+            request_id=request_id,
+            details={"pipeline_status": pipeline.get("status")},
+        )
         await prompt_instagram_manual_fallback(status_msg, context, text)
         return True
 
@@ -869,26 +1098,38 @@ async def _handle_instagram_no_cookie_url(update: Update, context: ContextTypes.
     hashtags = getattr(candidate, "hashtags", []) if candidate else []
     source_hashtags = ",".join(hashtags) if hashtags else None
     slots = pipeline.get("slots") or []
-    suggestions = pipeline.get("suggestions") or []
     places = pipeline.get("places") or []
     unresolved_suggestions = pipeline.get("unresolved_suggestions") or []
 
-    if slots:
-        await status_msg.edit_text("Resolving place names... 🔎")
-
     if not places:
         reviewable_candidates = collect_reviewable_unresolved_candidates(unresolved_suggestions)
-        if not reviewable_candidates:
-            caption_preview = (getattr(candidate, "description", "") or "")[:300]
-            reason = "no_slots" if not slots else "no_google_match"
-            try:
-                repository.log_failed_extraction(user_id, text, platform="instagram", caption_preview=caption_preview, reason=reason)
-            except Exception:
-                pass
+        resolution_timed_out = pipeline.get("timed_out_stage") == "resolution"
+        reason = (
+            "resolution_timeout" if resolution_timed_out
+            else "needs_confirmation" if reviewable_candidates
+            else "no_slots" if not slots
+            else "no_google_match"
+        )
+        log_failed_link(
+            user_id=user_id,
+            url=text,
+            platform="instagram",
+            reason=reason,
+            failure_stage="resolution" if reason != "no_slots" else "extraction",
+            caption_preview=(getattr(candidate, "description", "") or "")[:300],
+            request_id=request_id,
+            details={
+                "metadata_source": pipeline.get("metadata_source"),
+                "slot_count": len(slots),
+                "reviewable_candidate_count": len(reviewable_candidates),
+                "unresolved_count": len(unresolved_suggestions),
+            },
+        )
         await prompt_instagram_manual_fallback(
             status_msg,
             context,
             text,
+            user_id=user_id,
             unresolved_candidates=reviewable_candidates if reviewable_candidates else None,
         )
         return True
@@ -897,7 +1138,6 @@ async def _handle_instagram_no_cookie_url(update: Update, context: ContextTypes.
     match_source = resolved_sources[0] if resolved_sources else (slots[0].source if slots else None)
 
     if len(places) == 1 and not unresolved_suggestions:
-        await status_msg.delete()
         await _save_single_place_result(
             update,
             context,
@@ -910,12 +1150,14 @@ async def _handle_instagram_no_cookie_url(update: Update, context: ContextTypes.
             source_duration=source_duration,
             source_hashtags=source_hashtags,
         )
+        await status_msg.delete()
         _clear_instagram_fallback_pending(context)
         return True
 
     await _start_multi_place_selection(
         context,
         status_msg,
+        user_id=user_id,
         places=places,
         source_url=text,
         source_platform="instagram",
@@ -930,13 +1172,36 @@ async def _handle_instagram_no_cookie_url(update: Update, context: ContextTypes.
     return True
 
 
-async def _handle_tiktok_url(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, status_msg) -> None:
+async def _handle_tiktok_url(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    status_msg,
+    *,
+    request_id: str | None = None,
+) -> None:
     user_id = update.effective_user.id
     await status_msg.edit_text("Reading the caption... 📝")
-    pipeline = await run_tiktok_place_pipeline(text)
 
-    if pipeline["status"] == "failed":
-        logger.warning("TikTok pipeline failed: user_id=%s url=%s error=%s", user_id, text, pipeline.get("error"))
+    async def show_stage(stage: str) -> None:
+        if stage == "resolving":
+            await status_msg.edit_text("Resolving place names... 🔎")
+
+    pipeline = await run_tiktok_place_pipeline(text, on_stage=show_stage)
+
+    if pipeline["status"] == "failed" or pipeline.get("timed_out_stage") == "metadata":
+        logger.warning("TikTok pipeline failed: user_id=%s error=%s", user_id, pipeline.get("error"))
+        timed_out = pipeline.get("timed_out_stage") == "metadata"
+        log_failed_link(
+            user_id=user_id,
+            url=text,
+            platform="tiktok",
+            reason="metadata_timeout" if timed_out else "metadata_failed",
+            failure_stage="metadata",
+            error_message=pipeline.get("error"),
+            request_id=request_id,
+            details={"pipeline_status": pipeline.get("status")},
+        )
         await prompt_tiktok_manual_fallback(status_msg, context, text)
         return
 
@@ -950,22 +1215,35 @@ async def _handle_tiktok_url(update: Update, context: ContextTypes.DEFAULT_TYPE,
     places = pipeline.get("places") or []
     unresolved_suggestions = pipeline.get("unresolved_suggestions") or []
 
-    if slots:
-        await status_msg.edit_text("Resolving place names... 🔎")
-
     if not places:
         reviewable_candidates = collect_reviewable_unresolved_candidates(unresolved_suggestions)
-        if not reviewable_candidates:
-            caption_preview = (getattr(candidate, "description", "") or "")[:300]
-            reason = "no_slots" if not slots else "no_google_match"
-            try:
-                repository.log_failed_extraction(user_id, text, platform="tiktok", caption_preview=caption_preview, reason=reason)
-            except Exception:
-                pass
+        resolution_timed_out = pipeline.get("timed_out_stage") == "resolution"
+        reason = (
+            "resolution_timeout" if resolution_timed_out
+            else "needs_confirmation" if reviewable_candidates
+            else "no_slots" if not slots
+            else "no_google_match"
+        )
+        log_failed_link(
+            user_id=user_id,
+            url=text,
+            platform="tiktok",
+            reason=reason,
+            failure_stage="resolution" if reason != "no_slots" else "extraction",
+            caption_preview=(getattr(candidate, "description", "") or "")[:300],
+            request_id=request_id,
+            details={
+                "metadata_source": pipeline.get("metadata_source"),
+                "slot_count": len(slots),
+                "reviewable_candidate_count": len(reviewable_candidates),
+                "unresolved_count": len(unresolved_suggestions),
+            },
+        )
         await prompt_tiktok_manual_fallback(
             status_msg,
             context,
             text,
+            user_id=user_id,
             unresolved_candidates=reviewable_candidates if reviewable_candidates else None,
         )
         return
@@ -974,7 +1252,6 @@ async def _handle_tiktok_url(update: Update, context: ContextTypes.DEFAULT_TYPE,
     match_source = resolved_sources[0] if resolved_sources else (slots[0].source if slots else None)
 
     if len(places) == 1 and not unresolved_suggestions:
-        await status_msg.delete()
         await _save_single_place_result(
             update,
             context,
@@ -987,12 +1264,14 @@ async def _handle_tiktok_url(update: Update, context: ContextTypes.DEFAULT_TYPE,
             source_duration=source_duration,
             source_hashtags=source_hashtags,
         )
+        await status_msg.delete()
         _clear_manual_place_pending(context)
         return
 
     await _start_multi_place_selection(
         context,
         status_msg,
+        user_id=user_id,
         places=places,
         source_url=text,
         source_platform="tiktok",
@@ -1103,27 +1382,38 @@ def build_selection_message(places: list, selected_indices: set, video_meta: dic
     return "\n".join(lines)
 
 
-def build_selection_keyboard(places: list, selected_indices: set) -> InlineKeyboardMarkup:
+def build_selection_keyboard(
+    places: list,
+    selected_indices: set,
+    *,
+    session_id: str = "legacy",
+) -> InlineKeyboardMarkup:
     """Build keyboard for multi-place selection. Save All is the primary CTA."""
     keyboard = []
 
     # Primary CTA — save everything, one tap
     total = len(places)
+    save_all_data = "save_all" if session_id == "legacy" else f"ps:{session_id}:all"
     keyboard.append([
-        InlineKeyboardButton(f"✅ Save All {total}", callback_data="save_all"),
+        InlineKeyboardButton(f"✅ Save All {total}", callback_data=save_all_data),
     ])
 
     # Toggle rows for users who want to pick
     for i, place in enumerate(places):
         checkbox = "☑️" if i in selected_indices else "⬜"
         name = place["name"][:22] + "…" if len(place["name"]) > 22 else place["name"]
-        keyboard.append([InlineKeyboardButton(f"{checkbox} {name}", callback_data=f"toggle_place_{i}")])
+        toggle_data = f"toggle_place_{i}" if session_id == "legacy" else f"ps:{session_id}:t:{i}"
+        keyboard.append([
+            InlineKeyboardButton(f"{checkbox} {name}", callback_data=toggle_data)
+        ])
 
     selected_count = len(selected_indices)
     save_text = f"Save Selected ({selected_count})" if selected_count > 0 else "Save Selected"
+    save_selected_data = "save_selected" if session_id == "legacy" else f"ps:{session_id}:sel"
+    cancel_data = "cancel_selection" if session_id == "legacy" else f"ps:{session_id}:cancel"
     keyboard.append([
-        InlineKeyboardButton(save_text, callback_data="save_selected"),
-        InlineKeyboardButton("None of these", callback_data="cancel_selection"),
+        InlineKeyboardButton(save_text, callback_data=save_selected_data),
+        InlineKeyboardButton("None of these", callback_data=cancel_data),
     ])
 
     return InlineKeyboardMarkup(keyboard)
@@ -1219,105 +1509,170 @@ def build_reviewable_candidate_message(candidates: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def build_reviewable_candidate_keyboard(candidates: list[dict]) -> InlineKeyboardMarkup:
+def build_reviewable_candidate_keyboard(
+    candidates: list[dict],
+    *,
+    session_id: str = "legacy",
+) -> InlineKeyboardMarkup:
     """Buttons for real Google Place candidates pending user confirmation."""
     keyboard = []
     for index, candidate in enumerate(candidates[:6]):
         label = candidate["name"][:28] + "..." if len(candidate["name"]) > 28 else candidate["name"]
+        callback_data = (
+            f"unresolved_pick_{index}"
+            if session_id == "legacy"
+            else f"ur:{session_id}:{index}"
+        )
         keyboard.append([
-            InlineKeyboardButton(f"Try: {label}", callback_data=f"unresolved_pick_{index}")
+            InlineKeyboardButton(f"Try: {label}", callback_data=callback_data)
         ])
     return InlineKeyboardMarkup(keyboard)
 
 
-def _restore_place_session_from_db(context, user_id: int) -> bool:
-    """Try to load place_selection session from DB into user_data. Returns True if found."""
-    session = repository.get_bot_session(user_id, "place_selection")
-    if not session:
-        return False
-    context.user_data["pending_places"] = session["pending_places"]
-    context.user_data["selected_indices"] = set(session.get("selected_indices", []))
-    context.user_data["pending_video_meta"] = session.get("pending_video_meta", {})
-    context.user_data["pending_url"] = session.get("pending_url", "")
-    context.user_data["pending_platform"] = session.get("pending_platform", "unknown")
-    return True
+def _parse_place_selection_callback(data: str) -> tuple[str, str, int | None]:
+    """Return session ID, action, and optional place index for V2 or legacy buttons."""
+    if data.startswith("ps:"):
+        parts = data.split(":")
+        if len(parts) == 4 and parts[2] == "t":
+            return parts[1], "toggle", int(parts[3])
+        if len(parts) == 3 and parts[2] in {"sel", "all", "cancel"}:
+            return parts[1], parts[2], None
+        raise ValueError("Invalid place-selection callback")
+    if data.startswith("toggle_place_"):
+        return "legacy", "toggle", int(data.replace("toggle_place_", ""))
+    legacy_actions = {
+        "save_selected": "sel",
+        "save_all": "all",
+        "cancel_selection": "cancel",
+    }
+    if data in legacy_actions:
+        return "legacy", legacy_actions[data], None
+    raise ValueError("Invalid place-selection callback")
 
 
-def _persist_place_session(context, user_id: int) -> None:
-    """Write current place_selection user_data to DB."""
-    repository.save_bot_session(user_id, "place_selection", {
-        "pending_places": context.user_data.get("pending_places", []),
-        "selected_indices": list(context.user_data.get("selected_indices", set())),
-        "pending_video_meta": context.user_data.get("pending_video_meta", {}),
-        "pending_url": context.user_data.get("pending_url", ""),
-        "pending_platform": context.user_data.get("pending_platform", "unknown"),
-    })
+def _load_place_session(context, user_id: int, session_id: str) -> dict | None:
+    """Load one V2 session, with in-memory fallback for pre-deployment buttons."""
+    if session_id == "legacy" and context.user_data.get("pending_places"):
+        return {
+            "pending_places": context.user_data["pending_places"],
+            "selected_indices": list(context.user_data.get("selected_indices", set())),
+            "pending_video_meta": context.user_data.get("pending_video_meta", {}),
+            "pending_url": context.user_data.get("pending_url", ""),
+            "pending_platform": context.user_data.get("pending_platform", "unknown"),
+        }
+    if session_id == "legacy":
+        return repository.get_bot_session(user_id, "place_selection")
+    return repository.get_bot_session_v2(user_id, "place_selection", session_id)
 
 
-def _clear_place_session(context, user_id: int) -> None:
-    """Clear place_selection from user_data and DB."""
-    for key in ("pending_places", "pending_url", "pending_platform", "pending_video_meta", "selected_indices"):
-        context.user_data.pop(key, None)
+def _persist_place_session(
+    context,
+    user_id: int,
+    session_id: str,
+    session: dict,
+) -> None:
+    """Persist one place-selection session without replacing sibling cards."""
+    if session_id == "legacy":
+        repository.save_bot_session(user_id, "place_selection", session)
+        context.user_data["pending_places"] = session.get("pending_places", [])
+        context.user_data["selected_indices"] = set(session.get("selected_indices", []))
+        context.user_data["pending_video_meta"] = session.get("pending_video_meta", {})
+        context.user_data["pending_url"] = session.get("pending_url", "")
+        context.user_data["pending_platform"] = session.get("pending_platform", "unknown")
+        return
+    repository.save_bot_session_v2(
+        user_id,
+        "place_selection",
+        session_id,
+        session,
+    )
+
+
+def _clear_place_session(context, user_id: int, session_id: str) -> None:
+    """Clear exactly one place-selection session."""
+    if session_id == "legacy":
+        for key in ("pending_places", "pending_url", "pending_platform", "pending_video_meta", "selected_indices"):
+            context.user_data.pop(key, None)
     try:
-        repository.delete_bot_session(user_id, "place_selection")
+        if session_id == "legacy":
+            repository.delete_bot_session(user_id, "place_selection")
+        else:
+            repository.delete_bot_session_v2(user_id, "place_selection", session_id)
     except Exception:
         pass
 
 
+@serialized_user_flow
 async def toggle_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Toggle place selection checkbox."""
     query = update.callback_query
     user_id = update.effective_user.id
 
-    pending_places = context.user_data.get("pending_places")
-    if not pending_places:
-        if not _restore_place_session_from_db(context, user_id):
-            await _safe_answer_callback(query, "Session timed out!")
-            await _safe_edit_callback_message(query, "That session timed out — just resend the link and I'll try again. 🔄")
-            return
-        pending_places = context.user_data["pending_places"]
-
-    # Get or initialize selected indices
-    selected = context.user_data.get("selected_indices", set())
-
-    # Extract index and toggle
     try:
-        index = int(query.data.replace("toggle_place_", ""))
-        if index in selected:
-            selected.discard(index)
-            await _safe_answer_callback(query, "Removed")
-        else:
-            selected.add(index)
-            await _safe_answer_callback(query, "Selected!")
-    except (ValueError, IndexError):
+        session_id, action, index = _parse_place_selection_callback(query.data)
+    except ValueError:
+        await _safe_answer_callback(query, "Error!")
+        return
+    if action != "toggle" or index is None:
         await _safe_answer_callback(query, "Error!")
         return
 
-    context.user_data["selected_indices"] = selected
-    _persist_place_session(context, user_id)
+    session = _load_place_session(context, user_id, session_id)
+    if not session:
+        await _safe_answer_callback(query, "Session timed out!")
+        await _safe_edit_callback_message(query, "That session timed out — just resend the link and I'll try again. 🔄")
+        return
+
+    pending_places = session.get("pending_places", [])
+    if not 0 <= index < len(pending_places):
+        await _safe_answer_callback(query, "Error!")
+        return
+
+    selected = set(session.get("selected_indices", []))
+    if index in selected:
+        selected.discard(index)
+        await _safe_answer_callback(query, "Removed")
+    else:
+        selected.add(index)
+        await _safe_answer_callback(query, "Selected!")
+
+    session["selected_indices"] = list(selected)
+    _persist_place_session(context, user_id, session_id, session)
 
     # Rebuild keyboard and update message
-    video_meta = context.user_data.get("pending_video_meta", {})
-    keyboard = build_selection_keyboard(pending_places, selected)
+    video_meta = session.get("pending_video_meta", {})
+    keyboard = build_selection_keyboard(pending_places, selected, session_id=session_id)
     message = build_selection_message(pending_places, selected, video_meta)
     await _safe_edit_callback_message(query, message, reply_markup=keyboard)
 
 
+@serialized_user_flow
 async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Save all selected places."""
     user_id = update.effective_user.id
     query = update.callback_query
     ensure_bot_user(update)
 
-    pending_places = context.user_data.get("pending_places")
-    if not pending_places:
-        if not _restore_place_session_from_db(context, user_id):
-            await _safe_answer_callback(query, "Session timed out!")
-            await _safe_edit_callback_message(query, "That session timed out — just resend the link and I'll try again.")
-            return
-        pending_places = context.user_data["pending_places"]
+    try:
+        session_id, action, _ = _parse_place_selection_callback(query.data)
+    except ValueError:
+        await _safe_answer_callback(query, "Error!")
+        return
+    if action != "sel":
+        await _safe_answer_callback(query, "Error!")
+        return
 
-    selected = context.user_data.get("selected_indices", set())
+    session = _load_place_session(context, user_id, session_id)
+    if not session:
+        await _safe_answer_callback(query, "Session timed out!")
+        await _safe_edit_callback_message(query, "That session timed out — just resend the link and I'll try again.")
+        return
+
+    pending_places = session.get("pending_places", [])
+    selected = {
+        index for index in session.get("selected_indices", [])
+        if isinstance(index, int) and 0 <= index < len(pending_places)
+    }
 
     if not selected:
         await _safe_answer_callback(query, "Pick some places first!")
@@ -1327,15 +1682,17 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text("Saving your places... 💾")
 
     # Get metadata
-    source_url = context.user_data.get("pending_url", "")
-    source_platform = context.user_data.get("pending_platform", "unknown")
-    video_meta = context.user_data.get("pending_video_meta", {})
+    source_url = session.get("pending_url", "")
+    source_platform = session.get("pending_platform", "unknown")
+    video_meta = session.get("pending_video_meta", {})
 
     # Save all selected places
     saved_names = []
+    existing_names = []
+    failed_names = []
     for i in sorted(selected):
         place_data = pending_places[i]
-        repository.add_place(
+        outcome = repository.add_place_with_outcome(
             user_id=user_id,
             name=place_data["name"],
             address=place_data["address"],
@@ -1353,50 +1710,84 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
             place_rating_count=place_data.get("rating_count"),
             place_price_level=place_data.get("price_level"),
             place_opening_hours=place_data.get("opening_hours"),
+            country_code=place_data.get("country_code"),
+            city=place_data.get("city"),
+            neighborhood=place_data.get("neighborhood"),
+            primary_cuisine=place_data.get("primary_cuisine"),
             source_language=video_meta.get("source_language"),
             source_transcript=video_meta.get("source_transcript"),
             source_transcript_en=video_meta.get("source_transcript_en"),
         )
-        saved_names.append(place_data["name"])
+        if not outcome.get("place"):
+            failed_names.append(place_data["name"])
+            log_failed_link(
+                user_id=user_id,
+                url=source_url,
+                platform=source_platform,
+                reason="save_failed",
+                failure_stage="persistence",
+                request_id=session_id,
+                details={"place_name": place_data["name"], "selection_mode": "selected"},
+            )
+        else:
+            (saved_names if outcome.get("created") else existing_names).append(place_data["name"])
 
     # Clear pending data
-    _clear_place_session(context, user_id)
+    _clear_place_session(context, user_id, session_id)
 
     # Show confirmation
     await query.delete_message()
 
     count = len(saved_names)
     names_text = "\n".join(f"• {html.escape(name)}" for name in saved_names)
+    existing_text = f"\n\n✓ {len(existing_names)} already in your saves" if existing_names else ""
+    failed_text = f"\n\n⚠️ {len(failed_names)} could not be saved" if failed_names else ""
+    new_places_text = f"\n\n{names_text}" if names_text else ""
     await query.message.reply_text(
-        f"✅ Saved {count} place{'s' if count != 1 else ''}\n\n{names_text}",
+        f"✅ Saved {count} new place{'s' if count != 1 else ''}"
+        f"{new_places_text}{existing_text}{failed_text}",
         parse_mode="HTML",
     )
+    if saved_names:
+        record_bot_event(user_id, "extraction_succeeded", entity_type="extraction", entity_id=session.get("request_id") or session_id, metadata={"platform": source_platform, "result": "saved"})
 
 
+@serialized_user_flow
 async def save_all_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Save all pending places without requiring individual selection."""
     user_id = update.effective_user.id
     query = update.callback_query
     ensure_bot_user(update)
 
-    pending_places = context.user_data.get("pending_places")
-    if not pending_places:
-        if not _restore_place_session_from_db(context, user_id):
-            await _safe_answer_callback(query, "Session timed out!")
-            await _safe_edit_callback_message(query, "That session timed out — just resend the link and I'll try again.")
-            return
-        pending_places = context.user_data["pending_places"]
+    try:
+        session_id, action, _ = _parse_place_selection_callback(query.data)
+    except ValueError:
+        await _safe_answer_callback(query, "Error!")
+        return
+    if action != "all":
+        await _safe_answer_callback(query, "Error!")
+        return
+
+    session = _load_place_session(context, user_id, session_id)
+    if not session:
+        await _safe_answer_callback(query, "Session timed out!")
+        await _safe_edit_callback_message(query, "That session timed out — just resend the link and I'll try again.")
+        return
+
+    pending_places = session.get("pending_places", [])
 
     await query.answer("Saving all...")
     await query.edit_message_text("Saving your places... 💾")
 
-    source_url = context.user_data.get("pending_url", "")
-    source_platform = context.user_data.get("pending_platform", "unknown")
-    video_meta = context.user_data.get("pending_video_meta", {})
+    source_url = session.get("pending_url", "")
+    source_platform = session.get("pending_platform", "unknown")
+    video_meta = session.get("pending_video_meta", {})
 
     saved_names = []
+    existing_names = []
+    failed_names = []
     for place_data in pending_places:
-        repository.add_place(
+        outcome = repository.add_place_with_outcome(
             user_id=user_id,
             name=place_data["name"],
             address=place_data["address"],
@@ -1414,51 +1805,98 @@ async def save_all_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             place_rating_count=place_data.get("rating_count"),
             place_price_level=place_data.get("price_level"),
             place_opening_hours=place_data.get("opening_hours"),
+            country_code=place_data.get("country_code"),
+            city=place_data.get("city"),
+            neighborhood=place_data.get("neighborhood"),
+            primary_cuisine=place_data.get("primary_cuisine"),
             source_language=video_meta.get("source_language"),
             source_transcript=video_meta.get("source_transcript"),
             source_transcript_en=video_meta.get("source_transcript_en"),
         )
-        saved_names.append(place_data["name"])
+        if not outcome.get("place"):
+            failed_names.append(place_data["name"])
+            log_failed_link(
+                user_id=user_id,
+                url=source_url,
+                platform=source_platform,
+                reason="save_failed",
+                failure_stage="persistence",
+                request_id=session_id,
+                details={"place_name": place_data["name"], "selection_mode": "all"},
+            )
+        else:
+            (saved_names if outcome.get("created") else existing_names).append(place_data["name"])
 
-    _clear_place_session(context, user_id)
+    _clear_place_session(context, user_id, session_id)
 
     await query.delete_message()
 
     count = len(saved_names)
     names_text = "\n".join(f"• {html.escape(name)}" for name in saved_names)
+    existing_text = f"\n\n✓ {len(existing_names)} already in your saves" if existing_names else ""
+    failed_text = f"\n\n⚠️ {len(failed_names)} could not be saved" if failed_names else ""
+    new_places_text = f"\n\n{names_text}" if names_text else ""
     await query.message.reply_text(
-        f"✅ Saved {count} place{'s' if count != 1 else ''}\n\n{names_text}",
+        f"✅ Saved {count} new place{'s' if count != 1 else ''}"
+        f"{new_places_text}{existing_text}{failed_text}",
         parse_mode="HTML",
     )
+    if saved_names:
+        record_bot_event(user_id, "extraction_succeeded", entity_type="extraction", entity_id=session.get("request_id") or session_id, metadata={"platform": source_platform, "result": "saved"})
 
 
+@serialized_user_flow
 async def unresolved_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Save one unresolved-but-real Google candidate after user confirmation."""
     query = update.callback_query
     await query.answer()
+    user_id = update.effective_user.id
 
-    unresolved_slots = context.user_data.get("pending_unresolved_slots")
+    try:
+        if query.data.startswith("ur:"):
+            _, session_id, raw_index = query.data.split(":")
+            index = int(raw_index)
+        else:
+            session_id = "legacy"
+            index = int(query.data.replace("unresolved_pick_", ""))
+    except (ValueError, IndexError):
+        await query.answer("Invalid suggestion")
+        return
+
+    if session_id == "legacy":
+        session = {
+            "pending_unresolved_slots": context.user_data.get("pending_unresolved_slots"),
+            "pending_url": context.user_data.get("pending_url", ""),
+            "pending_platform": context.user_data.get("pending_platform", "unknown"),
+            "pending_video_meta": context.user_data.get("pending_video_meta", {}),
+        }
+    else:
+        session = repository.get_bot_session_v2(
+            user_id,
+            "unresolved_selection",
+            session_id,
+        ) or {}
+
+    unresolved_slots = session.get("pending_unresolved_slots")
     if not unresolved_slots:
         await query.edit_message_text("That session timed out — just resend the link and I'll try again.")
         return
 
     try:
-        index = int(query.data.replace("unresolved_pick_", ""))
         suggestion = unresolved_slots[index]
-    except (ValueError, IndexError):
+    except IndexError:
         await query.answer("Invalid suggestion")
         return
 
     place = suggestion
     await query.edit_message_text(f"Saving “{place['name']}”...")
 
-    user_id = update.effective_user.id
     ensure_bot_user(update)
-    source_url = context.user_data.get("pending_url", "")
-    source_platform = context.user_data.get("pending_platform", "unknown")
-    video_meta = context.user_data.get("pending_video_meta", {})
+    source_url = session.get("pending_url", "")
+    source_platform = session.get("pending_platform", "unknown")
+    video_meta = session.get("pending_video_meta", {})
 
-    repository.add_place(
+    outcome = repository.add_place_with_outcome(
         user_id=user_id,
         name=place["name"],
         address=place["address"],
@@ -1481,23 +1919,67 @@ async def unresolved_pick_callback(update: Update, context: ContextTypes.DEFAULT
         source_transcript_en=video_meta.get("source_transcript_en"),
     )
 
-    context.user_data.pop("pending_unresolved_slots", None)
+    if session_id == "legacy":
+        context.user_data.pop("pending_unresolved_slots", None)
+    else:
+        repository.delete_bot_session_v2(
+            user_id,
+            "unresolved_selection",
+            session_id,
+        )
 
-    await query.message.reply_location(latitude=place["latitude"], longitude=place["longitude"])
+    saved = outcome.get("place")
+    saved_place_id = get_saved_place_id(saved)
+    if not saved_place_id:
+        log_failed_link(
+            user_id=user_id,
+            url=source_url,
+            platform=source_platform,
+            reason="save_failed",
+            failure_stage="persistence",
+            request_id=session_id,
+            details={"place_name": place["name"], "selection_mode": "unresolved_candidate"},
+        )
+        await query.message.reply_text("I found the place, but couldn't save it. Please try again.")
+        return
+    correction_session_id = uuid.uuid4().hex[:8]
+    if saved_place_id:
+        repository.save_bot_session_v2(user_id, "place_correction", correction_session_id, {
+            "place_id": saved_place_id,
+            "source_url": source_url,
+            "source_platform": source_platform,
+            "candidates": [],
+        })
     await query.message.reply_text(
-        build_saved_place_message(place, source_url=source_url),
+        build_saved_place_message(saved or place, source_url=source_url, created=bool(outcome.get("created"))),
         parse_mode="HTML",
         disable_web_page_preview=True,
+        reply_markup=build_saved_place_keyboard(
+            saved or place,
+            saved_place_id=saved_place_id,
+            correction_session_id=correction_session_id,
+            created=bool(outcome.get("created")),
+            source_url=source_url,
+        ) if saved_place_id else None,
     )
 
 
+@serialized_user_flow
 async def cancel_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel place selection."""
     query = update.callback_query
     user_id = update.effective_user.id
+    try:
+        session_id, action, _ = _parse_place_selection_callback(query.data)
+    except ValueError:
+        await _safe_answer_callback(query, "Error!")
+        return
+    if action != "cancel":
+        await _safe_answer_callback(query, "Error!")
+        return
     await query.answer("Discarded")
 
-    _clear_place_session(context, user_id)
+    _clear_place_session(context, user_id, session_id)
 
     await query.edit_message_text(
         "Discarded those suggestions. Send another link whenever you're ready."
@@ -1536,16 +2018,196 @@ async def incorrect_place_callback(update: Update, context: ContextTypes.DEFAULT
         )
     else:
         # No candidates — fall back to text input
-        if correction_context.get("place_id") == place_id:
-            context.user_data["pending_url"] = correction_context.get("source_url", "")
-            context.user_data["pending_platform"] = correction_context.get("source_platform", "unknown")
-            context.user_data.pop("correction_place_context", None)
-
-        deleted = repository.delete_place(user_id, place_id)
+        session_id = uuid.uuid4().hex[:8]
+        session = {
+            "place_id": place_id,
+            "source_url": correction_context.get("source_url", ""),
+            "source_platform": correction_context.get("source_platform", "unknown"),
+            "candidates": [],
+        }
+        repository.save_bot_session_v2(user_id, "place_correction", session_id, session)
+        context.user_data["pending_correction_session_id"] = session_id
+        context.user_data.pop("correction_place_context", None)
         await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(
+            "Reply with the correct place name. I’ll keep the current save until the replacement succeeds."
+        )
 
-        msg = "Removed. " if deleted else "Already removed. "
-        await query.message.reply_text(msg + "Reply with the correct place name and I'll search for it.")
+
+def _place_result_from_payload(candidate: dict):
+    """Rehydrate the serialisable subset stored in correction sessions."""
+    from services.places import PlaceResult
+    return PlaceResult(
+        name=candidate["name"],
+        address=candidate.get("address", ""),
+        latitude=candidate.get("latitude", 0),
+        longitude=candidate.get("longitude", 0),
+        place_id=candidate.get("place_id"),
+        types=candidate.get("types", []),
+        rating=candidate.get("rating"),
+        rating_count=candidate.get("rating_count"),
+        price_level=candidate.get("price_level"),
+        opening_hours=candidate.get("opening_hours"),
+        confidence_score=candidate.get("confidence_score", 0),
+        matched_source_type=candidate.get("matched_source_type"),
+        description=candidate.get("description"),
+        country_code=candidate.get("country_code"),
+        city=candidate.get("city"),
+        neighborhood=candidate.get("neighborhood"),
+        primary_cuisine=candidate.get("primary_cuisine"),
+    )
+
+
+async def _complete_safe_correction(message, user_id: int, session_id: str, session: dict, place):
+    """Save the replacement first; only then remove the old row."""
+    outcome = repository.add_place_with_outcome(
+        user_id=user_id,
+        name=place.name,
+        address=place.address,
+        latitude=place.latitude,
+        longitude=place.longitude,
+        google_place_id=place.place_id,
+        source_url=session.get("source_url", ""),
+        source_platform=session.get("source_platform", "unknown"),
+        place_types=",".join(place.types) if place.types else None,
+        country_code=getattr(place, "country_code", None),
+        city=getattr(place, "city", None),
+        neighborhood=getattr(place, "neighborhood", None),
+        primary_cuisine=getattr(place, "primary_cuisine", None),
+        place_rating=place.rating,
+        place_rating_count=place.rating_count,
+        place_price_level=place.price_level,
+        place_opening_hours=place.opening_hours,
+        place_description=place.description,
+    )
+    saved = outcome.get("place")
+    new_id = get_saved_place_id(saved)
+    old_id = int(session["place_id"])
+    if not new_id:
+        raise RuntimeError("Replacement place was not saved")
+    if new_id != old_id:
+        repository.delete_place(user_id, old_id)
+    repository.delete_bot_session_v2(user_id, "place_correction", session_id)
+
+    next_session_id = uuid.uuid4().hex[:8]
+    repository.save_bot_session_v2(user_id, "place_correction", next_session_id, {
+        "place_id": new_id,
+        "source_url": session.get("source_url", ""),
+        "source_platform": session.get("source_platform", "unknown"),
+        "candidates": [],
+    })
+    changed_message = build_saved_place_message(saved, created=True)
+    changed_lines = changed_message.splitlines()
+    changed_lines[0] = f"✅ Changed to <b>{html.escape(str(saved.get('name') or place.name))}</b>"
+    await message.reply_text(
+        "\n".join(changed_lines),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=build_saved_place_keyboard(
+            saved,
+            saved_place_id=new_id,
+            correction_session_id=next_session_id,
+            created=bool(outcome.get("created")),
+            source_url=session.get("source_url"),
+        ),
+    )
+    record_bot_event(user_id, "place_correction_completed", entity_type="place", entity_id=new_id)
+
+
+@serialized_user_flow
+async def change_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start a session-scoped correction without deleting the current save."""
+    query = update.callback_query
+    user_id = update.effective_user.id
+    parts = query.data.split(":")
+    if len(parts) != 3:
+        await _safe_answer_callback(query, "This action expired")
+        return
+    session_id = parts[1]
+    session = repository.get_bot_session_v2(user_id, "place_correction", session_id)
+    if not session:
+        await _safe_answer_callback(query, "This action expired")
+        return
+    await query.answer()
+    await query.edit_message_reply_markup(reply_markup=None)
+    candidates = session.get("candidates") or []
+    if candidates:
+        rows = []
+        for index, candidate in enumerate(candidates[:5]):
+            label = str(candidate.get("name") or "Place")[:35]
+            rows.append([InlineKeyboardButton(label, callback_data=f"cp:{session_id}:pick:{index}")])
+        rows.append([InlineKeyboardButton("Type the place name", callback_data=f"cp:{session_id}:manual")])
+        await query.message.reply_text("Which place did you mean?", reply_markup=InlineKeyboardMarkup(rows))
+    else:
+        context.user_data["pending_correction_session_id"] = session_id
+        await query.message.reply_text("Reply with the correct restaurant or cafe name. I’ll keep the current save until the replacement succeeds.")
+    record_bot_event(user_id, "place_correction_started", entity_type="place", entity_id=session.get("place_id"))
+
+
+@serialized_user_flow
+async def correction_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle a V2 correction candidate or switch the session to manual search."""
+    query = update.callback_query
+    user_id = update.effective_user.id
+    parts = query.data.split(":")
+    if len(parts) < 3:
+        await _safe_answer_callback(query, "This action expired")
+        return
+    session_id, action = parts[1], parts[2]
+    session = repository.get_bot_session_v2(user_id, "place_correction", session_id)
+    if not session:
+        await _safe_answer_callback(query, "This action expired")
+        return
+    await query.answer()
+    await query.edit_message_reply_markup(reply_markup=None)
+    if action == "manual":
+        context.user_data["pending_correction_session_id"] = session_id
+        await query.message.reply_text("Reply with the correct restaurant or cafe name.")
+        return
+    try:
+        candidate = session.get("candidates", [])[int(parts[3])]
+        await _complete_safe_correction(query.message, user_id, session_id, session, _place_result_from_payload(candidate))
+    except (IndexError, ValueError, KeyError):
+        await query.message.reply_text("That option expired. Tap Change Place on the original card and try again.")
+    except Exception:
+        logger.exception("Could not complete correction for user_id=%s", user_id)
+        await query.message.reply_text("I couldn't change it, so I kept the original save. Please try again.")
+
+
+@serialized_user_flow
+async def undo_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Undo a newly-created save and offer a recoverable restore action."""
+    query = update.callback_query
+    user_id = update.effective_user.id
+    try:
+        place_id = int(query.data.split(":", 1)[1])
+    except (IndexError, ValueError):
+        await _safe_answer_callback(query, "This action expired")
+        return
+    deleted = repository.delete_place(user_id, place_id)
+    await query.answer("Removed" if deleted else "Already removed")
+    await query.edit_message_text(
+        "Removed from your saves.",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("Restore", callback_data=f"restore:{place_id}")
+        ]]) if deleted else None,
+    )
+    if deleted:
+        record_bot_event(user_id, "place_save_undone", entity_type="place", entity_id=place_id)
+
+
+@serialized_user_flow
+async def restore_place_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = update.effective_user.id
+    try:
+        place_id = int(query.data.split(":", 1)[1])
+    except (IndexError, ValueError):
+        await _safe_answer_callback(query, "This action expired")
+        return
+    restored = repository.restore_place(user_id, place_id)
+    await query.answer("Restored" if restored else "Could not restore")
+    await query.edit_message_text("✅ Restored to your saves." if restored else "This place could not be restored.")
 
 
 async def correction_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1566,13 +2228,18 @@ async def correction_pick_callback(update: Update, context: ContextTypes.DEFAULT
     correction_context = context.user_data.get("correction_place_context") or {}
     candidates = correction_context.get("candidates", [])
 
-    # Delete the wrong place
-    repository.delete_place(user_id, place_id)
     await query.edit_message_reply_markup(reply_markup=None)
 
     if pick == "manual":
-        context.user_data["pending_url"] = correction_context.get("source_url", "")
-        context.user_data["pending_platform"] = correction_context.get("source_platform", "unknown")
+        session_id = uuid.uuid4().hex[:8]
+        session = {
+            "place_id": place_id,
+            "source_url": correction_context.get("source_url", ""),
+            "source_platform": correction_context.get("source_platform", "unknown"),
+            "candidates": [],
+        }
+        repository.save_bot_session_v2(user_id, "place_correction", session_id, session)
+        context.user_data["pending_correction_session_id"] = session_id
         context.user_data.pop("correction_place_context", None)
         await query.message.reply_text("Reply with the place name and I'll search for it.")
         return
@@ -1602,14 +2269,19 @@ async def correction_pick_callback(update: Update, context: ContextTypes.DEFAULT
         matched_source_type=candidate.get("matched_source_type"),
     )
 
-    await _save_single_place_result(
-        update,
-        context,
-        user_id=user_id,
-        place=place,
-        source_url=correction_context.get("source_url", ""),
-        source_platform=correction_context.get("source_platform", "unknown"),
-    )
+    session_id = uuid.uuid4().hex[:8]
+    session = {
+        "place_id": place_id,
+        "source_url": correction_context.get("source_url", ""),
+        "source_platform": correction_context.get("source_platform", "unknown"),
+        "candidates": [],
+    }
+    repository.save_bot_session_v2(user_id, "place_correction", session_id, session)
+    try:
+        await _complete_safe_correction(query.message, user_id, session_id, session, place)
+    except Exception:
+        logger.exception("Could not complete legacy correction for user_id=%s", user_id)
+        await query.message.reply_text("I couldn't change it, so I kept the original save. Please try again.")
 
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1624,9 +2296,11 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return  # Not a valid Instagram/TikTok URL, ignore
 
     platform = detect_platform(text)
-    logger.info("URL received: user_id=%s platform=%s url=%s", user_id, platform, text)
+    logger.info("URL received: user_id=%s platform=%s", user_id, platform)
 
     task_id = uuid.uuid4().hex[:8]
+    started_at = asyncio.get_running_loop().time()
+    record_bot_event(user_id, "link_received", entity_type="extraction", entity_id=task_id, metadata={"platform": platform})
     cancel_markup = InlineKeyboardMarkup([[
         InlineKeyboardButton("✕ Cancel", callback_data=f"cancel_extraction_{task_id}")
     ]])
@@ -1637,23 +2311,108 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     async def _run():
         if platform == "instagram" and config.INSTAGRAM_NO_COOKIE_ENABLED:
-            await _handle_instagram_no_cookie_url(update, context, text, status_msg)
+            await _handle_instagram_no_cookie_url(
+                update, context, text, status_msg, request_id=task_id
+            )
             return
         if platform == "tiktok":
-            await _handle_tiktok_url(update, context, text, status_msg)
+            await _handle_tiktok_url(update, context, text, status_msg, request_id=task_id)
             return
+        log_failed_link(
+            user_id=user_id,
+            url=text,
+            platform=platform or "other",
+            reason="unsupported_platform",
+            failure_stage="validation",
+            request_id=task_id,
+        )
+        await status_msg.edit_text(
+            "I can only extract places from Instagram and TikTok links right now.",
+            reply_markup=None,
+        )
 
-    task = asyncio.create_task(_run())
-    context.user_data[f'extraction_task_{task_id}'] = task
+    async with _get_user_flow_lock(user_id):
+        previous_task = context.user_data.get("active_extraction_task")
+        if previous_task and not previous_task.done():
+            previous_task.cancel()
+        task = asyncio.create_task(_run())
+        context.user_data[f'extraction_task_{task_id}'] = task
+        context.user_data["active_extraction_task"] = task
+        context.user_data["active_extraction_task_id"] = task_id
     try:
-        await task
+        await asyncio.wait_for(task, timeout=config.BOT_EXTRACTION_TIMEOUT_SECONDS)
+        record_bot_event(
+            user_id,
+            "extraction_finished",
+            entity_type="extraction",
+            entity_id=task_id,
+            metadata={"platform": platform, "duration_ms": int((asyncio.get_running_loop().time() - started_at) * 1000)},
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Bot extraction deadline reached: user_id=%s platform=%s",
+            user_id,
+            platform,
+        )
+        record_bot_event(
+            user_id,
+            "extraction_timed_out",
+            entity_type="extraction",
+            entity_id=task_id,
+            metadata={"platform": platform, "timeout_seconds": config.BOT_EXTRACTION_TIMEOUT_SECONDS},
+        )
+        log_failed_link(
+            user_id=user_id,
+            url=text,
+            platform=platform or "other",
+            reason="extraction_timeout",
+            failure_stage="pipeline",
+            error_message=f"Exceeded {config.BOT_EXTRACTION_TIMEOUT_SECONDS:g}s outer deadline",
+            request_id=task_id,
+            details={"timeout_seconds": config.BOT_EXTRACTION_TIMEOUT_SECONDS},
+        )
+        if platform == "instagram":
+            await prompt_instagram_manual_fallback(status_msg, context, text)
+        elif platform == "tiktok":
+            await prompt_tiktok_manual_fallback(status_msg, context, text)
+        else:
+            await safe_edit_status(status_msg, "I couldn't finish processing that link. Please try again.")
     except asyncio.CancelledError:
+        record_bot_event(user_id, "extraction_cancelled", entity_type="extraction", entity_id=task_id, metadata={"platform": platform})
         try:
             await status_msg.edit_text("Cancelled. Send another link anytime.", reply_markup=None)
         except Exception:
             pass
+    except Exception as exc:
+        logger.exception(
+            "Extraction failed unexpectedly: user_id=%s platform=%s",
+            user_id,
+            platform,
+        )
+        record_bot_event(user_id, "extraction_failed", entity_type="extraction", entity_id=task_id, metadata={"platform": platform})
+        log_failed_link(
+            user_id=user_id,
+            url=text,
+            platform=platform or "other",
+            reason="extraction_exception",
+            failure_stage="pipeline",
+            error_message=str(exc),
+            request_id=task_id,
+        )
+        if platform == "instagram":
+            _set_instagram_fallback_pending(context, text)
+        elif platform == "tiktok":
+            _set_tiktok_fallback_pending(context, text)
+        await safe_edit_status(
+            status_msg,
+            "Something went wrong while checking that link. Please try again or reply with the place name.",
+        )
     finally:
-        context.user_data.pop(f'extraction_task_{task_id}', None)
+        async with _get_user_flow_lock(user_id):
+            context.user_data.pop(f'extraction_task_{task_id}', None)
+            if context.user_data.get("active_extraction_task") is task:
+                context.user_data.pop("active_extraction_task", None)
+                context.user_data.pop("active_extraction_task_id", None)
 
 
 async def cancel_extraction_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1662,7 +2421,12 @@ async def cancel_extraction_callback(update: Update, context: ContextTypes.DEFAU
     await query.answer("Cancelling...")
 
     task_id = query.data.replace("cancel_extraction_", "")
-    task = context.user_data.pop(f'extraction_task_{task_id}', None)
+    user_id = update.effective_user.id
+    async with _get_user_flow_lock(user_id):
+        task = context.user_data.pop(f'extraction_task_{task_id}', None)
+        if context.user_data.get("active_extraction_task") is task:
+            context.user_data.pop("active_extraction_task", None)
+            context.user_data.pop("active_extraction_task_id", None)
     if task and not task.done():
         task.cancel()
     else:
@@ -1684,9 +2448,32 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Always treat valid URLs as new link submissions,
     # even if we were waiting for a manual place name.
     if is_valid_url(text):
+        context.user_data.pop("waiting_display_name", None)
+        context.user_data.pop("pending_correction_session_id", None)
         _clear_manual_place_pending(context)
         _clear_instagram_fallback_pending(context)
         await handle_url(update, context)
+        return
+
+    correction_session_id = context.user_data.get("pending_correction_session_id")
+    if correction_session_id:
+        session = repository.get_bot_session_v2(user_id, "place_correction", correction_session_id)
+        if not session:
+            context.user_data.pop("pending_correction_session_id", None)
+            await update.message.reply_text("That correction expired. Tap Change Place on the saved card to try again.")
+            return
+        status_msg = await update.message.reply_text("Searching for that place... 🔍")
+        try:
+            place = await search_place(text)
+            if not place:
+                await status_msg.edit_text(f"I couldn't find “{text}”. Try adding the neighbourhood or city.")
+                return
+            await status_msg.delete()
+            await _complete_safe_correction(update.message, user_id, correction_session_id, session, place)
+            context.user_data.pop("pending_correction_session_id", None)
+        except Exception:
+            logger.exception("Manual correction failed for user_id=%s", user_id)
+            await status_msg.edit_text("I couldn't change it, so I kept the original save. Try a more specific name.")
         return
 
     # Check if waiting for display name input
@@ -1707,6 +2494,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if this is a response to a pending search
     pending_url = context.user_data.get("pending_url")
     if not pending_url:
+        await update.message.reply_text(
+            "Send an Instagram Reel or TikTok link and I’ll save the food place.\n\n"
+            "You can also use /feedback to report a problem."
+        )
         return
 
     pending_platform = context.user_data.get("pending_platform", "unknown")
@@ -1723,34 +2514,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Save the place
-        saved_place = repository.add_place(
-            user_id=user_id,
-            name=place.name,
-            address=place.address,
-            latitude=place.latitude,
-            longitude=place.longitude,
-            google_place_id=place.place_id,
-            source_url=pending_url,
-            source_platform=pending_platform,
-        )
-
         # Clear pending state
         _clear_manual_place_pending(context)
         _clear_instagram_fallback_pending(context)
 
         await status_msg.delete()
 
-        # Send location pin
-        await update.message.reply_location(
-            latitude=place.latitude,
-            longitude=place.longitude,
-        )
-
-        await update.message.reply_text(
-            build_saved_place_message(place, source_url=pending_url),
-            parse_mode="HTML",
-            disable_web_page_preview=True,
+        await _save_single_place_result(
+            update,
+            context,
+            user_id=user_id,
+            place=place,
+            source_url=pending_url,
+            source_platform=pending_platform,
         )
 
     except Exception as e:
@@ -1986,8 +2762,12 @@ async def finish_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel feedback flow and keep any already-saved items."""
+    had_saved_report = bool(context.user_data.get("feedback_context", {}).get("report_id"))
     clear_feedback_context(context)
-    await update.message.reply_text("Feedback cancelled.")
+    await update.message.reply_text(
+        "Stopped collecting more details. Your feedback was already received."
+        if had_saved_report else "Feedback cancelled."
+    )
     return ConversationHandler.END
 
 
@@ -2051,7 +2831,7 @@ async def handle_review_callback(update: Update, context: ContextTypes.DEFAULT_T
     if config.WEBAPP_URL:
         keyboard = [[InlineKeyboardButton(
             "⭐ Write Review →",
-            web_app=WebAppInfo(url=f"{config.WEBAPP_URL}?startapp=review_{place_id}")
+            web_app=WebAppInfo(url=build_webapp_url(config.WEBAPP_URL, "review", place_id))
         )]]
         await query.message.reply_text(
             "Tap below to write your review in the app 👇",
@@ -2096,6 +2876,18 @@ feedback_conversation_handler = ConversationHandler(
 # =============================================================================
 
 
+def _group_map_url(group_id: int) -> str | None:
+    """Build an opaque group-map URL; never expose the Telegram chat id."""
+    if not config.WEBAPP_URL:
+        return None
+    try:
+        token = repository.get_or_create_group_map_share(group_id)
+        return build_webapp_url(config.WEBAPP_URL, "group", token, bot=config.TELEGRAM_BOT_USERNAME or None)
+    except Exception:
+        logger.error("Group share-token table unavailable", exc_info=True)
+        return None
+
+
 async def handle_group_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send welcome message when bot is added to a group."""
     member = update.my_chat_member
@@ -2109,7 +2901,7 @@ async def handle_group_welcome(update: Update, context: ContextTypes.DEFAULT_TYP
     if new_status not in ("member", "administrator"):
         return
 
-    group_map_url = f"{config.WEBAPP_URL}?group_id={chat.id}" if config.WEBAPP_URL else None
+    group_map_url = _group_map_url(chat.id)
     keyboard = []
     if group_map_url:
         keyboard.append([
@@ -2181,7 +2973,7 @@ async def _save_and_post_group_place(
     sharer_id = update.effective_user.id
     sharer_name = update.effective_user.username or update.effective_user.first_name or "someone"
 
-    saved = repository.add_place(
+    outcome = repository.add_place_with_outcome(
         user_id=sharer_id,
         name=name,
         address=address,
@@ -2202,8 +2994,12 @@ async def _save_and_post_group_place(
         group_id=chat.id,
         saved_by_user_id=sharer_id,
     )
+    saved = outcome.get("place")
     if not saved:
-        return False
+        return None
+    if not outcome.get("created"):
+        record_bot_event(sharer_id, "group_place_duplicate", entity_type="place", entity_id=saved.get("id"))
+        return "existing"
     place_id = saved["id"]
 
     meta_parts = []
@@ -2224,11 +3020,7 @@ async def _save_and_post_group_place(
         f"Shared by @{html.escape(sharer_name)}"
     )
 
-    group_map_url = None
-    if config.WEBAPP_URL:
-        group_map_url = f"{config.WEBAPP_URL}?group_id={chat.id}"
-        if config.TELEGRAM_BOT_USERNAME:
-            group_map_url += f"&bot={config.TELEGRAM_BOT_USERNAME}"
+    group_map_url = _group_map_url(chat.id)
     keyboard = _build_group_card_keyboard(
         place_id=place_id,
         place_name=name,
@@ -2245,7 +3037,8 @@ async def _save_and_post_group_place(
         reply_markup=keyboard,
         disable_web_page_preview=True,
     )
-    return True
+    record_bot_event(sharer_id, "group_place_saved", entity_type="place", entity_id=place_id)
+    return "created"
 
 
 async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2275,7 +3068,7 @@ async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             place = place_results[0] if isinstance(place_results, list) else place_results
             await searching_msg.delete()
-            await _save_and_post_group_place(
+            save_status = await _save_and_post_group_place(
                 update=update,
                 context=context,
                 name=place.name if hasattr(place, "name") else place.get("name", text),
@@ -2295,6 +3088,19 @@ async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 price_level=place.price_level if hasattr(place, "price_level") else place.get("price_level"),
                 opening_hours=place.opening_hours if hasattr(place, "opening_hours") else place.get("opening_hours"),
             )
+            if save_status == "existing":
+                await update.message.reply_text("That place is already on the Group Map.")
+            elif save_status is None:
+                log_failed_link(
+                    user_id=update.effective_user.id,
+                    url=pending["source_url"],
+                    platform=pending["source_platform"],
+                    reason="save_failed",
+                    failure_stage="persistence",
+                    flow="group",
+                    details={"place_name": get_place_value(place, "name", text)},
+                )
+                await update.message.reply_text("I found the place but couldn't add it. Please try again.")
             context.chat_data.get("pending_name_requests", {}).pop(reply_to.message_id, None)
             return
 
@@ -2304,14 +3110,13 @@ async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     platform = detect_platform(text)
     ensure_bot_user(update)
     sharer_id = update.effective_user.id
-    sharer_name = update.effective_user.username or update.effective_user.first_name or "someone"
-    logger.info("Group URL received: chat_id=%s platform=%s url=%s", chat.id, platform, text)
+    logger.info("Group URL received: chat_id=%s platform=%s", chat.id, platform)
 
     task_id = uuid.uuid4().hex[:8]
     status_msg = await update.message.reply_text(
         "Checking this out... 🔍",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("✕ Cancel", callback_data=f"cancel_extraction_{task_id}")
+            InlineKeyboardButton("✕ Cancel", callback_data=f"grp_cancel:{task_id}:{sharer_id}")
         ]]),
     )
 
@@ -2322,10 +3127,53 @@ async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif platform == "tiktok":
             pipeline = await run_tiktok_place_pipeline(text)
         else:
+            log_failed_link(
+                user_id=sharer_id,
+                url=text,
+                platform=platform or "other",
+                reason="unsupported_platform",
+                failure_stage="validation",
+                flow="group",
+                request_id=task_id,
+            )
             await status_msg.edit_text("I can only process Instagram and TikTok links.")
             return
 
         if pipeline.get("status") == "failed" or not pipeline.get("places"):
+            candidate = pipeline.get("metadata_candidate")
+            slots = pipeline.get("slots") or []
+            unresolved = pipeline.get("unresolved_suggestions") or []
+            reviewable_candidates = collect_reviewable_unresolved_candidates(unresolved)
+            timed_out_stage = pipeline.get("timed_out_stage")
+            reason = (
+                "metadata_timeout" if timed_out_stage == "metadata"
+                else "metadata_failed" if pipeline.get("status") == "failed"
+                else "resolution_timeout" if timed_out_stage == "resolution"
+                else "needs_confirmation" if reviewable_candidates
+                else "no_slots" if not slots
+                else "no_google_match"
+            )
+            log_failed_link(
+                user_id=sharer_id,
+                url=text,
+                platform=platform,
+                reason=reason,
+                failure_stage=(
+                    "metadata" if reason.startswith("metadata_")
+                    else "extraction" if reason == "no_slots"
+                    else "resolution"
+                ),
+                flow="group",
+                caption_preview=(getattr(candidate, "description", "") or "")[:300],
+                error_message=pipeline.get("error"),
+                request_id=task_id,
+                details={
+                    "metadata_source": pipeline.get("metadata_source"),
+                    "slot_count": len(slots),
+                    "reviewable_candidate_count": len(reviewable_candidates),
+                    "unresolved_count": len(unresolved),
+                },
+            )
             # Ask for place name instead of silently failing
             ask_msg = await status_msg.edit_text(
                 "Couldn't find a place in that link. What's it called?\n"
@@ -2350,8 +3198,10 @@ async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         source_hashtags = ",".join(hashtags) if hashtags else None
 
         await status_msg.delete()
+        created_count = 0
+        existing_count = 0
         for place in places:
-            await _save_and_post_group_place(
+            save_status = await _save_and_post_group_place(
                 update=update,
                 context=context,
                 name=place.name if hasattr(place, "name") else place.get("name", ""),
@@ -2371,24 +3221,118 @@ async def handle_group_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 price_level=place.price_level if hasattr(place, "price_level") else place.get("price_level"),
                 opening_hours=place.opening_hours if hasattr(place, "opening_hours") else place.get("opening_hours"),
             )
+            created_count += save_status == "created"
+            existing_count += save_status == "existing"
+            if save_status is None:
+                place_name = place.name if hasattr(place, "name") else place.get("name", "")
+                log_failed_link(
+                    user_id=sharer_id,
+                    url=text,
+                    platform=platform,
+                    reason="save_failed",
+                    failure_stage="persistence",
+                    flow="group",
+                    request_id=task_id,
+                    details={"place_name": place_name},
+                )
+        if existing_count:
+            await update.message.reply_text(
+                f"{existing_count} place{' was' if existing_count == 1 else 's were'} already on the Group Map."
+            )
 
     task = asyncio.create_task(_run())
-    context.user_data[f'extraction_task_{task_id}'] = task
+    context.chat_data.setdefault("group_extraction_tasks", {})[task_id] = {
+        "task": task,
+        "owner_id": sharer_id,
+    }
     try:
-        await task
+        await asyncio.wait_for(task, timeout=config.BOT_EXTRACTION_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        record_bot_event(
+            sharer_id,
+            "group_extraction_timed_out",
+            entity_type="extraction",
+            entity_id=task_id,
+            metadata={"platform": platform, "timeout_seconds": config.BOT_EXTRACTION_TIMEOUT_SECONDS},
+        )
+        log_failed_link(
+            user_id=sharer_id,
+            url=text,
+            platform=platform or "other",
+            reason="extraction_timeout",
+            failure_stage="pipeline",
+            flow="group",
+            error_message=f"Exceeded {config.BOT_EXTRACTION_TIMEOUT_SECONDS:g}s outer deadline",
+            request_id=task_id,
+            details={"timeout_seconds": config.BOT_EXTRACTION_TIMEOUT_SECONDS},
+        )
+        await safe_edit_status(
+            status_msg,
+            "I couldn't identify the place reliably before the timeout. Send the link again or share the place name.",
+        )
     except asyncio.CancelledError:
         try:
             await status_msg.edit_text("Cancelled.", reply_markup=None)
         except Exception:
             pass
+    except Exception as exc:
+        logger.exception(
+            "Group extraction failed unexpectedly: chat_id=%s user_id=%s platform=%s",
+            chat.id,
+            sharer_id,
+            platform,
+        )
+        log_failed_link(
+            user_id=sharer_id,
+            url=text,
+            platform=platform or "other",
+            reason="extraction_exception",
+            failure_stage="pipeline",
+            flow="group",
+            error_message=str(exc),
+            request_id=task_id,
+        )
+        await safe_edit_status(
+            status_msg,
+            "Something went wrong while checking that link. Send it again or share the place name.",
+        )
     finally:
-        context.user_data.pop(f'extraction_task_{task_id}', None)
+        context.chat_data.get("group_extraction_tasks", {}).pop(task_id, None)
+
+
+async def cancel_group_extraction_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel a group extraction only when tapped by its initiator."""
+    query = update.callback_query
+    try:
+        _, task_id, owner_raw = query.data.split(":")
+        owner_id = int(owner_raw)
+    except (ValueError, IndexError):
+        await query.answer("This action expired")
+        return
+    if update.effective_user.id != owner_id:
+        await query.answer("Only the person who shared the link can cancel this.", show_alert=True)
+        return
+    item = context.chat_data.get("group_extraction_tasks", {}).pop(task_id, None)
+    task = item.get("task") if item else None
+    if task and not task.done():
+        task.cancel()
+        await query.answer("Cancelled")
+    else:
+        await query.answer("Already finished")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
 
 
 async def grp_cancel_name_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle cancel button on the 'What's it called?' prompt."""
     query = update.callback_query
     msg_id = int(query.data.replace("grp_cancel_name_", ""))
+    pending = context.chat_data.get("pending_name_requests", {}).get(msg_id)
+    if pending and pending.get("sharer_user_id") != update.effective_user.id:
+        await query.answer("Only the person who shared the link can cancel this.", show_alert=True)
+        return
     context.chat_data.get("pending_name_requests", {}).pop(msg_id, None)
     try:
         await query.edit_message_text("Cancelled.", reply_markup=None)
@@ -2410,11 +3354,7 @@ async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAUL
 
     place = repository.get_group_place_by_id(place_id)
     group_id = query.message.chat.id
-    group_map_url = None
-    if config.WEBAPP_URL:
-        group_map_url = f"{config.WEBAPP_URL}?group_id={group_id}"
-        if config.TELEGRAM_BOT_USERNAME:
-            group_map_url += f"&bot={config.TELEGRAM_BOT_USERNAME}"
+    group_map_url = _group_map_url(group_id)
     keyboard = _build_group_card_keyboard(
         place_id=place_id,
         place_name=place.get("name", "") if place else "",
@@ -2429,5 +3369,3 @@ async def vote_group_place_callback(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_reply_markup(reply_markup=keyboard)
     except Exception:
         pass
-
-

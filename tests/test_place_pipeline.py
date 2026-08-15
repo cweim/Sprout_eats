@@ -1,5 +1,8 @@
+import asyncio
 import json
 from pathlib import Path
+
+import pytest
 
 from services.place_pipeline import (
     PlaceEvidence,
@@ -18,6 +21,8 @@ DATASET = Path("place-extraction-pipeline/metadata_dataset/instagram_metadata_wi
 
 
 def record_by_shortcode(shortcode: str) -> dict:
+    if not DATASET.exists():
+        pytest.skip(f"Optional metadata fixture is not available: {DATASET}")
     records = json.loads(DATASET.read_text(encoding="utf-8"))
     return next(record for record in records if record["input"]["shortcode"] == shortcode)
 
@@ -72,6 +77,68 @@ def test_pairs_wayfinding_pin_with_previous_venue_line():
     assert slots[0].name_candidate == "Mensho Tokyo"
     assert slots[0].address_candidate == "Raffles City Level 3 (next to Surrey Hills cafe)"
     assert slots[0].query == "Mensho Tokyo, Raffles City Level 3 (next to Surrey Hills cafe)"
+
+
+def test_pairs_numeric_street_pin_with_previous_venue_name():
+    record = build_runtime_metadata_record(
+        description=(
+            "Kee Kee Bentong Chicken Rice [Non-Halal]\n"
+            "📍 33, Jalan SS 4d/2, Ss 4, 47301 Petaling Jaya, Selangor\n"
+            "⏰Daily 10am til sold out"
+        )
+    )
+
+    slots = extract_place_evidence_from_metadata(record)
+
+    assert len(slots) == 1
+    assert slots[0].name_candidate == "Kee Kee Bentong Chicken Rice"
+    assert slots[0].address_candidate == "33 Jalan SS 4d/2, Ss 4, 47301 Petaling Jaya, Selangor"
+    assert slots[0].query.startswith("Kee Kee Bentong Chicken Rice, 33 Jalan")
+
+
+def test_seating_parenthetical_is_not_used_as_mention_area():
+    record = build_runtime_metadata_record(
+        description=(
+            "Been wanting to try homebased @saikyopasta but now they have a pasta bar "
+            "(counter seats~) at Icon Village, Tanjong Pagar!\n"
+            "Small menu, but everything is well executed. #sgfood"
+        )
+    )
+
+    slots = extract_place_evidence_from_metadata(record)
+
+    assert len(slots) == 1
+    assert slots[0].name_candidate == "Saikyopasta"
+    assert slots[0].area_candidate == "Icon Village, Tanjong Pagar"
+    assert "counter seats" not in slots[0].query.lower()
+
+
+def test_true_parenthesized_area_is_preserved_for_mentions():
+    slots = extract_place_evidence_from_metadata(
+        build_runtime_metadata_record(
+            description="Dinner at @examplecafe (Tanjong Pagar), a lovely Singapore cafe."
+        )
+    )
+
+    assert len(slots) == 1
+    assert slots[0].area_candidate == "Tanjong Pagar"
+
+
+def test_generic_mrt_location_tag_does_not_override_venue_mention():
+    record = build_runtime_metadata_record(
+        description=(
+            "Honestly my latest obsession - @joongsan.sg, nearest MRT Telok Ayer. "
+            "If you're looking for Korean food in Singapore, this is the place."
+        )
+    )
+    record["apify_location_tag"] = "Telok Ayer MRT Station"
+
+    slots = extract_place_evidence_from_metadata(record)
+
+    assert len(slots) == 1
+    assert slots[0].source == "mention"
+    assert slots[0].name_candidate == "Joongsan Sg"
+    assert slots[0].query == "Joongsan Sg, Singapore"
 
 
 def test_generic_or_visual_only_posts_do_not_guess_slots():
@@ -133,6 +200,54 @@ async def test_multiple_location_slots_do_not_resolve_to_random_branch():
 
     assert suggestions[0].status == "brand_or_multiple_locations"
     assert suggestions[0].selected is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_place_slots_preserves_completed_results_on_timeout(monkeypatch):
+    slots = [
+        PlaceEvidence(
+            slot_id="fast",
+            source="caption_pin",
+            raw_text="Fast Cafe",
+            name_candidate="Fast Cafe",
+        ),
+        PlaceEvidence(
+            slot_id="slow",
+            source="caption_pin",
+            raw_text="Slow Cafe",
+            name_candidate="Slow Cafe",
+        ),
+    ]
+    fast_result = PlaceResult(
+        name="Fast Cafe",
+        address="1 Test Street",
+        latitude=1.0,
+        longitude=103.0,
+        place_id="fast",
+        types=["restaurant"],
+    )
+
+    async def fake_search(query: str, max_results: int):
+        if query == "Slow Cafe":
+            await asyncio.Event().wait()
+        return [fast_result]
+
+    monkeypatch.setattr("services.place_pipeline.search_place", fake_search)
+    monkeypatch.setattr(
+        "services.place_pipeline.candidate_matches_evidence",
+        lambda candidate, slot: (True, "matched", 90),
+    )
+
+    suggestions = await resolve_place_slots(
+        slots,
+        timeout_seconds=0.01,
+        max_concurrency=2,
+    )
+
+    assert suggestions[0].status == "resolved"
+    assert suggestions[0].selected is fast_result
+    assert suggestions[1].status == "timed_out"
+    assert suggestions[1].selected is None
 
 
 def test_compact_name_validation_handles_punctuation_and_fused_handles():
