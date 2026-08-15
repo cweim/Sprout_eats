@@ -1191,9 +1191,7 @@ async def get_restaurant_for_deep_link(
 @router.get("/invite-link")
 async def get_invite_link(user: TelegramUser = Depends(get_current_user)):
     """Generate a friend invite deeplink for this user."""
-    bot_username = app_config.TELEGRAM_BOT_USERNAME
-    if not bot_username:
-        return {"link": None, "message": "Bot username not configured"}
+    bot_username = app_config.TELEGRAM_BOT_USERNAME or "sprout_eats_bot"
     link = f"https://t.me/{bot_username}?start=addfriend_{user.id}"
     return {"link": link, "user_id": user.id}
 
