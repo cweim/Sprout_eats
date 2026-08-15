@@ -777,7 +777,8 @@ async def create_or_update_review(
 
 
 @router.delete("/places/{place_id}/review")
-async def delete_review(place_id: int, user: TelegramUser = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def delete_review(request: Request, place_id: int, user: TelegramUser = Depends(get_current_user)):
     """Delete review for a place."""
     deleted = repository.delete_review(user.id, place_id)
     if not deleted:
@@ -1104,7 +1105,8 @@ async def send_friend_request(request: Request, body: FriendRequestBody, user: T
 
 
 @router.post("/friends/{friendship_id}/accept")
-async def accept_friend_request(friendship_id: str, user: TelegramUser = Depends(get_current_user)):
+@limiter.limit("20/minute")
+async def accept_friend_request(request: Request, friendship_id: str, user: TelegramUser = Depends(get_current_user)):
     """Accept an incoming friend request."""
     result = repository.accept_friend_request(friendship_id, user.id)
     if not result:
@@ -1118,7 +1120,8 @@ async def accept_friend_request(friendship_id: str, user: TelegramUser = Depends
 
 
 @router.delete("/friends/{friendship_id}")
-async def remove_or_decline_friend(friendship_id: str, user: TelegramUser = Depends(get_current_user)):
+@limiter.limit("20/minute")
+async def remove_or_decline_friend(request: Request, friendship_id: str, user: TelegramUser = Depends(get_current_user)):
     """Decline a pending request or remove an accepted friendship."""
     repository.decline_or_remove_friendship(friendship_id, user.id)
     return {"ok": True}
@@ -1256,13 +1259,15 @@ async def log_visit_place(
 # =============================================================================
 
 @router.post("/activities/{activity_id}/like")
-async def like_activity(activity_id: str, user: TelegramUser = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def like_activity(request: Request, activity_id: str, user: TelegramUser = Depends(get_current_user)):
     repository.like_activity(user.id, activity_id)
     return {"success": True}
 
 
 @router.delete("/activities/{activity_id}/like")
-async def unlike_activity(activity_id: str, user: TelegramUser = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def unlike_activity(request: Request, activity_id: str, user: TelegramUser = Depends(get_current_user)):
     repository.unlike_activity(user.id, activity_id)
     return {"success": True}
 
@@ -1272,7 +1277,9 @@ async def unlike_activity(activity_id: str, user: TelegramUser = Depends(get_cur
 # =============================================================================
 
 @router.get("/activities/{activity_id}/comments")
+@limiter.limit("60/minute")
 async def get_comments(
+    request: Request,
     activity_id: str,
     user: TelegramUser = Depends(get_current_user),
 ):
@@ -1281,7 +1288,9 @@ async def get_comments(
 
 
 @router.post("/activities/{activity_id}/comments")
+@limiter.limit("30/minute")
 async def add_comment(
+    request: Request,
     activity_id: str,
     payload: dict,
     user: TelegramUser = Depends(get_current_user),
