@@ -8457,6 +8457,7 @@ async function uploadAvatarFile(file) {
 // ── Avatar crop editor state ──
 let _cropImg = null;
 let _cropScale = 1;
+let _cropMinScale = 1;
 let _cropOffsetX = 0;
 let _cropOffsetY = 0;
 let _cropIsDragging = false;
@@ -8486,6 +8487,7 @@ function openAvatarCropEditor(file) {
         const r = size * 0.42;
         const minDim = Math.min(img.naturalWidth, img.naturalHeight);
         _cropScale = (r * 2) / minDim;
+        _cropMinScale = _cropScale;
         setupCropEvents();
         renderCropCanvas();
     };
@@ -8588,7 +8590,7 @@ function setupCropEvents() {
                 e.touches[0].clientY - e.touches[1].clientY
             );
             _cropScale *= dist / _cropLastPinchDist;
-            _cropScale = Math.max(0.3, Math.min(8, _cropScale));
+            _cropScale = Math.max(_cropMinScale, Math.min(8, _cropScale));
             _cropLastPinchDist = dist;
             renderCropCanvas();
         }
