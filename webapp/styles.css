@@ -8453,10 +8453,13 @@ button:disabled,
     letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 8px;
 }
 .col-emoji-row {
-    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px;
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+    margin-bottom: 4px;
 }
 .col-emoji-btn {
-    font-size: 1.2rem; width: 40px; height: 40px; border-radius: 10px;
+    font-size: 1.2rem; width: 100%; aspect-ratio: 1; border-radius: 10px;
     border: 2px solid transparent; background: var(--secondary-bg); cursor: pointer;
     display: flex; align-items: center; justify-content: center;
 }
