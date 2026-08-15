@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import math
 import html
 import re
 import uuid
@@ -40,6 +39,7 @@ from services.instagram_pipeline import (
 )
 from services.tiktok_pipeline import run_tiktok_place_pipeline
 from services.deep_links import build_webapp_url
+from services.geo import haversine_distance
 from bot.telemetry import record_bot_event
 from database import supabase_repository as repository
 from database.supabase_client import (
@@ -149,17 +149,6 @@ def get_language_name(code: str) -> str:
     """Get friendly language name from ISO code."""
     return LANGUAGE_NAMES.get(code, code.upper())
 
-
-def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calculate distance between two points in kilometers."""
-    R = 6371  # Earth radius in km
-    d_lat = math.radians(lat2 - lat1)
-    d_lon = math.radians(lon2 - lon1)
-    a = (math.sin(d_lat/2) ** 2 +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
-         math.sin(d_lon/2) ** 2)
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    return R * c
 
 
 def format_place_line(place, index: int) -> str:

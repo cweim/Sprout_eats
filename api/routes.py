@@ -1,5 +1,4 @@
 import logging
-import math
 from typing import Optional, List
 from uuid import UUID
 
@@ -11,25 +10,13 @@ from api.telegram_auth import get_current_user, TelegramUser
 from api.limiter import limiter
 from database import supabase_repository as repository
 from database.supabase_client import upload_photo as storage_upload_photo, delete_photo as storage_delete_photo
+from services.geo import haversine_distance
 from services.places import search_place
 from services.deep_links import build_webapp_url
 import config as app_config
 from api.analytics import ALLOWED_CLIENT_EVENTS, ALLOWED_ENTITY_TYPES, sanitise_event_metadata
 
 logger = logging.getLogger(__name__)
-
-
-def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calculate distance between two points in kilometers."""
-    R = 6371  # Earth radius in km
-    d_lat = math.radians(lat2 - lat1)
-    d_lon = math.radians(lon2 - lon1)
-    a = (math.sin(d_lat/2) ** 2 +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
-         math.sin(d_lon/2) ** 2)
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    return R * c
-
 
 router = APIRouter(prefix="/api")
 
@@ -844,18 +831,16 @@ async def upload_photo(
 
     # Check photo limits
     count = repository.get_photo_count(review_id, dish_id)
-    max_photos = 10
-    if count >= max_photos:
+    if count >= app_config.MAX_PHOTOS_PER_PLACE:
         raise HTTPException(
             status_code=400,
-            detail=f"Photo limit reached ({max_photos} max per review)"
+            detail=f"Photo limit reached ({app_config.MAX_PHOTOS_PER_PLACE} max per review)"
         )
 
     # Read file content and enforce size limit
     content = await file.read()
-    max_size = 10 * 1024 * 1024  # 10MB
-    if len(content) > max_size:
-        raise HTTPException(status_code=413, detail="Photo too large (max 10MB)")
+    if len(content) > app_config.MAX_PHOTO_SIZE_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Photo too large (max {app_config.MAX_PHOTO_SIZE_MB}MB)")
 
     # Upload to Supabase Storage
     try:
@@ -963,14 +948,16 @@ async def update_my_profile(update: ProfileUpdate, user: TelegramUser = Depends(
 
 
 @router.post("/me/avatar")
+@limiter.limit("10/minute")
 async def upload_my_avatar(
+    request: Request,
     file: UploadFile = File(...),
     user: TelegramUser = Depends(get_current_user)
 ):
     """Upload a profile avatar image to Supabase Storage."""
     content = await file.read()
-    if len(content) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Avatar too large (max 5MB)")
+    if len(content) > app_config.MAX_AVATAR_SIZE_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Avatar too large (max {app_config.MAX_AVATAR_SIZE_MB}MB)")
     try:
         from database.supabase_client import upload_avatar as storage_upload_avatar
         file_url, _ = storage_upload_avatar(
@@ -999,9 +986,10 @@ async def search_users(q: str = "", user: TelegramUser = Depends(get_current_use
         return {"users": []}
     results = repository.search_users_by_username(q)
     results = [r for r in results if r["id"] != user.id]
-    # Annotate with friendship status
+    # Batch-fetch friendship statuses in one query instead of one per result
+    statuses = repository.get_friendship_statuses_batch(user.id, [r["id"] for r in results])
     for r in results:
-        r["friendship_status"] = repository.get_friendship_status(user.id, r["id"])
+        r["friendship_status"] = statuses.get(r["id"])
     return {"users": results}
 
 
@@ -1084,21 +1072,24 @@ class LogVisitBody(BaseModel):
 
 
 @router.get("/friends")
-async def list_friends(user: TelegramUser = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def list_friends(request: Request, user: TelegramUser = Depends(get_current_user)):
     """List all accepted friends."""
     friends = repository.get_friends(user.id)
     return {"friends": friends}
 
 
 @router.get("/friends/requests")
-async def get_friend_requests(user: TelegramUser = Depends(get_current_user)):
+@limiter.limit("60/minute")
+async def get_friend_requests(request: Request, user: TelegramUser = Depends(get_current_user)):
     """Get pending incoming friend requests."""
     requests = repository.get_pending_friend_requests(user.id)
     return {"requests": requests}
 
 
 @router.post("/friends/request")
-async def send_friend_request(body: FriendRequestBody, user: TelegramUser = Depends(get_current_user)):
+@limiter.limit("20/minute")
+async def send_friend_request(request: Request, body: FriendRequestBody, user: TelegramUser = Depends(get_current_user)):
     """Send a friend request to another user."""
     if body.target_user_id == user.id:
         raise HTTPException(status_code=400, detail="Cannot add yourself")
@@ -1138,7 +1129,9 @@ async def remove_or_decline_friend(friendship_id: str, user: TelegramUser = Depe
 # =============================================================================
 
 @router.get("/feed")
+@limiter.limit("60/minute")
 async def get_feed(
+    request: Request,
     page: int = 1,
     per_page: int = 20,
     user: TelegramUser = Depends(get_current_user),
@@ -1150,7 +1143,9 @@ async def get_feed(
 
 
 @router.get("/friends/map-activity")
+@limiter.limit("30/minute")
 async def get_friends_map_activity(
+    request: Request,
     user: TelegramUser = Depends(get_current_user),
 ):
     """Get recent friend visited/saved activities with coordinates for map pins."""
@@ -1302,17 +1297,38 @@ async def add_comment(
 # Collections
 # =============================================================================
 
+class CollectionCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    emoji: str = Field("📍", max_length=10)
+    description: Optional[str] = Field(None, max_length=500)
+
+
+class CollectionUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    emoji: Optional[str] = Field(None, max_length=10)
+    description: Optional[str] = Field(None, max_length=500)
+    is_public: Optional[bool] = None
+
+
+class CollectionAddPlace(BaseModel):
+    place_id: int
+
+
+class CollectionInviteMember(BaseModel):
+    target_user_id: int
+
+
 @router.post("/collections")
 async def create_collection(
-    payload: dict,
+    payload: CollectionCreate,
     user: TelegramUser = Depends(get_current_user),
 ):
-    name = (payload.get("name") or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Collection name is required")
-    emoji = (payload.get("emoji") or "📍").strip() or "📍"
-    description = (payload.get("description") or "").strip() or None
-    col = repository.create_collection(user.id, name, emoji, description)
+    col = repository.create_collection(
+        user.id,
+        payload.name.strip(),
+        (payload.emoji or "📍").strip() or "📍",
+        payload.description.strip() if payload.description else None,
+    )
     return {"collection": col}
 
 
@@ -1336,10 +1352,11 @@ async def get_collection(
 @router.patch("/collections/{collection_id}")
 async def update_collection(
     collection_id: int,
-    payload: dict,
+    payload: CollectionUpdate,
     user: TelegramUser = Depends(get_current_user),
 ):
-    col = repository.update_collection(collection_id, user.id, **payload)
+    updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None or k == "is_public"}
+    col = repository.update_collection(collection_id, user.id, **updates)
     if col is None:
         raise HTTPException(status_code=404, detail="Collection not found or no access")
     return {"collection": col}
@@ -1359,13 +1376,10 @@ async def delete_collection(
 @router.post("/collections/{collection_id}/places")
 async def add_place_to_collection(
     collection_id: int,
-    payload: dict,
+    payload: CollectionAddPlace,
     user: TelegramUser = Depends(get_current_user),
 ):
-    place_id = payload.get("place_id")
-    if not place_id:
-        raise HTTPException(status_code=400, detail="place_id required")
-    cp = repository.add_place_to_collection(collection_id, user.id, int(place_id))
+    cp = repository.add_place_to_collection(collection_id, user.id, payload.place_id)
     if cp is None:
         raise HTTPException(status_code=404, detail="Place not found or no access to collection")
     return {"collection_place": cp}
@@ -1404,13 +1418,10 @@ async def get_place_collections(
 @router.post("/collections/{collection_id}/members")
 async def invite_member(
     collection_id: int,
-    payload: dict,
+    payload: CollectionInviteMember,
     user: TelegramUser = Depends(get_current_user),
 ):
-    target_user_id = payload.get("target_user_id")
-    if not target_user_id:
-        raise HTTPException(status_code=400, detail="target_user_id required")
-    result = repository.invite_to_collection(collection_id, user.id, int(target_user_id))
+    result = repository.invite_to_collection(collection_id, user.id, payload.target_user_id)
     if result is None:
         raise HTTPException(status_code=403, detail="No access to this collection")
     return {"result": result}

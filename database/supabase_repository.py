@@ -2423,6 +2423,26 @@ def get_friendship_status(user_id: int, other_id: int) -> Optional[str]:
     return status
 
 
+def get_friendship_statuses_batch(user_id: int, other_ids: List[int]) -> Dict[int, Optional[str]]:
+    """Return friendship status between user_id and each id in other_ids in one query."""
+    if not other_ids:
+        return {}
+    supabase = get_supabase()
+    id_list = ",".join(str(i) for i in other_ids)
+    result = supabase.table("user_friendships").select("status, requester_id, addressee_id").or_(
+        f"and(requester_id.eq.{user_id},addressee_id.in.({id_list})),"
+        f"and(requester_id.in.({id_list}),addressee_id.eq.{user_id})"
+    ).execute()
+    statuses: Dict[int, Optional[str]] = {}
+    for row in (result.data or []):
+        other = row["addressee_id"] if row["requester_id"] == user_id else row["requester_id"]
+        status = row["status"]
+        if status == "pending" and row["requester_id"] != user_id:
+            status = "incoming_request"
+        statuses[other] = status
+    return statuses
+
+
 def get_friend_reviews_for_place(user_id: int, google_place_id: str) -> List[Dict[str, Any]]:
     """Get reviews written by friends for a given google_place_id."""
     supabase = get_supabase()

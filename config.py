@@ -40,6 +40,11 @@ MAX_DOWNLOAD_SIZE_MB = int(os.getenv("MAX_DOWNLOAD_SIZE_MB", "100"))  # 100MB de
 MAX_OCR_IMAGES = int(os.getenv("MAX_OCR_IMAGES", "10"))  # Max carousel images to OCR
 DOWNLOAD_TIMEOUT = int(os.getenv("DOWNLOAD_TIMEOUT", "120"))  # 2 min default
 
+# Upload limits (used in API routes)
+MAX_PHOTOS_PER_PLACE = int(os.getenv("MAX_PHOTOS_PER_PLACE", "10"))
+MAX_PHOTO_SIZE_MB = int(os.getenv("MAX_PHOTO_SIZE_MB", "10"))
+MAX_AVATAR_SIZE_MB = int(os.getenv("MAX_AVATAR_SIZE_MB", "5"))
+
 # Instagram retrieval
 INSTAGRAM_COOKIES_B64 = os.getenv("INSTAGRAM_COOKIES_B64", "")
 INSTAGRAM_MAX_CONCURRENT_FETCHES = int(os.getenv("INSTAGRAM_MAX_CONCURRENT_FETCHES", "3"))
@@ -72,3 +77,19 @@ REMINDER_JOB_INTERVAL_MINUTES = int(os.getenv("REMINDER_JOB_INTERVAL_MINUTES", "
 REMINDER_JOB_STARTUP_DELAY_SECONDS = int(os.getenv("REMINDER_JOB_STARTUP_DELAY_SECONDS", "30"))
 REMINDER_CHECK_HOURS = int(os.getenv("REMINDER_CHECK_HOURS", "1"))
 REMINDER_PLACE_NAME_MAX_LENGTH = int(os.getenv("REMINDER_PLACE_NAME_MAX_LENGTH", "50"))
+
+# Startup validation — warn loudly if critical vars are missing
+import logging as _logging
+_startup_logger = _logging.getLogger(__name__)
+_missing = [name for name, val in [
+    ("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN),
+    ("SUPABASE_URL", SUPABASE_URL),
+    ("SUPABASE_SERVICE_KEY", SUPABASE_SERVICE_KEY),
+    ("GOOGLE_API_KEY", GOOGLE_API_KEY),
+] if not val]
+if _missing:
+    _startup_logger.warning(
+        "STARTUP WARNING: Missing required environment variables: %s. "
+        "The app may fail at runtime.",
+        ", ".join(_missing)
+    )
