@@ -9095,10 +9095,9 @@ function renderRestaurantCard(place, review) {
         actionBtns.push(`<a href="${safeUrl(place.source_url)}" target="_blank" class="rc-action-btn">▶️ Reel</a>`);
     }
     actionBtns.push(`<button class="rc-action-btn" onclick="openAddToCollectionSheet(${place.id})">＋ Collect</button>`);
-    // Share sits before Add Review; only gets margin-left:auto when Add Review is absent
-    actionBtns.push(`<button class="rc-action-btn"${review ? ' style="margin-left:auto"' : ''} onclick="sharePlace(${place.id})">↗ Share</button>`);
+    actionBtns.push(`<button class="rc-action-btn" onclick="sharePlace(${place.id})">↗ Share</button>`);
     if (!review) {
-        actionBtns.push(`<button class="rc-action-btn rc-action-btn--cta" style="margin-left:auto" onclick="openReviewFromRc(${place.id})">✏️ Add review</button>`);
+        actionBtns.push(`<button class="rc-action-btn rc-action-btn--cta" onclick="openReviewFromRc(${place.id})">✏️ Add review</button>`);
     }
     if (actionBtns.length) {
         actionsEl.innerHTML = actionBtns.join('');
