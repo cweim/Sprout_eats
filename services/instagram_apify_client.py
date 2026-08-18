@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 APIFY_API_BASE = "https://api.apify.com/v2"
 APIFY_FIELDS = ["caption", "hashtags", "ownerUsername", "locationName", "url", "transcript"]
+TERMINAL_FAILURE_STATUSES = {"FAILED", "ABORTED", "TIMED-OUT"}
 
 
 def _actor_ref() -> str:
@@ -31,7 +32,7 @@ async def extract_instagram_via_apify(url: str) -> MetadataCandidate:
             error="APIFY_API_TOKEN is not configured",
         )
 
-    endpoint = f"{APIFY_API_BASE}/acts/{_actor_ref()}/run-sync-get-dataset-items"
+    start_endpoint = f"{APIFY_API_BASE}/acts/{_actor_ref()}/runs"
     payload = {
         "username": [url],
         "resultsLimit": 1,
@@ -40,54 +41,75 @@ async def extract_instagram_via_apify(url: str) -> MetadataCandidate:
         "includeTranscript": True,
         "skipPinnedPosts": False,
     }
-    params = {
-        "token": config.APIFY_API_TOKEN,
-        "clean": "true",
-        "format": "json",
-        "limit": "1",
-        "fields": ",".join(APIFY_FIELDS),
-    }
-    timeout = httpx.Timeout(max(30, config.INSTAGRAM_NO_COOKIE_TIMEOUT_SECONDS))
-
+    request_timeout = httpx.Timeout(max(10, config.INSTAGRAM_NO_COOKIE_TIMEOUT_SECONDS))
     t0 = time.monotonic()
-    last_exc: Exception | None = None
-    items = None
-    for attempt in range(2):
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(endpoint, params=params, json=payload)
-                response.raise_for_status()
-                items = response.json()
-            last_exc = None
-            break
-        except httpx.TimeoutException as exc:
-            last_exc = exc
-            if attempt == 0:
-                logger.warning("metric.apify.timeout_retry url=%s attempt=1", url)
-                await asyncio.sleep(3)
-        except Exception as exc:
-            last_exc = exc
-            break
+    run_id: str | None = None
 
-    if last_exc is not None:
-        elapsed = time.monotonic() - t0
-        logger.warning(
-            "metric.apify.failure url=%s elapsed_s=%.2f error=%s",
-            url, elapsed, last_exc,
-        )
-        return MetadataCandidate(
-            source="instagram_apify",
-            platform="instagram",
-            url=url,
-            success=False,
-            error=str(last_exc),
-        )
+    async with httpx.AsyncClient(
+        timeout=request_timeout,
+        headers={"Authorization": f"Bearer {config.APIFY_API_TOKEN}"},
+    ) as client:
+        try:
+            response = await client.post(start_endpoint, json=payload)
+            response.raise_for_status()
+            run = (response.json() or {}).get("data") or {}
+            run_id = run.get("id")
+            if not run_id:
+                raise RuntimeError("Apify did not return a run ID")
+
+            deadline = t0 + max(0.01, config.APIFY_RUN_TIMEOUT_SECONDS)
+            while True:
+                status_response = await client.get(
+                    f"{APIFY_API_BASE}/actor-runs/{run_id}",
+                )
+                status_response.raise_for_status()
+                run = (status_response.json() or {}).get("data") or {}
+                status = (run.get("status") or "").upper()
+
+                if status == "SUCCEEDED":
+                    dataset_id = run.get("defaultDatasetId")
+                    if not dataset_id:
+                        raise RuntimeError("Apify run completed without a dataset")
+                    dataset_response = await client.get(
+                        f"{APIFY_API_BASE}/datasets/{dataset_id}/items",
+                        params={
+                            "clean": "true",
+                            "format": "json",
+                            "limit": "1",
+                            "fields": ",".join(APIFY_FIELDS),
+                        },
+                    )
+                    dataset_response.raise_for_status()
+                    items = dataset_response.json()
+                    break
+
+                if status in TERMINAL_FAILURE_STATUSES:
+                    message = run.get("statusMessage") or f"Apify run ended with status {status}"
+                    raise RuntimeError(message)
+
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    await _abort_run(client, run_id)
+                    return _failure_candidate(
+                        url,
+                        f"Apify extraction timed out after {config.APIFY_RUN_TIMEOUT_SECONDS:g}s",
+                        t0,
+                    )
+                await _sleep_for_poll(min(config.APIFY_POLL_INTERVAL_SECONDS, remaining))
+        except asyncio.CancelledError:
+            if run_id:
+                await asyncio.shield(_abort_run(client, run_id))
+            raise
+        except Exception as exc:
+            if run_id:
+                await _abort_run(client, run_id)
+            return _failure_candidate(url, str(exc) or type(exc).__name__, t0)
 
     if not isinstance(items, list) or not items:
         elapsed = time.monotonic() - t0
         logger.warning(
-            "metric.apify.failure url=%s elapsed_s=%.2f error=no_results",
-            url, elapsed,
+            "metric.apify.failure url=%s run_id=%s elapsed_s=%.2f error=no_results",
+            url, run_id, elapsed,
         )
         return MetadataCandidate(
             source="instagram_apify",
@@ -131,7 +153,42 @@ async def extract_instagram_via_apify(url: str) -> MetadataCandidate:
         logger.warning("metric.apify.failure url=%s elapsed_s=%.2f error=no_useful_metadata", url, elapsed)
     else:
         logger.info(
-            "metric.apify.success url=%s elapsed_s=%.2f caption_len=%d has_transcript=%s",
-            url, elapsed, len(caption), bool(transcript),
+            "metric.apify.success url=%s run_id=%s elapsed_s=%.2f caption_len=%d has_transcript=%s",
+            url, run_id, elapsed, len(caption), bool(transcript),
         )
     return candidate
+
+
+async def _sleep_for_poll(seconds: float) -> None:
+    """Small seam for deterministic polling tests."""
+    await asyncio.sleep(max(0, seconds))
+
+
+async def _abort_run(
+    client: httpx.AsyncClient,
+    run_id: str,
+) -> None:
+    """Best-effort cancellation so a timed-out bot request does not leave paid work running."""
+    try:
+        response = await client.post(
+            f"{APIFY_API_BASE}/actor-runs/{run_id}/abort",
+            params={"gracefully": "true"},
+        )
+        response.raise_for_status()
+    except Exception as exc:
+        logger.warning("Could not abort Apify run %s: %s", run_id, exc)
+
+
+def _failure_candidate(url: str, error: str, started_at: float) -> MetadataCandidate:
+    elapsed = time.monotonic() - started_at
+    logger.warning(
+        "metric.apify.failure url=%s elapsed_s=%.2f error=%s",
+        url, elapsed, error,
+    )
+    return MetadataCandidate(
+        source="instagram_apify",
+        platform="instagram",
+        url=url,
+        success=False,
+        error=error,
+    )

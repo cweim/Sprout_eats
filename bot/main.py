@@ -31,6 +31,7 @@ from bot.handlers import (
     delete_place_callback,
     unresolved_pick_callback,
     cancel_extraction_callback,
+    retry_extraction_callback,
     handle_text,
     set_name_tg_callback,
     handle_dismiss,
@@ -131,6 +132,7 @@ def main():
     app.add_handler(CallbackQueryHandler(delete_place_callback, pattern="^delete_place_"))
     app.add_handler(CallbackQueryHandler(unresolved_pick_callback, pattern=r"^(unresolved_pick_\d+|ur:[a-f0-9]{8}:\d+)$"))
     app.add_handler(CallbackQueryHandler(cancel_extraction_callback, pattern="^cancel_extraction_"))
+    app.add_handler(CallbackQueryHandler(retry_extraction_callback, pattern="^retry_extraction_"))
     app.add_handler(CallbackQueryHandler(handle_dismiss, pattern=r'^dismiss$'))
     app.add_handler(CallbackQueryHandler(handle_review_callback, pattern=r'^review:'))
 

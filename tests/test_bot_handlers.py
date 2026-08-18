@@ -9,6 +9,7 @@ from bot.handlers import (
     _start_multi_place_selection,
     build_selection_keyboard,
     handle_url,
+    retry_extraction_callback,
     toggle_place_callback,
     unresolved_pick_callback,
     undo_place_callback,
@@ -473,3 +474,40 @@ async def test_new_link_cancels_previous_extraction_for_same_user(monkeypatch):
     assert first_status.edits[-1][0] == "Cancelled. Send another link anytime."
     assert second_status.edits[-1][0] == "second complete"
     assert "active_extraction_task" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_retry_button_reuses_stored_url(monkeypatch):
+    retried = []
+
+    class FakeQuery:
+        data = "retry_extraction_aaaaaaaa"
+        message = FakeStatusMessage()
+
+        async def answer(self, text):
+            return None
+
+        async def edit_message_text(self, text):
+            self.message.edits.append((text, None))
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        callback_query=FakeQuery(),
+    )
+    context = SimpleNamespace(user_data={
+        "extraction_retry_sessions": {
+            "aaaaaaaa": {"url": "https://www.instagram.com/reel/RETRY/"}
+        }
+    })
+
+    async def fake_start(update, context, url, **kwargs):
+        retried.append((url, kwargs.get("status_msg")))
+
+    monkeypatch.setattr("bot.handlers._start_private_url_extraction", fake_start)
+    monkeypatch.setattr("bot.handlers.repository.delete_bot_session_v2", lambda *args: None)
+
+    await retry_extraction_callback(update, context)
+
+    assert retried == [
+        ("https://www.instagram.com/reel/RETRY/", update.callback_query.message)
+    ]

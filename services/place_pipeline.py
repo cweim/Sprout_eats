@@ -133,7 +133,7 @@ def has_address_hint(text: str) -> bool:
 
 
 def is_multiple_locations(text: str) -> bool:
-    return "multiple locations" in (text or "").lower()
+    return bool(re.search(r"\bmultiple\s+locations?\b", text or "", re.IGNORECASE))
 
 
 def is_likely_non_place_line(line: str) -> bool:
@@ -154,7 +154,7 @@ def split_name_and_inline_address(text: str) -> tuple[str, Optional[str]]:
         return "", None
 
     if is_multiple_locations(text):
-        return clean_text(re.sub(r"multiple locations", "", text, flags=re.IGNORECASE)), "Multiple locations"
+        return clean_text(re.sub(r"multiple\s+locations?", "", text, flags=re.IGNORECASE)), "Multiple locations"
 
     paren_match = re.search(r"\(([^)]*)\)", text)
     if paren_match:
@@ -257,6 +257,11 @@ def extract_caption_pin_slots(caption: str) -> list[PlaceEvidence]:
         previous_line = previous_meaningful_line(lines, index)
         next_line = next_meaningful_line(lines, index)
 
+        if not name and is_multiple_locations(address or raw):
+            if previous_line and is_previous_line_venue_candidate(previous_line):
+                name = strip_non_address_parentheticals(previous_line)
+                address = "Multiple locations"
+
         if next_line and not address:
             if is_multiple_locations(next_line):
                 address = "Multiple locations"
@@ -329,6 +334,16 @@ def is_address_only_name(name: str) -> bool:
     if normalized.startswith(("malaysia", "singapore", "federal territory", "wilayah persekutuan")):
         return True
     if re.fullmatch(r"\d+[a-z]?", normalized):
+        return True
+    unit_pattern = r"(?:no\.?\s*)?[a-z]?\d+[a-z]?(?:\s*(?:-|/|&)\s*[a-z0-9]+)*"
+    if re.fullmatch(
+        unit_pattern,
+        normalized,
+        re.IGNORECASE,
+    ):
+        return True
+    first_segment = normalized.split(",", 1)[0].strip()
+    if "," in normalized and re.fullmatch(unit_pattern, first_segment, re.IGNORECASE):
         return True
     return has_address_hint(normalized) and len(tokenize_meaningful_words(normalized)) <= 3
 

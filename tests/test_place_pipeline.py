@@ -96,6 +96,31 @@ def test_pairs_numeric_street_pin_with_previous_venue_name():
     assert slots[0].query.startswith("Kee Kee Bentong Chicken Rice, 33 Jalan")
 
 
+def test_pairs_unit_number_addresses_and_singular_multiple_location_with_venue_names():
+    record = build_runtime_metadata_record(
+        description=(
+            "Kaki Corner\n"
+            "📍 No. 20 & 22, Jalan Siput Akek, Kuala Lumpur 56100\n\n"
+            "Yatie Kitchen\n"
+            "📍 D3-G, Tingkat Bawah, Dataran Palma, Ampang, Selangor 68000\n\n"
+            "WoodFire Burger\n"
+            "📍 Multiple location"
+        )
+    )
+
+    slots = extract_place_evidence_from_metadata(record)
+
+    assert [slot.name_candidate for slot in slots] == [
+        "Kaki Corner",
+        "Yatie Kitchen",
+        "WoodFire Burger",
+    ]
+    assert slots[0].address_candidate.startswith("No. 20 & 22")
+    assert slots[1].address_candidate.startswith("D3-G")
+    assert slots[2].address_candidate == "Multiple locations"
+    assert slots[2].should_resolve is False
+
+
 def test_seating_parenthetical_is_not_used_as_mention_area():
     record = build_runtime_metadata_record(
         description=(

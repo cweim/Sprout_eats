@@ -1786,6 +1786,12 @@ def cleanup_expired_bot_sessions() -> int:
 # Failed Extractions
 # =============================================================================
 
+def _is_missing_failed_extraction_diagnostics(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "42703" in message or (
+        "failed_extractions" in message and "does not exist" in message
+    )
+
 def log_failed_extraction(
     user_id: int,
     url: str,
@@ -1801,18 +1807,30 @@ def log_failed_extraction(
 ) -> None:
     """Record one terminal link-processing outcome for admin diagnosis."""
     supabase = get_supabase()
-    supabase.table("failed_extractions").insert({
+    legacy_payload = {
         "user_id": user_id,
         "url": url,
         "platform": platform,
         "caption_preview": (caption_preview or "")[:300],
         "reason": reason,
+    }
+    diagnostic_payload = {
+        **legacy_payload,
         "failure_stage": failure_stage,
         "flow": flow,
         "error_message": (error_message or "")[:500] or None,
         "request_id": request_id,
         "details": details or {},
-    }).execute()
+    }
+    try:
+        supabase.table("failed_extractions").insert(diagnostic_payload).execute()
+    except Exception as exc:
+        if not _is_missing_failed_extraction_diagnostics(exc):
+            raise
+        logger.warning(
+            "failed_extractions diagnostics migration is missing; writing legacy columns"
+        )
+        supabase.table("failed_extractions").insert(legacy_payload).execute()
 
 
 def get_failed_extractions(
@@ -1823,20 +1841,40 @@ def get_failed_extractions(
 ) -> list[dict]:
     """Return failed extractions, newest first, optionally filtered by platform."""
     supabase = get_supabase()
-    query = (
-        supabase.table("failed_extractions")
-        .select(
+    def build_query(columns: str):
+        query = (
+            supabase.table("failed_extractions")
+            .select(columns)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .offset(offset)
+        )
+        return query.eq("platform", platform) if platform else query
+
+    try:
+        result = build_query(
             "id, user_id, url, platform, caption_preview, reason, failure_stage, "
             "flow, error_message, request_id, details, created_at"
+        ).execute()
+        return result.data or []
+    except Exception as exc:
+        if not _is_missing_failed_extraction_diagnostics(exc):
+            raise
+        logger.warning(
+            "failed_extractions diagnostics migration is missing; reading legacy columns"
         )
-        .order("created_at", desc=True)
-        .limit(limit)
-        .offset(offset)
-    )
-    if platform:
-        query = query.eq("platform", platform)
-    result = query.execute()
-    return result.data or []
+        rows = build_query(
+            "id, user_id, url, platform, caption_preview, reason, created_at"
+        ).execute().data or []
+        for row in rows:
+            row.update({
+                "failure_stage": "extraction",
+                "flow": "private",
+                "error_message": None,
+                "request_id": None,
+                "details": {},
+            })
+        return rows
 
 
 def list_users_with_stats(*, limit: int = 100, offset: int = 0) -> list[dict]:

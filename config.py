@@ -61,13 +61,19 @@ INSTAGRAM_WORKER_URL = os.getenv("INSTAGRAM_WORKER_URL", "").strip()
 INSTAGRAM_WORKER_TOKEN = os.getenv("INSTAGRAM_WORKER_TOKEN", "").strip()
 APIFY_API_TOKEN = os.getenv("APIFY_API_TOKEN", "").strip()
 APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID", "apify/instagram-reel-scraper").strip()
+APIFY_RUN_TIMEOUT_SECONDS = float(os.getenv("APIFY_RUN_TIMEOUT_SECONDS", "90"))
+APIFY_POLL_INTERVAL_SECONDS = float(os.getenv("APIFY_POLL_INTERVAL_SECONDS", "2"))
+INSTAGRAM_METADATA_CACHE_TTL_SECONDS = int(os.getenv("INSTAGRAM_METADATA_CACHE_TTL_SECONDS", "604800"))
+INSTAGRAM_METADATA_CACHE_MAX_ENTRIES = int(os.getenv("INSTAGRAM_METADATA_CACHE_MAX_ENTRIES", "512"))
 
 # Telegram capture pipeline deadlines. These bound the full user-visible wait while
 # still allowing completed place lookups to be shown when another lookup times out.
-BOT_EXTRACTION_TIMEOUT_SECONDS = float(os.getenv("BOT_EXTRACTION_TIMEOUT_SECONDS", "45"))
-BOT_METADATA_TIMEOUT_SECONDS = float(os.getenv("BOT_METADATA_TIMEOUT_SECONDS", "30"))
+BOT_EXTRACTION_TIMEOUT_SECONDS = float(os.getenv("BOT_EXTRACTION_TIMEOUT_SECONDS", "120"))
+BOT_METADATA_TIMEOUT_SECONDS = float(os.getenv("BOT_METADATA_TIMEOUT_SECONDS", "95"))
 BOT_PLACE_RESOLUTION_TIMEOUT_SECONDS = float(os.getenv("BOT_PLACE_RESOLUTION_TIMEOUT_SECONDS", "15"))
 BOT_PLACE_RESOLUTION_CONCURRENCY = int(os.getenv("BOT_PLACE_RESOLUTION_CONCURRENCY", "3"))
+BOT_METADATA_PROGRESS_SECONDS = float(os.getenv("BOT_METADATA_PROGRESS_SECONDS", "15"))
+BOT_METADATA_STILL_WORKING_SECONDS = float(os.getenv("BOT_METADATA_STILL_WORKING_SECONDS", "45"))
 
 # Place extraction LLM fallback (Claude Haiku) — off by default due to cost
 ENABLE_LLM_PLACE_FALLBACK: bool = os.getenv("ENABLE_LLM_PLACE_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}

@@ -310,6 +310,14 @@ async def safe_edit_status(status_msg, text: str):
         logger.warning("Could not edit status message", exc_info=True)
 
 
+def build_cancel_extraction_keyboard(task_id: str | None) -> InlineKeyboardMarkup | None:
+    if not task_id:
+        return None
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("✕ Cancel", callback_data=f"cancel_extraction_{task_id}")
+    ]])
+
+
 def log_failed_link(
     *,
     user_id: int,
@@ -810,6 +818,7 @@ async def prompt_instagram_manual_fallback(
     *,
     user_id: int | None = None,
     unresolved_candidates: list[dict] | None = None,
+    timed_out: bool = False,
 ) -> None:
     context.user_data["pending_url"] = source_url
     context.user_data["pending_platform"] = "instagram"
@@ -840,9 +849,36 @@ async def prompt_instagram_manual_fallback(
         )
         return
 
+    retry_markup = None
+    if user_id is not None:
+        retry_session_id = uuid.uuid4().hex[:8]
+        payload = {"url": source_url, "platform": "instagram"}
+        context.user_data.setdefault("extraction_retry_sessions", {})[retry_session_id] = payload
+        try:
+            repository.save_bot_session_v2(
+                user_id,
+                "extraction_retry",
+                retry_session_id,
+                payload,
+                ttl_hours=24,
+            )
+        except Exception:
+            logger.warning("Could not persist extraction retry session", exc_info=True)
+        retry_markup = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                "↻ Try extraction again",
+                callback_data=f"retry_extraction_{retry_session_id}",
+            )
+        ]])
+
+    intro = (
+        "Instagram is taking longer than usual, so I stopped this attempt."
+        if timed_out
+        else "I couldn't reliably extract the place from this Instagram post."
+    )
     await status_msg.edit_text(
-        "I couldn't reliably extract the place from this Instagram post.\n\n"
-        "Reply with the place name and I'll search for it."
+        f"{intro}\n\nReply with the place name and I'll search for it.",
+        reply_markup=retry_markup,
     )
 
 
@@ -909,7 +945,8 @@ async def _save_single_place_result(
             request_id=context.user_data.get("active_extraction_task_id"),
             details={"place_name": place.name},
         )
-        await update.message.reply_text("I found the place, but couldn't save it. Please try again.")
+        reply_message = getattr(update, "effective_message", None) or update.message
+        await reply_message.reply_text("I found the place, but couldn't save it. Please try again.")
         return None
 
     correction_session_id = uuid.uuid4().hex[:8]
@@ -945,7 +982,8 @@ async def _save_single_place_result(
         source_url=source_url,
     )
 
-    await update.message.reply_text(
+    reply_message = getattr(update, "effective_message", None) or update.message
+    await reply_message.reply_text(
         confirmation,
         reply_markup=correction_keyboard,
         parse_mode="HTML",
@@ -1056,17 +1094,31 @@ async def _handle_instagram_no_cookie_url(
     request_id: str | None = None,
 ) -> bool:
     user_id = update.effective_user.id
-    await status_msg.edit_text("Reading the caption... 📝")
+    cancel_markup = build_cancel_extraction_keyboard(request_id)
+    await status_msg.edit_text("Reading the caption... 📝", reply_markup=cancel_markup)
 
     async def show_stage(stage: str) -> None:
         if stage == "resolving":
-            await status_msg.edit_text("Resolving place names... 🔎")
+            await status_msg.edit_text("Resolving place names... 🔎", reply_markup=cancel_markup)
+        elif stage == "metadata_waiting":
+            await status_msg.edit_text(
+                "Instagram is a little slow today — still reading the post... ⏳",
+                reply_markup=cancel_markup,
+            )
+        elif stage == "metadata_still_waiting":
+            await status_msg.edit_text(
+                "Still working on it. You can cancel, or give me another moment... 🌱",
+                reply_markup=cancel_markup,
+            )
 
     pipeline = await run_instagram_place_pipeline(text, on_stage=show_stage)
 
     if pipeline["status"] == "failed" or pipeline.get("timed_out_stage") == "metadata":
         logger.warning("Instagram no-cookie pipeline failed: user_id=%s error=%s", user_id, pipeline.get("error"))
-        timed_out = pipeline.get("timed_out_stage") == "metadata"
+        timed_out = (
+            pipeline.get("timed_out_stage") == "metadata"
+            or "timed out" in (pipeline.get("error") or "").lower()
+        )
         log_failed_link(
             user_id=user_id,
             url=text,
@@ -1077,7 +1129,13 @@ async def _handle_instagram_no_cookie_url(
             request_id=request_id,
             details={"pipeline_status": pipeline.get("status")},
         )
-        await prompt_instagram_manual_fallback(status_msg, context, text)
+        await prompt_instagram_manual_fallback(
+            status_msg,
+            context,
+            text,
+            user_id=user_id,
+            timed_out=timed_out,
+        )
         return True
 
     candidate = pipeline.get("metadata_candidate")
@@ -1109,6 +1167,7 @@ async def _handle_instagram_no_cookie_url(
             request_id=request_id,
             details={
                 "metadata_source": pipeline.get("metadata_source"),
+                "metadata_cache_hit": bool(pipeline.get("metadata_cache_hit")),
                 "slot_count": len(slots),
                 "reviewable_candidate_count": len(reviewable_candidates),
                 "unresolved_count": len(unresolved_suggestions),
@@ -2273,16 +2332,18 @@ async def correction_pick_callback(update: Update, context: ContextTypes.DEFAULT
         await query.message.reply_text("I couldn't change it, so I kept the original save. Please try again.")
 
 
-async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Group URLs are handled by handle_group_url
-    if update.effective_chat.type in ("group", "supergroup"):
-        return
+async def _start_private_url_extraction(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    *,
+    status_msg=None,
+) -> None:
     user_id = update.effective_user.id
-    text = update.message.text.strip()
     ensure_bot_user(update)
 
     if not is_valid_url(text):
-        return  # Not a valid Instagram/TikTok URL, ignore
+        return
 
     platform = detect_platform(text)
     logger.info("URL received: user_id=%s platform=%s", user_id, platform)
@@ -2290,13 +2351,18 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     task_id = uuid.uuid4().hex[:8]
     started_at = asyncio.get_running_loop().time()
     record_bot_event(user_id, "link_received", entity_type="extraction", entity_id=task_id, metadata={"platform": platform})
-    cancel_markup = InlineKeyboardMarkup([[
-        InlineKeyboardButton("✕ Cancel", callback_data=f"cancel_extraction_{task_id}")
-    ]])
-    status_msg = await update.message.reply_text(
-        "Ooh, fresh content! Let me dig in... 🔍",
-        reply_markup=cancel_markup,
-    )
+    cancel_markup = build_cancel_extraction_keyboard(task_id)
+    if status_msg is None:
+        reply_message = getattr(update, "effective_message", None) or update.message
+        status_msg = await reply_message.reply_text(
+            "Ooh, fresh content! Let me dig in... 🔍",
+            reply_markup=cancel_markup,
+        )
+    else:
+        await status_msg.edit_text(
+            "Ooh, fresh content! Let me dig in... 🔍",
+            reply_markup=cancel_markup,
+        )
 
     async def _run():
         if platform == "instagram" and config.INSTAGRAM_NO_COOKIE_ENABLED:
@@ -2361,7 +2427,13 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             details={"timeout_seconds": config.BOT_EXTRACTION_TIMEOUT_SECONDS},
         )
         if platform == "instagram":
-            await prompt_instagram_manual_fallback(status_msg, context, text)
+            await prompt_instagram_manual_fallback(
+                status_msg,
+                context,
+                text,
+                user_id=user_id,
+                timed_out=True,
+            )
         elif platform == "tiktok":
             await prompt_tiktok_manual_fallback(status_msg, context, text)
         else:
@@ -2404,6 +2476,14 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data.pop("active_extraction_task_id", None)
 
 
+async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Group URLs are handled by handle_group_url
+    if update.effective_chat.type in ("group", "supergroup"):
+        return
+    text = update.message.text.strip()
+    await _start_private_url_extraction(update, context, text)
+
+
 async def cancel_extraction_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel an in-progress extraction task."""
     query = update.callback_query
@@ -2424,6 +2504,41 @@ async def cancel_extraction_callback(update: Update, context: ContextTypes.DEFAU
             await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass
+
+
+async def retry_extraction_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Retry a failed Instagram extraction without asking the user to resend the URL."""
+    query = update.callback_query
+    await query.answer("Retrying...")
+    session_id = query.data.replace("retry_extraction_", "")
+    user_id = update.effective_user.id
+    sessions = context.user_data.get("extraction_retry_sessions", {})
+    payload = sessions.pop(session_id, None)
+    if payload is None:
+        try:
+            payload = repository.get_bot_session_v2(
+                user_id,
+                "extraction_retry",
+                session_id,
+            )
+        except Exception:
+            logger.warning("Could not restore extraction retry session", exc_info=True)
+    if not payload or not payload.get("url"):
+        await query.edit_message_text(
+            "That retry expired. Send the Instagram link again and I'll take another look."
+        )
+        return
+
+    try:
+        repository.delete_bot_session_v2(user_id, "extraction_retry", session_id)
+    except Exception:
+        logger.warning("Could not delete extraction retry session", exc_info=True)
+    await _start_private_url_extraction(
+        update,
+        context,
+        payload["url"],
+        status_msg=query.message,
+    )
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -10,8 +12,10 @@ import config
 from services.instagram_apify_client import extract_instagram_via_apify
 from services.instagram_public import extract_instagram_metadata
 from services.instagram_worker_client import extract_instagram_via_worker
+from services.content_attribution import canonicalize_content_url
 from services.metadata_normalizer import metadata_candidate_to_runtime_record
 from services.place_pipeline import extract_place_evidence_from_metadata, resolve_place_slots
+from services.public_metadata import MetadataCandidate
 
 
 logger = logging.getLogger(__name__)
@@ -20,6 +24,7 @@ _instagram_no_cookie_semaphore = asyncio.Semaphore(max(1, config.INSTAGRAM_NO_CO
 _instagram_no_cookie_lock = asyncio.Lock()
 _instagram_no_cookie_failures: list[float] = []
 _instagram_no_cookie_cooldown_until = 0.0
+_instagram_metadata_cache: OrderedDict[str, tuple[float, MetadataCandidate]] = OrderedDict()
 
 
 class InstagramNoCookieCooldownError(Exception):
@@ -41,6 +46,43 @@ def is_retryable_instagram_error(error: str | None) -> bool:
             "please wait a few minutes",
         )
     )
+
+
+def _metadata_cache_key(url: str) -> str:
+    canonical = canonicalize_content_url("instagram", url)
+    return canonical.content_id or canonical.canonical_url
+
+
+def _clone_metadata_candidate(candidate: MetadataCandidate) -> MetadataCandidate:
+    return copy.deepcopy(candidate)
+
+
+def _get_cached_metadata(url: str) -> MetadataCandidate | None:
+    key = _metadata_cache_key(url)
+    cached = _instagram_metadata_cache.get(key)
+    if not cached:
+        return None
+    cached_at, candidate = cached
+    if time.monotonic() - cached_at > config.INSTAGRAM_METADATA_CACHE_TTL_SECONDS:
+        _instagram_metadata_cache.pop(key, None)
+        return None
+    _instagram_metadata_cache.move_to_end(key)
+    return _clone_metadata_candidate(candidate)
+
+
+def _cache_metadata(url: str, candidate: MetadataCandidate) -> None:
+    if not candidate.success or config.INSTAGRAM_METADATA_CACHE_MAX_ENTRIES <= 0:
+        return
+    key = _metadata_cache_key(url)
+    _instagram_metadata_cache[key] = (time.monotonic(), _clone_metadata_candidate(candidate))
+    _instagram_metadata_cache.move_to_end(key)
+    while len(_instagram_metadata_cache) > config.INSTAGRAM_METADATA_CACHE_MAX_ENTRIES:
+        _instagram_metadata_cache.popitem(last=False)
+
+
+def clear_instagram_metadata_cache() -> None:
+    """Clear the bounded process cache; exposed for tests and operational reloads."""
+    _instagram_metadata_cache.clear()
 
 
 async def _enter_instagram_queue() -> None:
@@ -116,37 +158,94 @@ def _choose_best_candidate(candidates: list[Any]):
 
 
 async def extract_instagram_metadata_no_cookie(url: str) -> dict[str, Any]:
+    cached = _get_cached_metadata(url)
+    if cached:
+        logger.info("Instagram metadata cache hit for %s", _metadata_cache_key(url))
+        return {
+            "status": "ok",
+            "metadata_candidate": cached,
+            "candidates": [cached],
+            "cache_hit": True,
+            "error": None,
+        }
+
     if config.INSTAGRAM_EXTRACTION_BACKEND == "apify":
         candidate = await extract_instagram_via_apify(url)
         if candidate.success:
+            _cache_metadata(url, candidate)
             return {
                 "status": "ok",
                 "metadata_candidate": candidate,
                 "candidates": [candidate],
+                "cache_hit": False,
                 "error": None,
             }
         return {
             "status": "failed",
             "metadata_candidate": None,
             "candidates": [candidate],
+            "cache_hit": False,
             "error": candidate.error or "Instagram Apify extraction failed",
         }
     if config.INSTAGRAM_EXTRACTION_BACKEND == "worker":
         candidate = await extract_instagram_via_worker(url)
         if candidate.success:
+            _cache_metadata(url, candidate)
             return {
                 "status": "ok",
                 "metadata_candidate": candidate,
                 "candidates": [candidate],
+                "cache_hit": False,
                 "error": None,
             }
         return {
             "status": "failed",
             "metadata_candidate": None,
             "candidates": [candidate],
+            "cache_hit": False,
             "error": candidate.error or "Instagram worker extraction failed",
         }
-    return await extract_instagram_metadata_no_cookie_direct(url)
+    result = await extract_instagram_metadata_no_cookie_direct(url)
+    candidate = result.get("metadata_candidate")
+    if candidate:
+        _cache_metadata(url, candidate)
+    result["cache_hit"] = False
+    return result
+
+
+async def _extract_metadata_with_progress(
+    url: str,
+    on_stage: Callable[[str], Awaitable[None]] | None,
+) -> dict[str, Any]:
+    """Wait for metadata once, emitting bounded progress without restarting extraction."""
+    timeout = max(0.01, config.BOT_METADATA_TIMEOUT_SECONDS)
+    milestones = [
+        (config.BOT_METADATA_PROGRESS_SECONDS, "metadata_waiting"),
+        (config.BOT_METADATA_STILL_WORKING_SECONDS, "metadata_still_waiting"),
+    ]
+    milestones = sorted(
+        (seconds, stage)
+        for seconds, stage in milestones
+        if 0 < seconds < timeout
+    )
+    task = asyncio.create_task(extract_instagram_metadata_no_cookie(url))
+    started_at = asyncio.get_running_loop().time()
+    try:
+        for threshold, stage in milestones:
+            elapsed = asyncio.get_running_loop().time() - started_at
+            done, _ = await asyncio.wait({task}, timeout=max(0, threshold - elapsed))
+            if done:
+                return task.result()
+            if on_stage:
+                await on_stage(stage)
+
+        elapsed = asyncio.get_running_loop().time() - started_at
+        return await asyncio.wait_for(task, timeout=max(0.01, timeout - elapsed))
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        raise
 
 
 async def extract_instagram_metadata_no_cookie_direct(url: str) -> dict[str, Any]:
@@ -191,10 +290,7 @@ async def run_instagram_place_pipeline(
     on_stage: Callable[[str], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
     try:
-        extraction = await asyncio.wait_for(
-            extract_instagram_metadata_no_cookie(url),
-            timeout=config.BOT_METADATA_TIMEOUT_SECONDS,
-        )
+        extraction = await _extract_metadata_with_progress(url, on_stage)
     except asyncio.TimeoutError:
         logger.warning("Instagram metadata extraction timed out for %s", url)
         return {
@@ -202,6 +298,7 @@ async def run_instagram_place_pipeline(
             "timed_out_stage": "metadata",
             "metadata_source": None,
             "metadata_candidate": None,
+            "metadata_cache_hit": False,
             "slots": [],
             "suggestions": [],
             "places": [],
@@ -215,6 +312,7 @@ async def run_instagram_place_pipeline(
             "status": "failed",
             "metadata_source": None,
             "metadata_candidate": None,
+            "metadata_cache_hit": False,
             "slots": [],
             "suggestions": [],
             "places": [],
@@ -229,6 +327,7 @@ async def run_instagram_place_pipeline(
             "status": "metadata_only",
             "metadata_source": candidate.source,
             "metadata_candidate": candidate,
+            "metadata_cache_hit": bool(extraction.get("cache_hit")),
             "slots": [],
             "suggestions": [],
             "places": [],
@@ -261,6 +360,7 @@ async def run_instagram_place_pipeline(
         "timed_out_stage": "resolution" if resolution_timed_out else None,
         "metadata_source": candidate.source,
         "metadata_candidate": candidate,
+        "metadata_cache_hit": bool(extraction.get("cache_hit")),
         "slots": slots,
         "suggestions": suggestions,
         "places": places,

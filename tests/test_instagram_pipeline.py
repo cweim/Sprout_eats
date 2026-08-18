@@ -4,11 +4,17 @@ from types import SimpleNamespace
 import pytest
 
 from services.instagram_pipeline import (
+    clear_instagram_metadata_cache,
     extract_instagram_metadata_no_cookie,
     extract_instagram_metadata_no_cookie_direct,
     is_retryable_instagram_error,
     run_instagram_place_pipeline,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_metadata_cache():
+    clear_instagram_metadata_cache()
 
 
 def make_candidate(
@@ -59,6 +65,30 @@ async def test_extract_instagram_metadata_no_cookie_retries_once(monkeypatch):
     assert result["status"] == "ok"
     assert calls["count"] == 2
     assert result["metadata_candidate"].source == "instagram_instaloader"
+
+
+@pytest.mark.asyncio
+async def test_metadata_cache_collapses_instagram_url_variants(monkeypatch):
+    calls = 0
+
+    async def fake_apify(url: str):
+        nonlocal calls
+        calls += 1
+        return make_candidate(source="instagram_apify")
+
+    monkeypatch.setattr("services.instagram_pipeline.config.INSTAGRAM_EXTRACTION_BACKEND", "apify")
+    monkeypatch.setattr("services.instagram_pipeline.extract_instagram_via_apify", fake_apify)
+
+    first = await extract_instagram_metadata_no_cookie(
+        "https://www.instagram.com/p/ABC123/?img_index=1"
+    )
+    second = await extract_instagram_metadata_no_cookie(
+        "https://www.instagram.com/reel/ABC123/?igsh=tracking"
+    )
+
+    assert first["cache_hit"] is False
+    assert second["cache_hit"] is True
+    assert calls == 1
 
 
 @pytest.mark.asyncio
