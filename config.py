@@ -78,6 +78,9 @@ BOT_METADATA_STILL_WORKING_SECONDS = float(os.getenv("BOT_METADATA_STILL_WORKING
 # Place extraction LLM fallback (Claude Haiku) — off by default due to cost
 ENABLE_LLM_PLACE_FALLBACK: bool = os.getenv("ENABLE_LLM_PLACE_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}
 
+# Friend activity notification cooldown
+FRIEND_NOTIFICATION_COOLDOWN_HOURS = int(os.getenv("FRIEND_NOTIFICATION_COOLDOWN_HOURS", "4"))
+
 # Reminder job
 REMINDER_JOB_INTERVAL_MINUTES = int(os.getenv("REMINDER_JOB_INTERVAL_MINUTES", "5"))
 REMINDER_JOB_STARTUP_DELAY_SECONDS = int(os.getenv("REMINDER_JOB_STARTUP_DELAY_SECONDS", "30"))

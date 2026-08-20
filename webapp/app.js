@@ -8683,8 +8683,10 @@ function openEditProfile() {
     if (profileData) {
         const nameEl = document.getElementById('edit-display-name');
         const bioEl = document.getElementById('edit-bio');
+        const notifyEl = document.getElementById('edit-notify-activity');
         if (nameEl) nameEl.value = profileData.display_name || '';
         if (bioEl) bioEl.value = profileData.bio || '';
+        if (notifyEl) notifyEl.checked = profileData.notify_friend_activity !== false;
     }
     modal.style.display = 'flex';
 }
@@ -8697,11 +8699,12 @@ function closeEditProfile() {
 async function saveProfile() {
     const displayName = document.getElementById('edit-display-name')?.value.trim();
     const bio = document.getElementById('edit-bio')?.value.trim();
+    const notifyActivity = document.getElementById('edit-notify-activity')?.checked ?? true;
     try {
         const res = await fetch('/api/me', {
             method: 'PATCH',
             headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ display_name: displayName, bio, is_public: true })
+            body: JSON.stringify({ display_name: displayName, bio, is_public: true, notify_friend_activity: notifyActivity })
         });
         if (!res.ok) throw new Error('Failed to save');
         const raw = await res.json();

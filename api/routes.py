@@ -538,6 +538,7 @@ async def search_places_api(
 async def create_place(
     request: Request,
     place: PlaceCreate,
+    background_tasks: BackgroundTasks,
     user: TelegramUser = Depends(get_current_user)
 ):
     """Add a new place manually."""
@@ -560,6 +561,16 @@ async def create_place(
         neighborhood=place.neighborhood,
         primary_cuisine=place.primary_cuisine,
     )
+
+    # Only notify on new saves, not duplicates; cooldown-gated per recipient
+    if outcome["created"]:
+        background_tasks.add_task(
+            _notify_friends_of_activity,
+            user_id=user.id,
+            activity_type="save",
+            place_name=place.name,
+            google_place_id=place.google_place_id,
+        )
 
     return {
         "place": place_to_dict(outcome["place"]),
@@ -717,6 +728,7 @@ async def get_review(place_id: int, user: TelegramUser = Depends(get_current_use
 async def create_or_update_review(
     place_id: int,
     request: ReviewRequest,
+    background_tasks: BackgroundTasks,
     user: TelegramUser = Depends(get_current_user)
 ):
     """Create or update review for a place."""
@@ -777,6 +789,17 @@ async def create_or_update_review(
             "remarks": (request.resolved_remarks() or "")[:100],
         },
     )
+
+    # Notify friends — reviews always fire (high signal), resets save cooldown
+    if request.is_public:
+        saved_place = repository.get_place_by_id(user.id, place_id)
+        background_tasks.add_task(
+            _notify_friends_of_activity,
+            user_id=user.id,
+            activity_type="review",
+            place_name=(saved_place.get("name") if saved_place else None) or "a place",
+            google_place_id=(saved_place.get("google_place_id") if saved_place else None),
+        )
 
     return {"review": review_to_dict(review), "message": "Review saved!"}
 
@@ -927,6 +950,7 @@ class ProfileUpdate(BaseModel):
     is_public: Optional[bool] = None
     avatar_url: Optional[str] = None
     clear_avatar: bool = False
+    notify_friend_activity: Optional[bool] = None
 
     @field_validator("avatar_url")
     @classmethod
@@ -958,6 +982,7 @@ async def update_my_profile(update: ProfileUpdate, user: TelegramUser = Depends(
         is_public=update.is_public,
         avatar_url=update.avatar_url,
         clear_avatar=update.clear_avatar,
+        notify_friend_activity=update.notify_friend_activity,
     )
     profile = repository.get_my_profile(user.id)
     return {"profile": profile}
@@ -1213,33 +1238,55 @@ async def get_invite_link(user: TelegramUser = Depends(get_current_user)):
 # Log Visit (atomic: mark visited + review + activity + notify friends)
 # =============================================================================
 
-async def _notify_friends_of_visit(user_id: int, place_name: str, google_place_id: Optional[str]):
-    """Fire-and-forget: send Telegram notification to all friends via Bot API."""
+async def _notify_friends_of_activity(
+    user_id: int,
+    activity_type: str,
+    place_name: str,
+    google_place_id: Optional[str] = None,
+):
+    """Fire-and-forget: notify friends of a save, review, or visit. Saves are cooldown-gated."""
     friend_ids = repository.get_friend_ids(user_id)
     friend_ids = repository.filter_friend_activity_notification_recipients(friend_ids)
     if not friend_ids:
         return
     user = repository.get_user_by_id(user_id)
     actor = (user.get("display_name") or user.get("first_name") or "Your friend") if user else "Your friend"
-    text = f"🌱 *{actor}* just visited *{place_name}*!"
     bot_token = app_config.TELEGRAM_BOT_TOKEN
     if not bot_token:
         return
 
+    if activity_type == "save":
+        text = f"🌱 *{actor}* is building their food map!"
+        btn_label = "See their saves 🗺"
+    elif activity_type == "review":
+        text = f"⭐ *{actor}* reviewed *{place_name}* — check it out!"
+        btn_label = "See the review 👀"
+    else:  # visit
+        text = f"🌱 *{actor}* just visited *{place_name}*!"
+        btn_label = "See their visit 👀"
+
     reply_markup = None
     if app_config.WEBAPP_URL and google_place_id:
         app_url = build_webapp_url(app_config.WEBAPP_URL, "gplace", google_place_id)
-        reply_markup = {"inline_keyboard": [[{"text": "See their visit 👀", "web_app": {"url": app_url}}]]}
+        reply_markup = {"inline_keyboard": [[{"text": btn_label, "web_app": {"url": app_url}}]]}
 
+    cooldown_hours = app_config.FRIEND_NOTIFICATION_COOLDOWN_HOURS
+    notified: list = []
     async with httpx.AsyncClient(timeout=5) as client:
         for fid in friend_ids:
+            if activity_type == "save" and repository.is_notification_on_cooldown(user_id, fid, cooldown_hours):
+                continue
             try:
                 payload: dict = {"chat_id": fid, "text": text, "parse_mode": "Markdown"}
                 if reply_markup:
                     payload["reply_markup"] = reply_markup
                 await client.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json=payload)
+                notified.append(fid)
             except Exception as exc:
-                logger.warning("visit notify failed for %s: %s", fid, exc)
+                logger.warning("activity notify failed for %s: %s", fid, exc)
+
+    if notified:
+        repository.record_notifications_sent(user_id, notified)
 
 
 @router.post("/places/{place_id}/log-visit")
@@ -1261,8 +1308,9 @@ async def log_visit_place(
 
     # Notify friends in background (non-blocking)
     background_tasks.add_task(
-        _notify_friends_of_visit,
+        _notify_friends_of_activity,
         user_id=user.id,
+        activity_type="visit",
         place_name=result.get("place_name", "a place"),
         google_place_id=result.get("google_place_id"),
     )

@@ -914,6 +914,16 @@
                 <input type="text" id="edit-display-name" class="form-input" placeholder="Your name" maxlength="50">
                 <label class="form-label">Bio</label>
                 <textarea id="edit-bio" class="form-textarea" placeholder="Food lover, explorer..." maxlength="150" rows="3"></textarea>
+                <div class="review-privacy-row" style="margin-top:16px">
+                    <div style="flex:1">
+                        <label class="review-label" for="edit-notify-activity">Friend activity notifications</label>
+                        <div class="review-label-optional">Get notified in Telegram when friends save or review places</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="edit-notify-activity" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn-primary" onclick="saveProfile()">Save</button>
@@ -1063,6 +1073,6 @@
     </div>
 
     <script src="analytics.js?v=1"></script>
-    <script src="app.js?v=128"></script>
+    <script src="app.js?v=129"></script>
 </body>
 </html>

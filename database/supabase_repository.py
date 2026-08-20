@@ -84,6 +84,41 @@ def filter_friend_activity_notification_recipients(user_ids: List[int]) -> List[
     return [user_id for user_id in user_ids if preferences.get(user_id, True)]
 
 
+def is_notification_on_cooldown(actor_id: int, recipient_id: int, cooldown_hours: int) -> bool:
+    """Return True if a notification was sent from actor to recipient within the cooldown window."""
+    from datetime import datetime, timezone, timedelta
+    supabase = get_supabase()
+    result = (
+        supabase.table("notification_cooldown")
+        .select("last_notified_at")
+        .eq("actor_user_id", actor_id)
+        .eq("recipient_user_id", recipient_id)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        return False
+    last = result.data[0]["last_notified_at"]
+    last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+    return datetime.now(timezone.utc) - last_dt < timedelta(hours=cooldown_hours)
+
+
+def record_notifications_sent(actor_id: int, recipient_ids: List[int]) -> None:
+    """Upsert last_notified_at for each (actor, recipient) pair."""
+    if not recipient_ids:
+        return
+    supabase = get_supabase()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    rows = [
+        {"actor_user_id": actor_id, "recipient_user_id": rid, "last_notified_at": now}
+        for rid in recipient_ids
+    ]
+    supabase.table("notification_cooldown").upsert(
+        rows, on_conflict="actor_user_id,recipient_user_id"
+    ).execute()
+
+
 # =============================================================================
 # Place Operations
 # =============================================================================
@@ -2068,7 +2103,7 @@ def get_group_map_share_id(token: str) -> Optional[int]:
 def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     """Return user row (first_name, username, etc.) or None."""
     supabase = get_supabase()
-    result = supabase.table("users").select("id, username, first_name, last_name").eq("id", user_id).execute()
+    result = supabase.table("users").select("id, username, first_name, last_name, display_name").eq("id", user_id).execute()
     return result.data[0] if result.data else None
 
 
@@ -2156,6 +2191,7 @@ def update_user_profile(
     is_public: Optional[bool] = None,
     avatar_url: Optional[str] = None,
     clear_avatar: bool = False,
+    notify_friend_activity: Optional[bool] = None,
 ) -> Optional[Dict[str, Any]]:
     """Update user profile fields."""
     supabase = get_supabase()
@@ -2170,6 +2206,8 @@ def update_user_profile(
         update_data["avatar_url"] = avatar_url
     if clear_avatar:
         update_data["avatar_url"] = None
+    if notify_friend_activity is not None:
+        update_data["notify_friend_activity"] = notify_friend_activity
     if not update_data:
         return None
     result = supabase.table("users").update(update_data).eq("id", user_id).execute()
@@ -2198,7 +2236,7 @@ def get_my_profile(user_id: int) -> Optional[Dict[str, Any]]:
     """Get full profile for the authenticated user (public or private)."""
     supabase = get_supabase()
     result = supabase.table("users").select(
-        "id, username, first_name, last_name, display_name, bio, is_public, avatar_url, created_at"
+        "id, username, first_name, last_name, display_name, bio, is_public, notify_friend_activity, avatar_url, created_at"
     ).eq("id", user_id).execute()
     if not result.data:
         return None
