@@ -188,6 +188,14 @@ let collections = [];
 let activeCollectionId = null;
 let _collectionPlacesCache = {};  // { collectionId: [places] }
 
+// SWR caches — show stale data instantly, refresh in background
+let _feedCache = null;          // { data: activities[], ts: number }
+const FEED_CACHE_TTL_MS = 60_000;
+let _friendsCache = null;       // { data: friends[], ts: number }
+const FRIENDS_CACHE_TTL_MS = 30_000;
+let _profileCache = null;       // { data: profileData, ts: number }
+const PROFILE_CACHE_TTL_MS = 60_000;
+
 const PLACE_PRICE_LABELS = {
     INEXPENSIVE: '$',
     MODERATE: '$$',
@@ -479,6 +487,52 @@ function clearSkeletonCards() {
     container.querySelectorAll('.skeleton-card').forEach(el => el.remove());
 }
 
+// Feed skeleton — shown on first load (no SWR cache yet)
+function showFeedSkeletons(count = 4) {
+    const list = document.getElementById('feed-list');
+    if (!list) return;
+    list.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+        const row = document.createElement('div');
+        row.className = 'feed-skeleton-row';
+        row.innerHTML = `
+            <div class="feed-skeleton-avatar"></div>
+            <div class="feed-skeleton-content">
+                <div class="skeleton-line skeleton-title" style="width:70%"></div>
+                <div class="skeleton-line skeleton-text" style="width:85%"></div>
+                <div class="skeleton-line skeleton-text short" style="width:40%"></div>
+            </div>`;
+        list.appendChild(row);
+    }
+}
+
+function clearFeedSkeletons() {
+    const list = document.getElementById('feed-list');
+    if (!list) return;
+    list.querySelectorAll('.feed-skeleton-row').forEach(el => el.remove());
+}
+
+// Profile skeleton — shown on first load (no SWR cache yet)
+function showProfileSkeleton() {
+    const nameEl = document.getElementById('profile-display-name');
+    const userEl = document.getElementById('profile-username');
+    const avatarEl = document.getElementById('profile-avatar-circle');
+    if (nameEl) nameEl.innerHTML = '<div class="skeleton-line skeleton-title" style="width:50%;margin:0 auto"></div>';
+    if (userEl) userEl.innerHTML = '<div class="skeleton-line skeleton-text" style="width:30%;margin:0 auto"></div>';
+    if (avatarEl) { avatarEl.style.backgroundImage = ''; avatarEl.textContent = ''; avatarEl.className = 'profile-skeleton-avatar'; }
+    ['stat-saved', 'stat-visited', 'stat-reviews'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '<div class="profile-skeleton-stat"></div>';
+    });
+}
+
+function clearProfileSkeleton() {
+    const avatarEl = document.getElementById('profile-avatar-circle');
+    if (avatarEl && avatarEl.classList.contains('profile-skeleton-avatar')) {
+        avatarEl.className = 'profile-avatar-circle';
+    }
+}
+
 // Show shared map owner banner (injected below the header)
 function showShareBanner() {
     if (document.getElementById('share-map-banner')) return;
@@ -605,9 +659,12 @@ function initMap() {
     // Friend activity layer — separate from user's own markers
     friendMarkersLayer = L.layerGroup().addTo(map);
 
+    let _zoomEndTimer = null;
     map.on('zoomend', () => {
         updatePlacePreviewVisibility();
-        updateMarkerIconSizes();
+        // Debounce marker icon updates — zoomend fires multiple times during animation
+        clearTimeout(_zoomEndTimer);
+        _zoomEndTimer = setTimeout(updateMarkerIconSizes, 150);
     });
     updatePlacePreviewVisibility();
 
@@ -1153,6 +1210,14 @@ function displayPlacesOnMap(fitBounds = true) {
     updatePlacePreviewVisibility();
 }
 
+// Debounced map render — use in filter handlers to avoid O(n) marker recreation per rapid click.
+// Keep direct displayPlacesOnMap() for data-mutation callers (save, review, fetch).
+let _mapRenderTimer = null;
+function debouncedDisplayPlacesOnMap(fitBounds = false) {
+    clearTimeout(_mapRenderTimer);
+    _mapRenderTimer = setTimeout(() => displayPlacesOnMap(fitBounds), 100);
+}
+
 // Populate cuisine select from available places
 function populateCuisineDropdown() {
     const select = document.getElementById('map-cuisine-filter');
@@ -1211,9 +1276,9 @@ function populateCollectionsDropdown() {
 function onMapCollectionChange(val) {
     activeCollectionId = val ? parseInt(val) : null;
     if (activeCollectionId && !_collectionPlacesCache[activeCollectionId]) {
-        _fetchCollectionPlaces(activeCollectionId).then(() => displayPlacesOnMap(false));
+        _fetchCollectionPlaces(activeCollectionId).then(() => displayPlacesOnMap(false));  // direct: after data fetch
     } else {
-        displayPlacesOnMap(false);
+        debouncedDisplayPlacesOnMap(false);  // filter change: debounced
     }
 }
 
@@ -1284,7 +1349,7 @@ function renderCountryChips() {
             chip.classList.add('active');
             countryFilter = chip.dataset.country;
             applyFilters();
-            displayPlacesOnMap(false);
+            debouncedDisplayPlacesOnMap(false);
         });
     });
 }
@@ -1413,7 +1478,7 @@ function setupMapControls() {
                 });
             }
             applyFilters();
-            displayPlacesOnMap(false);
+            debouncedDisplayPlacesOnMap(false);
         });
     });
 
@@ -1422,7 +1487,7 @@ function setupMapControls() {
     if (cuisineSelect) {
         cuisineSelect.addEventListener('change', (e) => {
             mapCuisineFilter = e.target.value;
-            displayPlacesOnMap(false);
+            debouncedDisplayPlacesOnMap(false);
         });
     }
 }
@@ -2460,7 +2525,7 @@ function toggleOpenNow() {
         chip.setAttribute('aria-pressed', String(openNowFilter));
     }
     applyFilters();
-    displayPlacesOnMap(false);
+    debouncedDisplayPlacesOnMap(false);
 }
 
 function applyFilters() {
@@ -2589,7 +2654,7 @@ function setupVisitedFilter() {
 
             // Re-apply filters
             applyFilters();
-            displayPlacesOnMap(false);  // Don't change map bounds
+            debouncedDisplayPlacesOnMap(false);
         });
     });
 }
@@ -3584,7 +3649,7 @@ function applyFilterDrawer() {
 
     closeFilterDrawer();
     applyFilters();
-    displayPlacesOnMap(false);
+    debouncedDisplayPlacesOnMap(false);
     updateFilterButton();
     renderActiveFilterPills();
 }
@@ -3687,7 +3752,7 @@ function removeFilter(type) {
     if (type === 'price') priceLevelFilter = '';
 
     applyFilters();
-    displayPlacesOnMap(false);
+    debouncedDisplayPlacesOnMap(false);
     updateFilterButton();
     renderActiveFilterPills();
 }
@@ -3849,14 +3914,14 @@ if (document.getElementById('review-sheet')?.style.display === 'flex') { closeRe
         return;
     }
 
-    // Prefer a zoomed-in user-centric map on first load when location is available.
-    // Fall back to the previous "fit all places" overview if geolocation is unavailable.
-    const initialLocation = await requestUserLocation(true);
+    // Fire geolocation without blocking — it calls applyFilters() + re-centers map
+    // internally once GPS resolves. Map starts at fit-bounds view immediately.
+    requestUserLocation(true);
     // Reviews must be loaded before map markers are created so popup content
     // correctly shows the reviewed vs un-reviewed card on first render.
     await loadReviews();
 
-    displayPlacesOnMap(!initialLocation);
+    displayPlacesOnMap(true);
 
     ensurePlacesUiInitialized();
 
@@ -5816,15 +5881,39 @@ function openRestaurantCardFromSearch(place) {
 
 // ========== FEED ==========
 
+function _renderFeedActivities(list, empty, activities) {
+    if (activities.length === 0) {
+        list.innerHTML = '';
+        if (empty) { empty.style.display = ''; populateFeedEmptyChips(); }
+        return;
+    }
+    if (empty) empty.style.display = 'none';
+    feedActivitiesMap = {};
+    activities.forEach(a => { feedActivitiesMap[a.id] = a; });
+    list.innerHTML = activities.map(a => createFeedCard(a)).join('');
+}
+
 async function loadFeed() {
     const list = document.getElementById('feed-list');
     const loading = document.getElementById('feed-loading');
     const empty = document.getElementById('feed-empty');
     if (!list) return;
 
-    if (loading) loading.style.display = '';
-    if (empty) empty.style.display = 'none';
-    list.innerHTML = '';
+    const now = Date.now();
+    const isCacheFresh = _feedCache && (now - _feedCache.ts) < FEED_CACHE_TTL_MS;
+
+    if (_feedCache) {
+        // Render cached data immediately (stale-while-revalidate)
+        if (loading) loading.style.display = 'none';
+        _renderFeedActivities(list, empty, _feedCache.data);
+        if (isCacheFresh) return;
+        // Cache stale — continue to fetch silently in background
+    } else {
+        // First load — show skeletons while fetching
+        if (loading) loading.style.display = 'none';
+        showFeedSkeletons(4);
+        if (empty) empty.style.display = 'none';
+    }
 
     try {
         const res = await fetch('/api/feed', { headers: getAuthHeaders() });
@@ -5832,21 +5921,19 @@ async function loadFeed() {
         const data = await res.json();
         const activities = data.activities || [];
 
-        if (loading) loading.style.display = 'none';
+        _feedCache = { data: activities, ts: Date.now() };
 
-        if (activities.length === 0) {
-            if (empty) empty.style.display = '';
-            populateFeedEmptyChips();
-            return;
+        // Only re-render if user is still on home tab (avoid jarring update if they switched away)
+        if (document.getElementById('feed-list')) {
+            _renderFeedActivities(list, empty, activities);
         }
-
-        feedActivitiesMap = {};
-        activities.forEach(a => { feedActivitiesMap[a.id] = a; });
-        list.innerHTML = activities.map(a => createFeedCard(a)).join('');
     } catch (err) {
         console.error('loadFeed error:', err);
-        if (loading) loading.style.display = 'none';
-        if (list) list.innerHTML = '<p style="padding:16px;color:var(--hint-color)">Could not load feed.</p>';
+        clearFeedSkeletons();
+        // Keep showing stale cache if available; only show error on first load
+        if (!_feedCache && list) {
+            list.innerHTML = '<p style="padding:16px;color:var(--hint-color)">Could not load feed.</p>';
+        }
     }
 }
 
@@ -5864,7 +5951,7 @@ function createFeedCard(activity) {
 // ── Saved: slim notification row (no card box) ──────────────────────────────
 function createSavedRow(activity) {
     const meta      = activity.metadata || {};
-    const actor     = activity.actor_name || activity.actor_username || 'Friend';
+    const actor     = activity.is_own ? 'You' : (activity.actor_name || activity.actor_username || 'Friend');
     const initials  = actor.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
     const placeName = activity.place_name_resolved || meta.place_name || 'a place';
     const address   = activity.place_address_resolved || meta.address || '';
@@ -5921,7 +6008,7 @@ function createSavedRow(activity) {
 function createVisitedCard(activity) {
     const meta          = activity.metadata || {};
     const review        = activity.review   || null;
-    const actor         = activity.actor_name || activity.actor_username || 'Friend';
+    const actor         = activity.is_own ? 'You' : (activity.actor_name || activity.actor_username || 'Friend');
     const initials      = actor.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
     const placeName     = activity.place_name_resolved || meta.place_name || 'a place';
     const address       = activity.place_address_resolved || meta.address || '';
@@ -6240,6 +6327,7 @@ async function fcQuickSave(aid, gid) {
             }
         }
         if (activity.user_place_state) activity.user_place_state.saved = true;
+        _feedCache = null;  // saved place will generate new activity — invalidate feed cache
         showToast('Saved to your list!');
     } catch(e) {
         console.error('fcQuickSave error:', e);
@@ -7026,6 +7114,7 @@ async function removeFriendById() {
         });
         if (!res.ok) throw new Error('remove failed');
         openUserProfile(_upUserId);
+        _friendsCache = null;
         loadFriends();
     } catch (err) { console.error('removeFriendById error:', err); }
 }
@@ -7036,13 +7125,22 @@ let profileData = null;
 
 async function loadProfile() {
     try {
+        const now = Date.now();
+        if (_profileCache && (now - _profileCache.ts) < PROFILE_CACHE_TTL_MS) {
+            profileData = _profileCache.data;
+            renderProfile(profileData);
+            await Promise.all([loadFriends(), loadFriendRequests()]);
+            return;
+        }
+        showProfileSkeleton();
         const res = await fetch('/api/me', { headers: getAuthHeaders() });
         if (!res.ok) throw new Error('Failed to load profile');
         const raw = await res.json();
         profileData = raw.profile || raw;   // unwrap {profile: ...} wrapper
+        _profileCache = { data: profileData, ts: Date.now() };
+        clearProfileSkeleton();
         renderProfile(profileData);
-        await loadFriends();
-        await loadFriendRequests();
+        await Promise.all([loadFriends(), loadFriendRequests()]);
     } catch (err) {
         console.error('loadProfile error:', err);
     }
@@ -8094,6 +8192,68 @@ function openVisitsFullList() {
 
 // ========== FRIENDS ==========
 
+function _renderFriends(listEl, fullListEl, emptyEl, countEl, seeAllBtn, friends) {
+    if (countEl) countEl.textContent = friends.length > 0 ? friends.length : '';
+
+    // Clear previous avatar buttons and full list
+    listEl.querySelectorAll('.friend-avatar-btn').forEach(el => el.remove());
+    if (fullListEl) fullListEl.innerHTML = '';
+
+    if (friends.length === 0) {
+        if (emptyEl) emptyEl.style.display = '';
+        if (seeAllBtn) seeAllBtn.style.display = 'none';
+        return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (seeAllBtn) seeAllBtn.style.display = friends.length > 5 ? '' : 'none';
+
+    // "+ Add" circle first
+    const addBtn = document.createElement('div');
+    addBtn.className = 'friend-avatar-btn';
+    addBtn.innerHTML = `<div class="friend-avatar-circle friend-add-circle" onclick="openAddFriendModal()">+</div><span class="friend-avatar-name">Add</span>`;
+    listEl.insertBefore(addBtn, emptyEl);
+
+    // Avatar circles (max 5 shown in row)
+    friends.slice(0, 5).forEach(f => {
+        const name = f.display_name || f.first_name || 'Friend';
+        const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+        const avatarStyle = f.avatar_url
+            ? `style="background-image:url('${escapeHtml(f.avatar_url)}');background-size:cover;background-position:center"`
+            : '';
+        const avatarContent = f.avatar_url ? '' : initials;
+        const btn = document.createElement('div');
+        btn.className = 'friend-avatar-btn';
+        btn.style.cursor = 'pointer';
+        btn.innerHTML = `<div class="friend-avatar-circle" ${avatarStyle}>${avatarContent}</div><span class="friend-avatar-name">${escapeHtml(name.split(' ')[0])}</span>`;
+        btn.addEventListener('click', () => openUserProfile(f.user_id));
+        listEl.appendChild(btn);
+    });
+
+    // Full vertical list (expanded via "See all")
+    if (fullListEl) {
+        friends.forEach(f => {
+            const name = f.display_name || f.first_name || 'Friend';
+            const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+            const avatarStyle = f.avatar_url
+                ? `style="background-image:url('${escapeHtml(f.avatar_url)}');background-size:cover;background-position:center"`
+                : '';
+            const avatarContent = f.avatar_url ? '' : initials;
+            const card = document.createElement('div');
+            card.className = 'friend-card';
+            card.style.cursor = 'pointer';
+            card.innerHTML = `
+                <div class="friend-avatar-circle" ${avatarStyle}>${avatarContent}</div>
+                <div class="friend-card-info">
+                    <p class="friend-card-name">${escapeHtml(name)}</p>
+                    ${f.username ? `<p class="friend-card-username">@${escapeHtml(f.username)}</p>` : ''}
+                </div>
+                <button class="btn-icon-sm btn-danger-sm" onclick="event.stopPropagation();removeFriend(${f.friendship_id})" aria-label="Remove friend">✕</button>`;
+            card.addEventListener('click', () => openUserProfile(f.user_id));
+            fullListEl.appendChild(card);
+        });
+    }
+}
+
 async function loadFriends() {
     const listEl = document.getElementById('friends-list');
     const fullListEl = document.getElementById('friends-full-list');
@@ -8102,71 +8262,19 @@ async function loadFriends() {
     const seeAllBtn = document.getElementById('friends-see-all');
     if (!listEl) return;
 
+    const now = Date.now();
+    if (_friendsCache && (now - _friendsCache.ts) < FRIENDS_CACHE_TTL_MS) {
+        _renderFriends(listEl, fullListEl, emptyEl, countEl, seeAllBtn, _friendsCache.data);
+        return;
+    }
+
     try {
         const res = await fetch('/api/friends', { headers: getAuthHeaders() });
         if (!res.ok) throw new Error();
         const data = await res.json();
         const friends = data.friends || [];
-
-        if (countEl) countEl.textContent = friends.length > 0 ? friends.length : '';
-
-        // Clear previous avatar buttons and full list
-        listEl.querySelectorAll('.friend-avatar-btn').forEach(el => el.remove());
-        if (fullListEl) fullListEl.innerHTML = '';
-
-        if (friends.length === 0) {
-            if (emptyEl) emptyEl.style.display = '';
-            if (seeAllBtn) seeAllBtn.style.display = 'none';
-            return;
-        }
-        if (emptyEl) emptyEl.style.display = 'none';
-        if (seeAllBtn) seeAllBtn.style.display = friends.length > 5 ? '' : 'none';
-
-        // "+ Add" circle first
-        const addBtn = document.createElement('div');
-        addBtn.className = 'friend-avatar-btn';
-        addBtn.innerHTML = `<div class="friend-avatar-circle friend-add-circle" onclick="openAddFriendModal()">+</div><span class="friend-avatar-name">Add</span>`;
-        listEl.insertBefore(addBtn, emptyEl);
-
-        // Avatar circles (max 5 shown in row)
-        friends.slice(0, 5).forEach(f => {
-            const name = f.display_name || f.first_name || 'Friend';
-            const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-            const avatarStyle = f.avatar_url
-                ? `style="background-image:url('${escapeHtml(f.avatar_url)}');background-size:cover;background-position:center"`
-                : '';
-            const avatarContent = f.avatar_url ? '' : initials;
-            const btn = document.createElement('div');
-            btn.className = 'friend-avatar-btn';
-            btn.style.cursor = 'pointer';
-            btn.innerHTML = `<div class="friend-avatar-circle" ${avatarStyle}>${avatarContent}</div><span class="friend-avatar-name">${escapeHtml(name.split(' ')[0])}</span>`;
-            btn.addEventListener('click', () => openUserProfile(f.user_id));
-            listEl.appendChild(btn);
-        });
-
-        // Full vertical list (expanded via "See all")
-        if (fullListEl) {
-            friends.forEach(f => {
-                const name = f.display_name || f.first_name || 'Friend';
-                const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-                const avatarStyle = f.avatar_url
-                    ? `style="background-image:url('${escapeHtml(f.avatar_url)}');background-size:cover;background-position:center"`
-                    : '';
-                const avatarContent = f.avatar_url ? '' : initials;
-                const card = document.createElement('div');
-                card.className = 'friend-card';
-                card.style.cursor = 'pointer';
-                card.innerHTML = `
-                    <div class="friend-avatar-circle" ${avatarStyle}>${avatarContent}</div>
-                    <div class="friend-card-info">
-                        <p class="friend-card-name">${escapeHtml(name)}</p>
-                        ${f.username ? `<p class="friend-card-username">@${escapeHtml(f.username)}</p>` : ''}
-                    </div>
-                    <button class="btn-icon-sm btn-danger-sm" onclick="event.stopPropagation();removeFriend(${f.friendship_id})" aria-label="Remove friend">✕</button>`;
-                card.addEventListener('click', () => openUserProfile(f.user_id));
-                fullListEl.appendChild(card);
-            });
-        }
+        _friendsCache = { data: friends, ts: Date.now() };
+        _renderFriends(listEl, fullListEl, emptyEl, countEl, seeAllBtn, friends);
     } catch (err) {
         console.error('loadFriends error:', err);
     }
@@ -8220,6 +8328,7 @@ async function removeFriend(friendshipId) {
     if (!confirm('Remove this friend?')) return;
     try {
         await fetch(`/api/friends/${friendshipId}`, { method: 'DELETE', headers: getAuthHeaders() });
+        _friendsCache = null;
         await loadFriends();
     } catch (err) {
         console.error('removeFriend error:', err);
@@ -8386,6 +8495,7 @@ async function acceptFriendRequest(friendshipId) {
             if (actions) actions.innerHTML = `<span class="fr-accepted-badge">✓ Friends</span>`;
             setTimeout(() => card.remove(), 1200);
         }
+        _friendsCache = null;
         await loadFriends();
         await loadFriendRequests();
     } catch (err) {
@@ -8445,6 +8555,7 @@ async function uploadAvatarFile(file) {
         if (!res.ok) throw new Error('Upload failed');
         const raw = await res.json();
         profileData = raw.profile || raw;
+        _profileCache = null;  // invalidate — avatar changed
         renderProfile(profileData);
     } catch (err) {
         console.error('Avatar upload error:', err);
@@ -8709,6 +8820,7 @@ async function saveProfile() {
         if (!res.ok) throw new Error('Failed to save');
         const raw = await res.json();
         profileData = raw.profile || raw;
+        _profileCache = null;  // invalidate — profile changed
         renderProfile(profileData);
         closeEditProfile();
     } catch (err) {
@@ -9212,8 +9324,19 @@ function renderRcHeroCarousel(containerEl, photos) {
     const slides = photos.map((p, i) =>
         `<div class="rc-hero-slide"><img class="rc-hero-slide-img" src="${safeUrl(p.url)}" alt="" loading="lazy" data-idx="${i}"></div>`
     ).join('');
-    containerEl.innerHTML = `<div class="rc-hero-carousel">${slides}</div>`;
+    const dotsHtml = photos.length > 1
+        ? `<div class="rc-dots">${photos.map((_, i) => `<span class="rc-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
+        : '';
+    containerEl.innerHTML = `<div class="rc-hero-carousel">${slides}</div>${dotsHtml}`;
     containerEl.style.display = '';
+    if (photos.length > 1) {
+        const carousel = containerEl.querySelector('.rc-hero-carousel');
+        const dots = containerEl.querySelectorAll('.rc-dot');
+        carousel.addEventListener('scroll', () => {
+            const idx = Math.round(carousel.scrollLeft / carousel.clientWidth);
+            dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+        }, { passive: true });
+    }
 }
 
 // ── RC review normalizers ────────────────────────────────────────────────────
@@ -9221,8 +9344,8 @@ function renderRcHeroCarousel(containerEl, photos) {
 function normalizeActivityReview(activity) {
     const review = activity.review || {};
     return {
-        reviewerName: activity.actor_name || activity.actor_username || 'Friend',
-        isOwn:        false,
+        reviewerName: activity.is_own ? 'You' : (activity.actor_name || activity.actor_username || 'Friend'),
+        isOwn:        activity.is_own || false,
         userId:       activity.user_id || null,
         avatarUrl:    null,
         sentiment:    review.sentiment   || null,
@@ -9779,12 +9902,12 @@ function setActiveCollection(id) {
     if (id && !_collectionPlacesCache[id]) {
         _fetchCollectionPlaces(id).then(() => {
             applyFilters();
-            displayPlacesOnMap(false);
+            displayPlacesOnMap(false);  // direct: after async data fetch
             renderCollectionFilterRow();
         });
     } else {
         applyFilters();
-        displayPlacesOnMap(false);
+        debouncedDisplayPlacesOnMap(false);  // filter change: debounced
         renderCollectionFilterRow();
     }
 }

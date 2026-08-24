@@ -38,3 +38,7 @@ place-extraction-pipeline/datasets/public_extractor_evaluation*.md
 
 # Graphify knowledge graph (generated artifact)
 graphify-out/
+
+# Brag artifacts
+BRAG_CONTEXT.md
+brag-output-*/

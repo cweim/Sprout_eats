@@ -71,6 +71,7 @@
 }
 
 /* Reset and base styles */
+html { font-size: 15px; }  /* slightly smaller than browser default 16px — feels right on phone */
 * {
     margin: 0;
     padding: 0;
@@ -4265,6 +4266,66 @@ button:disabled,
     background-size: 200% 100%;
 }
 
+/* ========== FEED SKELETON ========== */
+
+.feed-skeleton-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.feed-skeleton-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: linear-gradient(90deg, var(--border-color) 25%, var(--secondary-bg) 50%, var(--border-color) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s infinite;
+}
+
+.feed-skeleton-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 4px;
+}
+
+[data-theme="dark"] .feed-skeleton-avatar {
+    background: linear-gradient(90deg, var(--border-color) 25%, #3C3C3E 50%, var(--border-color) 75%);
+    background-size: 200% 100%;
+}
+
+/* ========== PROFILE SKELETON ========== */
+
+.profile-skeleton-avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    margin: 0 auto 12px;
+    background: linear-gradient(90deg, var(--border-color) 25%, var(--secondary-bg) 50%, var(--border-color) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s infinite;
+}
+
+.profile-skeleton-stat {
+    height: 32px;
+    width: 48px;
+    border-radius: 8px;
+    background: linear-gradient(90deg, var(--border-color) 25%, var(--secondary-bg) 50%, var(--border-color) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s infinite;
+}
+
+[data-theme="dark"] .profile-skeleton-avatar,
+[data-theme="dark"] .profile-skeleton-stat {
+    background: linear-gradient(90deg, var(--border-color) 25%, #3C3C3E 50%, var(--border-color) 75%);
+    background-size: 200% 100%;
+}
+
 /* ========== REVIEW VIEW MODE ========== */
 
 .review-view-ratings {
@@ -6213,6 +6274,29 @@ button:disabled,
     margin: -16px -16px 16px;
     overflow: hidden;
     background: var(--secondary-bg);
+    position: relative;
+}
+/* RC hero carousel dot indicators — overlaid on photo */
+.rc-dots {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+}
+.rc-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.5);
+    transition: background 0.2s, transform 0.2s;
+}
+.rc-dot.active {
+    background: rgba(255, 255, 255, 1);
+    transform: scale(1.25);
 }
 #rc-hero-strip .pcard-photo-strip { border-radius: 0; }
 
@@ -6417,7 +6501,7 @@ button:disabled,
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     margin-top: 14px;
 }
 .rc-action-btn {
@@ -6428,13 +6512,13 @@ button:disabled,
     background: var(--secondary-bg);
     border: 1px solid var(--border-color);
     border-radius: 20px;
-    padding: 8px 14px;
-    font-size: 0.8rem;
+    padding: 6px 11px;
+    font-size: 0.78rem;
     font-weight: 600;
     color: var(--text-color);
     text-decoration: none;
     transition: opacity 0.15s;
-    min-height: 36px;
+    min-height: 32px;
     white-space: nowrap;
 }
 .rc-action-btn:active { opacity: 0.7; }
@@ -7920,7 +8004,7 @@ button:disabled,
 ════════════════════════════════════════════════════════════════ */
 
 /* Full-bleed media area (single img or carousel) */
-.fc-media-wrap { width: 100%; overflow: hidden; cursor: pointer; }
+.fc-media-wrap { width: 100%; overflow: hidden; cursor: pointer; position: relative; }
 
 .fc-media-img {
     width: 100%;
@@ -7945,22 +8029,26 @@ button:disabled,
     scroll-snap-align: start;
 }
 
-/* Dot indicators */
+/* Dot indicators — overlaid on image (Instagram style) */
 .fc-dots {
     display: flex;
     justify-content: center;
     gap: 5px;
-    padding: 6px 0 2px;
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
 }
 .fc-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--border-color);
+    background: rgba(255, 255, 255, 0.5);
     transition: background 0.2s, transform 0.2s;
 }
 .fc-dot.active {
-    background: var(--sprout-forest);
+    background: rgba(255, 255, 255, 1);
     transform: scale(1.25);
 }
 

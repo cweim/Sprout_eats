@@ -2216,18 +2216,24 @@ def update_user_profile(
 
 def _get_user_stats(user_id: int, supabase) -> Dict[str, int]:
     """Compute profile stats for a user."""
-    saved = supabase.table("places").select("id", count="exact").eq("user_id", user_id).is_("deleted_at", "null").is_("group_id", "null").execute()
-    visited = supabase.table("places").select("id", count="exact").eq("user_id", user_id).eq("is_visited", True).is_("deleted_at", "null").is_("group_id", "null").execute()
-    # Only count reviews for non-deleted places (places are soft-deleted, reviews are hard-deleted per place)
-    active_place_ids = [p["id"] for p in (saved.data or [])]
+    # Single query for saved + visited counts (was 2 separate count queries).
+    # Fetch id + is_visited for all active places, count both in Python.
+    all_places = supabase.table("places").select(
+        "id, is_visited"
+    ).eq("user_id", user_id).is_("deleted_at", "null").is_("group_id", "null").execute()
+    place_rows = all_places.data or []
+    saved_count = len(place_rows)
+    visited_count = sum(1 for p in place_rows if p.get("is_visited"))
+    # Only count reviews for non-deleted places
+    active_place_ids = [p["id"] for p in place_rows]
     if active_place_ids:
         reviews = supabase.table("reviews").select("id", count="exact").eq("user_id", user_id).in_("place_id", active_place_ids).execute()
         review_count = reviews.count or 0
     else:
         review_count = 0
     return {
-        "places_saved": saved.count or 0,
-        "places_visited": visited.count or 0,
+        "places_saved": saved_count,
+        "places_visited": visited_count,
         "reviews_written": review_count,
     }
 
@@ -2416,10 +2422,18 @@ def get_pending_friend_requests(user_id: int) -> List[Dict[str, Any]]:
 def get_friend_ids(user_id: int) -> List[int]:
     """Get list of accepted friend user IDs."""
     supabase = get_supabase()
-    as_req = supabase.table("user_friendships").select("addressee_id").eq("requester_id", user_id).eq("status", "accepted").execute()
-    as_addr = supabase.table("user_friendships").select("requester_id").eq("addressee_id", user_id).eq("status", "accepted").execute()
-    ids = [r["addressee_id"] for r in (as_req.data or [])]
-    ids += [r["requester_id"] for r in (as_addr.data or [])]
+    # Single query using OR — was 2 sequential queries
+    result = supabase.table("user_friendships").select(
+        "requester_id, addressee_id"
+    ).or_(
+        f"requester_id.eq.{user_id},addressee_id.eq.{user_id}"
+    ).eq("status", "accepted").execute()
+    ids = []
+    for row in (result.data or []):
+        if row["requester_id"] == user_id:
+            ids.append(row["addressee_id"])
+        else:
+            ids.append(row["requester_id"])
     return ids
 
 
@@ -2550,19 +2564,38 @@ def get_friend_reviews_for_place(user_id: int, google_place_id: str) -> List[Dic
     ).in_("id", reviewer_ids).execute()
     users_map = {u["id"]: u for u in (users_result.data or [])}
 
+    # Batch fetch dishes and photos for all reviews — avoids N+1 (was 2 queries per review)
+    review_ids = [r["id"] for r in reviews_result.data]
+
+    all_dishes = supabase.table("review_dishes").select(
+        "review_id, dish_name, rating"
+    ).in_("review_id", review_ids).execute()
+    dishes_by_review: Dict[int, List[Dict]] = {}
+    for d in (all_dishes.data or []):
+        dishes_by_review.setdefault(d["review_id"], []).append(
+            {"dish_name": d["dish_name"], "rating": d["rating"]}
+        )
+
+    all_photos = supabase.table("review_photos").select(
+        "review_id, file_url"
+    ).in_("review_id", review_ids).order("review_id,sort_order").execute()
+    photos_by_review: Dict[int, List[Dict]] = {}
+    for p in (all_photos.data or []):
+        photos_by_review.setdefault(p["review_id"], []).append(p)
+
     out = []
     for r in reviews_result.data:
         u = users_map.get(r["user_id"], {})
         place = place_map.get(r["place_id"], {})
-        dishes = supabase.table("review_dishes").select("dish_name, rating").eq("review_id", r["id"]).execute()
-        photos = supabase.table("review_photos").select("file_url").eq("review_id", r["id"]).order("sort_order").execute()
+        review_dishes_data = dishes_by_review.get(r["id"], [])
+        review_photos_data = photos_by_review.get(r["id"], [])
         out.append({
             **r,
             "reviewer_name": u.get("display_name") or u.get("first_name") or "Friend",
             "reviewer_username": u.get("username"),
-            "dishes": dishes.data or [],
-            "photo_url": photos.data[0]["file_url"] if photos.data else None,
-            "photos": [{"file_url": p["file_url"]} for p in (photos.data or [])],
+            "dishes": review_dishes_data,
+            "photo_url": review_photos_data[0]["file_url"] if review_photos_data else None,
+            "photos": [{"file_url": p["file_url"]} for p in review_photos_data],
             "place_name": place.get("name"),
             "place_address": place.get("address"),
         })
@@ -2746,14 +2779,16 @@ def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict
 
     supabase = get_supabase()
     friend_ids = get_friend_ids(user_id)
-    if not friend_ids:
+    # Include own activities — user sees their own posts alongside friends'
+    all_feed_user_ids = friend_ids + [user_id]
+    if not all_feed_user_ids:
         return []
 
     # Fetch a large batch so we can apply the filter in Python
     fetch_limit = max(limit + offset + 50, 100)
     result = supabase.table("user_activities").select(
         "id, user_id, activity_type, place_id, review_id, metadata, is_public, created_at"
-    ).in_("user_id", friend_ids).eq("is_public", True).order(
+    ).in_("user_id", all_feed_user_ids).eq("is_public", True).order(
         "created_at", desc=True
     ).limit(fetch_limit).execute()
 
@@ -2912,6 +2947,7 @@ def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict
             activity["review"]         = reviews_map[rid]
             activity["review_photos"]  = photos_map.get(rid, [])
             activity["review_dishes"]  = dishes_map.get(rid, [])
+        activity["is_own"] = row["user_id"] == user_id
         out.append(activity)
     return out
 

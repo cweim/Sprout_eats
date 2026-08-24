@@ -773,12 +773,13 @@ async def create_or_update_review(
     except Exception:
         logger.warning("Could not record review_submitted analytics", exc_info=True)
 
-    # Log to activity feed
+    # Log to activity feed — pass review_id so feed can enrich with review photos/dishes
     place = repository.get_place_by_id(user.id, place_id)
     repository.log_activity(
         user_id=user.id,
         activity_type="reviewed",
         place_id=place_id,
+        review_id=review["id"],
         is_public=request.is_public,
         metadata={
             "place_name": place.get("name") if place else None,
