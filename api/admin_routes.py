@@ -32,6 +32,7 @@ async def get_admin_public_config():
     """Public config needed for the admin login page."""
     return {
         "supabase_url": config.SUPABASE_URL,
+        "supabase_anon_key": config.SUPABASE_ANON_KEY,
     }
 
 
