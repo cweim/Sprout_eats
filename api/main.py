@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -51,6 +51,11 @@ app.include_router(admin_router)
 # Serve admin dashboard static files (must be before root mount)
 admin_path = Path(__file__).parent.parent / "admin"
 if admin_path.exists():
+    # Explicit redirect: /admin → /admin/ (Starlette Mount doesn't match bare path without trailing slash)
+    @app.get("/admin", include_in_schema=False)
+    async def admin_redirect():
+        return RedirectResponse(url="/admin/")
+
     app.mount("/admin", StaticFiles(directory=admin_path, html=True), name="admin")
 
 # Serve webapp static files (must be after API routes)
