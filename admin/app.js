@@ -237,6 +237,17 @@ function renderReportDetail(report) {
             <textarea id="detail-admin-notes" placeholder="Admin notes"></textarea>
             <button id="save-report">Save Changes</button>
         </div>
+        <div class="detail-section thread-section">
+            <div class="thread-header">
+                <span class="detail-label" style="margin:0">Follow-up thread</span>
+                <button class="thread-refresh" onclick="loadFeedbackThread(${report.id})">↻ Refresh</button>
+            </div>
+            <div id="thread-messages" class="thread-messages"></div>
+            <div class="thread-compose">
+                <textarea id="thread-input" placeholder="Type a follow-up message to send to the user via Telegram..." rows="3"></textarea>
+                <button id="thread-send" onclick="sendThreadMessage(${report.id})">Send to user</button>
+            </div>
+        </div>
     `;
     document.getElementById('detail-admin-notes').value = report.admin_notes || '';
     document.getElementById('save-report').addEventListener('click', async () => {
@@ -337,6 +348,54 @@ async function loadReportDetail(reportId) {
     const response = await adminFetch(`/admin/api/feedback/${reportId}`);
     const data = await response.json();
     renderReportDetail(data.report);
+    await loadFeedbackThread(reportId);
+}
+
+async function loadFeedbackThread(reportId) {
+    const container = document.getElementById('thread-messages');
+    if (!container) return;
+    const res = await adminFetch(`/admin/api/feedback/${reportId}/thread`);
+    if (!res.ok) return;
+    const { messages } = await res.json();
+    if (!messages || !messages.length) {
+        container.innerHTML = '<p class="thread-empty">No messages yet. Send one below to follow up with the user.</p>';
+        return;
+    }
+    container.innerHTML = messages.map(m => {
+        const who = m.sender === 'admin' ? (m.admin_email || 'Admin') : 'User';
+        const time = new Date(m.created_at).toLocaleString();
+        const sentBadge = m.sender === 'admin' && m.telegram_message_id
+            ? '<span class="thread-sent-badge">✓ sent</span>' : '';
+        return `<div class="thread-bubble thread-bubble--${m.sender}">
+            <div class="thread-bubble-text">${escapeHtml(m.message)}</div>
+            <div class="thread-bubble-meta">${escapeHtml(who)} · ${escapeHtml(time)}${sentBadge}</div>
+        </div>`;
+    }).join('');
+    container.scrollTop = container.scrollHeight;
+}
+
+async function sendThreadMessage(reportId) {
+    const input = document.getElementById('thread-input');
+    const btn = document.getElementById('thread-send');
+    const message = (input?.value || '').trim();
+    if (!message) return;
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    try {
+        const res = await adminFetch(`/admin/api/feedback/${reportId}/thread`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message }),
+        });
+        if (!res.ok) throw new Error('Failed to send');
+        input.value = '';
+        await loadFeedbackThread(reportId);
+    } catch {
+        alert('Failed to send message. Please try again.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Send to user';
+    }
 }
 
 async function saveReportDetail(reportId) {
@@ -365,6 +424,14 @@ async function validateAdminSession() {
     }
     try {
         const response = await adminFetch('/admin/api/session');
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            const detail = body.detail || `Server returned ${response.status}`;
+            document.getElementById('login-error').textContent = detail;
+            await supabaseClient.auth.signOut();
+            showLogin();
+            return;
+        }
         const payload = await response.json();
         adminSession = payload.admin;
         document.getElementById('admin-email').textContent = payload.admin.email;
@@ -373,6 +440,7 @@ async function validateAdminSession() {
         const requestedRestaurant = new URLSearchParams(window.location.search).get('restaurant');
         if (requestedRestaurant) await openRestaurantDetail(requestedRestaurant);
     } catch (error) {
+        document.getElementById('login-error').textContent = `Session error: ${error.message}`;
         showLogin();
     }
 }
@@ -1063,6 +1131,8 @@ async function init() {
     bindContent();
     watchResponsiveTables();
     await validateAdminSession();
+    // Poll for new user replies every 15s when a report is open
+    setInterval(() => { if (activeReportId) loadFeedbackThread(activeReportId); }, 15000);
 }
 
 init().catch((error) => {

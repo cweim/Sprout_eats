@@ -38,6 +38,7 @@ from bot.handlers import (
     handle_dismiss,
     handle_review_callback,
     feedback_conversation_handler,
+    handle_feedback_thread_reply,
     handle_group_welcome,
     handle_group_url,
     vote_group_place_callback,
@@ -138,6 +139,14 @@ def main():
     app.add_handler(CallbackQueryHandler(retry_extraction_callback, pattern="^retry_extraction_"))
     app.add_handler(CallbackQueryHandler(handle_dismiss, pattern=r'^dismiss$'))
     app.add_handler(CallbackQueryHandler(handle_review_callback, pattern=r'^review:'))
+
+    # Feedback thread replies: high priority (group=-1) so they intercept before ConversationHandler
+    # and the generic text handler. User must explicitly use Telegram's Reply gesture on the
+    # bot's admin follow-up message — plain messages fall through to normal handlers.
+    app.add_handler(
+        MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, handle_feedback_thread_reply),
+        group=-1,
+    )
 
     # Feedback conversation handler must be before generic message handlers
     app.add_handler(feedback_conversation_handler)

@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
@@ -14,6 +15,22 @@ from api.analytics import add_period_comparison, parse_analytics_range
 
 
 router = APIRouter(prefix="/admin/api")
+
+
+async def _send_telegram_message(chat_id: int, text: str) -> int | None:
+    """Send a plain-text message via Telegram Bot API. Returns message_id or None."""
+    if not config.TELEGRAM_BOT_TOKEN:
+        return None
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(url, json={"chat_id": chat_id, "text": text})
+            data = resp.json()
+            if data.get("ok"):
+                return data["result"]["message_id"]
+    except Exception:
+        pass
+    return None
 
 
 class FeedbackUpdateRequest(BaseModel):
@@ -395,3 +412,61 @@ async def patch_feedback_report(
         metadata={"admin_email": admin.email, "fields": list(update_data.keys())},
     )
     return {"report": repository.get_feedback_report(report_id)}
+
+
+@router.get("/feedback/{report_id}/thread")
+async def get_feedback_thread(
+    report_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Return all follow-up thread messages for a feedback report."""
+    messages = repository.list_feedback_thread(report_id)
+    return {"messages": messages}
+
+
+class FeedbackThreadMessageRequest(BaseModel):
+    message: str
+
+
+@router.post("/feedback/{report_id}/thread")
+async def post_feedback_thread_message(
+    report_id: int,
+    body: FeedbackThreadMessageRequest,
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Send an admin follow-up message to the user via Telegram and store it in the thread."""
+    report = repository.get_feedback_report(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Feedback report not found")
+
+    message_text = body.message.strip()
+    if not message_text:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    # Build the Telegram message (plain text — no markdown to avoid escape issues)
+    raw_body = (report.get("body") or "").strip()
+    excerpt = raw_body[:80]
+    ellipsis = "..." if len(raw_body) > 80 else ""
+    excerpt_line = f'"{excerpt}{ellipsis}"\n\n' if excerpt else ""
+    tg_text = (
+        f"🌱 Sprout Admin\n\n"
+        f"Following up on your feedback:\n{excerpt_line}"
+        f"{message_text}\n\n"
+        f"\u2015\u2015\u2015\u2015\u2015\u2015\u2015\n"
+        f"To reply: long-press this message \u2192 tap Reply \u2192 type your response."
+    )
+
+    user_id = report.get("user_id")
+    telegram_message_id = None
+    if user_id:
+        telegram_message_id = await _send_telegram_message(int(user_id), tg_text)
+
+    row = repository.create_feedback_thread_message(
+        report_id=report_id,
+        sender="admin",
+        message=message_text,
+        telegram_message_id=telegram_message_id,
+        admin_email=admin.email,
+    )
+    return {"message": row, "telegram_sent": telegram_message_id is not None}
+

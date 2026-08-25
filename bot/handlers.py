@@ -11,7 +11,7 @@ from weakref import WeakValueDictionary
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.error import BadRequest
 from telegram.warnings import PTBUserWarning
-from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, CommandHandler, CallbackQueryHandler, filters
+from telegram.ext import ApplicationHandlerStop, ContextTypes, ConversationHandler, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 
 import config
 from services.downloader import (
@@ -2929,6 +2929,31 @@ async def cancel_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def clear_feedback_context(context: ContextTypes.DEFAULT_TYPE):
     """Clear active Telegram feedback collection state."""
     context.user_data.pop("feedback_context", None)
+
+
+async def handle_feedback_thread_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Capture a Telegram Reply to an admin feedback thread message and store it.
+
+    The user long-presses the admin's bot message → taps Reply → types their response.
+    We detect this via reply_to_message.message_id matching a stored telegram_message_id.
+    If not a thread reply, we return silently so normal handlers can process the message.
+    """
+    msg = update.message
+    if not msg or not msg.reply_to_message or not msg.text:
+        return
+
+    replied_msg_id = msg.reply_to_message.message_id
+    thread_msg = repository.get_thread_message_by_telegram_id(replied_msg_id)
+    if not thread_msg:
+        return  # Not a feedback thread reply — fall through to normal handlers
+
+    repository.create_feedback_thread_message(
+        report_id=thread_msg["report_id"],
+        sender="user",
+        message=msg.text.strip(),
+    )
+    await msg.reply_text("✅ Your reply has been sent to the team!")
+    raise ApplicationHandlerStop  # Prevent link extractor / other handlers from firing
 
 
 def build_feedback_category_keyboard() -> InlineKeyboardMarkup:

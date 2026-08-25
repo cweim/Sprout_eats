@@ -1464,6 +1464,57 @@ def delete_feedback_report(report_id: int) -> bool:
 
 
 # =============================================================================
+# Feedback Threads (admin ↔ user follow-up)
+# =============================================================================
+
+
+def create_feedback_thread_message(
+    report_id: int,
+    sender: str,
+    message: str,
+    *,
+    telegram_message_id: int | None = None,
+    admin_email: str | None = None,
+) -> dict:
+    """Store one message in a feedback follow-up thread."""
+    supabase = get_supabase()
+    row: dict = {"report_id": report_id, "sender": sender, "message": message}
+    if telegram_message_id is not None:
+        row["telegram_message_id"] = telegram_message_id
+    if admin_email:
+        row["admin_email"] = admin_email
+    result = supabase.table("feedback_threads").insert(row).execute()
+    return (result.data or [{}])[0]
+
+
+def list_feedback_thread(report_id: int) -> List[Dict[str, Any]]:
+    """Return all thread messages for a report, oldest first."""
+    supabase = get_supabase()
+    result = (
+        supabase.table("feedback_threads")
+        .select("*")
+        .eq("report_id", report_id)
+        .order("created_at")
+        .execute()
+    )
+    return result.data or []
+
+
+def get_thread_message_by_telegram_id(telegram_message_id: int) -> Dict[str, Any] | None:
+    """Find a thread message by the Telegram message_id of the bot's outbound message."""
+    supabase = get_supabase()
+    result = (
+        supabase.table("feedback_threads")
+        .select("*")
+        .eq("telegram_message_id", telegram_message_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0] if rows else None
+
+
+# =============================================================================
 # Admin Operations
 # =============================================================================
 
