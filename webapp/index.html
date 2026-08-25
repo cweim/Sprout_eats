@@ -770,6 +770,13 @@
                     </span>
                     <input type="text" id="friend-search-input" class="af-search-input" placeholder="Name or @username..." autocomplete="off" oninput="searchFriends(this.value)">
                 </div>
+                <div id="friend-suggestions-section">
+                    <p class="suggestions-label">People you may know</p>
+                    <div id="friend-suggestions" class="friend-search-results"></div>
+                    <div id="friend-suggestions-empty" style="display:none">
+                        <p class="friend-search-empty">No suggestions yet. Add more friends!</p>
+                    </div>
+                </div>
                 <div id="friend-search-results" class="friend-search-results"></div>
                 <div id="friend-search-empty" class="friend-search-empty" style="display:none">
                     <p>No people found</p>

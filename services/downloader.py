@@ -87,6 +87,9 @@ def detect_platform(url: str) -> Optional[str]:
         return "instagram"
     if "tiktok.com" in url or "vm.tiktok.com" in url:
         return "tiktok"
+    from services.gmaps import is_google_maps_url
+    if is_google_maps_url(url):
+        return "google_maps"
     return None
 
 

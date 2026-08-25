@@ -3,7 +3,7 @@
 from urllib.parse import urlencode
 
 
-SUPPORTED_TARGETS = {"review", "place", "gplace", "activity", "group"}
+SUPPORTED_TARGETS = {"review", "place", "gplace", "activity", "group", "requests", "tab"}
 
 
 def build_start_param(target: str, value: object) -> str:

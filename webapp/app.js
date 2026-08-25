@@ -58,7 +58,7 @@ function parseStartParam(raw) {
     const separator = value.indexOf('_');
     if (separator <= 0 || separator === value.length - 1) return null;
     const target = value.slice(0, separator);
-    if (!['review', 'place', 'gplace', 'activity', 'group'].includes(target)) return null;
+    if (!['review', 'place', 'gplace', 'activity', 'group', 'requests', 'tab'].includes(target)) return null;
     return { target, value: value.slice(separator + 1) };
 }
 
@@ -73,37 +73,36 @@ async function routeStartParam(raw) {
     }
 
     if (route.target === 'place') {
-        const placeId = Number.parseInt(route.value, 10);
-        const place = Number.isInteger(placeId) ? places.find(item => item.id === placeId) : null;
-        if (place) setTimeout(() => openRestaurantCard(place.id), 250);
-        else showToast('This saved place is no longer available');
+        // Navigate to saved tab — no auto-open RC
+        setTimeout(() => switchTab('saved'), 250);
         return;
     }
 
     if (route.target === 'gplace') {
-        const ownPlace = places.find(item => item.google_place_id === route.value);
-        if (ownPlace) {
-            setTimeout(() => openRestaurantCard(ownPlace.id), 250);
-            return;
-        }
-        try {
-            const response = await fetch(
-                `${API_URL}/api/restaurant/${encodeURIComponent(route.value)}`,
-                { headers: getAuthHeaders() },
-            );
-            if (!response.ok) throw new Error(String(response.status));
-            const data = await response.json();
-            if (data.place) setTimeout(() => openRestaurantCardGuest(data.place), 250);
-        } catch (error) {
-            console.error('Could not resolve restaurant deep link', error);
-            showToast('This restaurant is no longer available');
-        }
+        // Navigate to discover tab — no auto-open RC
+        setTimeout(() => switchTab('home'), 250);
         return;
     }
 
     if (route.target === 'activity') {
-        const activityId = Number.parseInt(route.value, 10);
-        if (Number.isInteger(activityId)) setTimeout(() => onFeedCardTap(activityId, ''), 250);
+        // Navigate to discover tab — no auto-open RC
+        setTimeout(() => switchTab('home'), 250);
+        return;
+    }
+
+    if (route.target === 'requests') {
+        setTimeout(() => {
+            switchTab('profile');
+            showFriendRequests();
+        }, 300);
+        return;
+    }
+
+    if (route.target === 'tab') {
+        const validTabs = ['home', 'saved', 'profile'];
+        if (validTabs.includes(route.value)) {
+            setTimeout(() => switchTab(route.value), 250);
+        }
     }
 }
 
@@ -1974,7 +1973,7 @@ function sharePlace(placeId) {
     });
 
     const mapsUrl = place.google_place_id
-        ? `https://www.google.com/maps/place/?q=place_id:${place.google_place_id}`
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}&query_place_id=${place.google_place_id}`
         : `https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`;
 
     const types    = formatPlaceTypes(place.place_types);
@@ -3911,6 +3910,8 @@ if (document.getElementById('review-sheet')?.style.display === 'flex') { closeRe
     // Check if empty
     if (places.length === 0) {
         showEmptyState();
+        // Request location so discover search is location-biased even for new users
+        requestUserLocation(false);
         // Still initialize nav and social state so tabs + friend requests work
         currentTab = null;
         switchTab('saved');
@@ -5281,15 +5282,26 @@ function switchTab(tab) {
 
     if (tab === 'saved') {
         updateSavedToggleIcon(currentView);
+        // Restore empty state if user has no places
+        if (places.length === 0) showEmptyState();
         if (map) {
             setTimeout(() => map.invalidateSize(), 100);
             // Friend places intentionally excluded from saved map (personal map only)
             if (friendMarkersLayer) friendMarkersLayer.clearLayers();
         }
-    } else if (tab === 'home') {
-        loadFeed();
-    } else if (tab === 'profile') {
-        loadProfile();
+    } else {
+        // Hide empty-state overlay so it doesn't cover non-saved tabs
+        hideEmptyState();
+        if (tab === 'home') {
+            if (prevTab === 'home') {
+                // Re-tap: scroll to top and force-refresh feed
+                document.getElementById('feed-view')?.scrollTo({ top: 0, behavior: 'smooth' });
+                _feedCache = null;
+            }
+            loadFeed();
+        } else if (tab === 'profile') {
+            loadProfile();
+        }
     }
 }
 
@@ -8343,12 +8355,63 @@ async function removeFriend(friendshipId) {
 
 let friendSearchTimeout = null;
 
+function renderFriendCard(u, showMutual = false) {
+    const name = u.display_name || u.first_name || 'User';
+    const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const avatarHtml = u.avatar_url
+        ? `<div class="fr-avatar" style="background-image:url('${escapeHtml(u.avatar_url)}');background-size:cover;background-position:center"></div>`
+        : `<div class="fr-avatar fr-avatar--initials">${initials}</div>`;
+    const isFriend   = u.friendship_status === 'accepted';
+    const isPending  = u.friendship_status === 'pending';
+    const isIncoming = u.friendship_status === 'incoming_request';
+    const btnLabel   = isFriend ? 'Friends' : isPending ? 'Requested' : isIncoming ? 'Accept' : '+ Add';
+    const btnDisabled = (isFriend || isPending) ? 'disabled' : '';
+    const btnOnclick = isIncoming
+        ? `event.stopPropagation();acceptFriendRequest('${u.friendship_id}')`
+        : `event.stopPropagation();sendFriendRequest(${u.id}, this)`;
+    const subLine = showMutual && u.mutual_friends_count
+        ? `<p class="friend-username">${u.mutual_friends_count} mutual friend${u.mutual_friends_count > 1 ? 's' : ''}</p>`
+        : (u.username ? `<p class="friend-username">@${escapeHtml(u.username)}</p>` : '');
+    return `
+    <div class="friend-result-card" onclick="openUserProfile(${u.id})">
+        ${avatarHtml}
+        <div class="friend-info">
+            <p class="friend-name">${escapeHtml(name)}</p>
+            ${subLine}
+        </div>
+        <button class="btn-secondary-sm${isFriend ? ' btn-friends' : ''}" onclick="${btnOnclick}" ${btnDisabled}>
+            ${btnLabel}
+        </button>
+    </div>`;
+}
+
+async function loadSuggestedFriends() {
+    const section = document.getElementById('friend-suggestions-section');
+    const container = document.getElementById('friend-suggestions');
+    const emptyEl = document.getElementById('friend-suggestions-empty');
+    if (!container) return;
+    try {
+        const res = await fetch('/api/users/suggestions', { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const users = data.suggestions || [];
+        if (users.length === 0) {
+            container.innerHTML = '';
+            if (emptyEl) emptyEl.style.display = '';
+            return;
+        }
+        if (emptyEl) emptyEl.style.display = 'none';
+        container.innerHTML = users.map(u => renderFriendCard(u, true)).join('');
+    } catch {
+        if (section) section.style.display = 'none';
+    }
+}
+
 function openAddFriendModal() {
     const modal = document.getElementById('add-friend-modal');
-    if (modal) {
-        modal.style.display = 'flex';
-        document.getElementById('friend-search-input')?.focus();
-    }
+    if (modal) modal.style.display = 'flex';
+    document.getElementById('friend-search-input')?.focus();
+    loadSuggestedFriends();
 }
 
 function closeAddFriendModal() {
@@ -8360,15 +8423,22 @@ function closeAddFriendModal() {
     if (results) results.innerHTML = '';
     const emptyMsg = document.getElementById('friend-search-empty');
     if (emptyMsg) emptyMsg.style.display = 'none';
+    const suggestions = document.getElementById('friend-suggestions');
+    if (suggestions) suggestions.innerHTML = '';
+    const section = document.getElementById('friend-suggestions-section');
+    if (section) section.style.display = '';
 }
 
 function searchFriends(query) {
     clearTimeout(friendSearchTimeout);
+    const section = document.getElementById('friend-suggestions-section');
     if (!query || query.trim().length < 2) {
         document.getElementById('friend-search-results').innerHTML = '';
         document.getElementById('friend-search-empty').style.display = 'none';
+        if (section) section.style.display = '';
         return;
     }
+    if (section) section.style.display = 'none';
     friendSearchTimeout = setTimeout(() => doSearchFriends(query.trim()), 400);
 }
 
@@ -8390,32 +8460,7 @@ async function doSearchFriends(query) {
         }
         if (emptyEl) emptyEl.style.display = 'none';
 
-        resultsEl.innerHTML = users.map(u => {
-            const name = u.display_name || u.first_name || 'User';
-            const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-            const avatarHtml = u.avatar_url
-                ? `<div class="fr-avatar" style="background-image:url('${escapeHtml(u.avatar_url)}');background-size:cover;background-position:center"></div>`
-                : `<div class="fr-avatar fr-avatar--initials">${initials}</div>`;
-            const isFriend   = u.friendship_status === 'accepted';
-            const isPending  = u.friendship_status === 'pending';
-            const isIncoming = u.friendship_status === 'incoming_request';
-            const btnLabel   = isFriend ? 'Friends' : isPending ? 'Requested' : isIncoming ? 'Accept' : '+ Add';
-            const btnDisabled = (isFriend || isPending) ? 'disabled' : '';
-            const btnOnclick = isIncoming
-                ? `event.stopPropagation();acceptFriendRequest('${u.friendship_id}')`
-                : `event.stopPropagation();sendFriendRequest(${u.id}, this)`;
-            return `
-            <div class="friend-result-card" onclick="openUserProfile(${u.id})">
-                ${avatarHtml}
-                <div class="friend-info">
-                    <p class="friend-name">${escapeHtml(name)}</p>
-                    ${u.username ? `<p class="friend-username">@${escapeHtml(u.username)}</p>` : ''}
-                </div>
-                <button class="btn-secondary-sm${isFriend ? ' btn-friends' : ''}" onclick="${btnOnclick}" ${btnDisabled}>
-                    ${btnLabel}
-                </button>
-            </div>`;
-        }).join('');
+        resultsEl.innerHTML = users.map(u => renderFriendCard(u)).join('');
     } catch (err) {
         console.error('searchFriends error:', err);
     }
@@ -8943,7 +8988,7 @@ function openRestaurantCardGuest(placeData, { highlightUserId = null, activity =
     const actionsEl = document.getElementById('rc-actions');
     const actionBtns = [];
     if (placeData.google_place_id) {
-        actionBtns.push(`<a href="https://www.google.com/maps/place/?q=place_id:${placeData.google_place_id}" target="_blank" class="rc-action-btn">📍 Maps</a>`);
+        actionBtns.push(`<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(placeData.name)}&query_place_id=${placeData.google_place_id}" target="_blank" class="rc-action-btn">📍 Maps</a>`);
     } else {
         const q = encodeURIComponent((placeData.name || '') + ' ' + (placeData.address || ''));
         actionBtns.push(`<a href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" class="rc-action-btn">📍 Maps</a>`);
@@ -9206,7 +9251,7 @@ function renderRestaurantCard(place, review) {
     const actionsEl = document.getElementById('rc-actions');
     const actionBtns = [];
     if (place.google_place_id) {
-        const mapsUrl = `https://www.google.com/maps/place/?q=place_id:${place.google_place_id}`;
+        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}&query_place_id=${place.google_place_id}`;
         actionBtns.push(`<a href="${mapsUrl}" target="_blank" class="rc-action-btn">📍 Maps</a>`);
     } else if (place.latitude && place.longitude) {
         const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`;

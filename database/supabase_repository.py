@@ -2488,6 +2488,65 @@ def get_friend_ids(user_id: int) -> List[int]:
     return ids
 
 
+def get_suggested_friends(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    """Return users who share mutual friends, sorted by mutual count. Excludes existing friends/pending."""
+    my_friend_ids = get_friend_ids(user_id)
+    if not my_friend_ids:
+        return []
+
+    supabase = get_supabase()
+    id_csv = ",".join(str(f) for f in my_friend_ids)
+    result = supabase.table("user_friendships").select(
+        "requester_id, addressee_id"
+    ).or_(
+        f"requester_id.in.({id_csv}),addressee_id.in.({id_csv})"
+    ).eq("status", "accepted").execute()
+
+    my_friends_set = set(my_friend_ids)
+    mutual_count: Dict[int, int] = {}
+    for row in (result.data or []):
+        req, addr = row["requester_id"], row["addressee_id"]
+        if req in my_friends_set and addr not in my_friends_set and addr != user_id:
+            mutual_count[addr] = mutual_count.get(addr, 0) + 1
+        if addr in my_friends_set and req not in my_friends_set and req != user_id:
+            mutual_count[req] = mutual_count.get(req, 0) + 1
+
+    if not mutual_count:
+        return []
+
+    candidates = sorted(mutual_count.items(), key=lambda x: -x[1])[: limit * 2]
+    candidate_ids = [c[0] for c in candidates]
+    count_map = dict(candidates)
+
+    users_res = supabase.table("users").select(
+        "id, username, first_name, display_name, avatar_url"
+    ).in_("id", candidate_ids).eq("is_public", True).execute()
+    users_map = {u["id"]: u for u in (users_res.data or [])}
+
+    statuses = get_friendship_statuses_batch(user_id, candidate_ids)
+
+    out: List[Dict[str, Any]] = []
+    for cid, _ in candidates:
+        if statuses.get(cid) is not None:
+            continue
+        u = users_map.get(cid)
+        if not u:
+            continue
+        out.append({
+            "id": cid,
+            "username": u.get("username"),
+            "first_name": u.get("first_name"),
+            "display_name": u.get("display_name"),
+            "avatar_url": u.get("avatar_url"),
+            "mutual_friends_count": count_map[cid],
+            "friendship_status": None,
+        })
+        if len(out) >= limit:
+            break
+
+    return out
+
+
 def are_friends(user_id: int, other_id: int) -> bool:
     """Check if two users are friends."""
     supabase = get_supabase()

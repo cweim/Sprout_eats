@@ -99,8 +99,9 @@ FOOD_PLACE_TYPES = {
 API_RETRY_ATTEMPTS = 3
 API_TIMEOUT_SECONDS = 10
 
-# New Places API endpoint
+# New Places API endpoints
 PLACES_TEXT_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
+PLACES_GET_URL = "https://places.googleapis.com/v1/places/{place_id}"
 
 
 def infer_location_context(text: str) -> Optional[str]:
@@ -689,6 +690,89 @@ async def search_place(
                 return results[0] if results else None
 
             return results
+
+
+@retry(
+    stop=stop_after_attempt(API_RETRY_ATTEMPTS),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type((aiohttp.ClientError, asyncio.TimeoutError)),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
+async def fetch_place_by_id(place_id: str) -> Optional[PlaceResult]:
+    """Fetch full place details from Google Places API by place_id."""
+    if not config.GOOGLE_API_KEY:
+        raise ValueError("GOOGLE_API_KEY not configured")
+    url = PLACES_GET_URL.format(place_id=place_id)
+    headers = {
+        "X-Goog-Api-Key": config.GOOGLE_API_KEY,
+        "X-Goog-FieldMask": "displayName,formattedAddress,addressComponents,location,id,types,rating,userRatingCount,priceLevel,regularOpeningHours,editorialSummary",
+    }
+    timeout = aiohttp.ClientTimeout(total=API_TIMEOUT_SECONDS)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url, headers=headers) as response:
+            if response.status == 404:
+                return None
+            if response.status == 403:
+                logger.error("Google Places quota exhausted (403). Not retrying.")
+                raise ValueError("Google Places API quota exhausted")
+            response.raise_for_status()
+            place = await response.json()
+
+    types = place.get("types", [])
+    if not is_food_place(types):
+        logger.debug("fetch_place_by_id: not a food place (%s) — %s", place_id, types)
+        return None
+
+    raw_price = place.get("priceLevel", "")
+    price_level = raw_price.replace("PRICE_LEVEL_", "") if raw_price else None
+    hours_data = place.get("regularOpeningHours", {})
+    weekday_desc = hours_data.get("weekdayDescriptions", []) if hours_data else []
+    opening_hours = json.dumps(weekday_desc) if weekday_desc else None
+    editorial = place.get("editorialSummary", {})
+    description = editorial.get("text") if isinstance(editorial, dict) else None
+    components = place.get("addressComponents", []) or []
+    component_by_type: dict = {}
+    for comp in components:
+        for t in comp.get("types", []):
+            component_by_type.setdefault(t, comp)
+    country = component_by_type.get("country", {})
+    locality = (
+        component_by_type.get("locality")
+        or component_by_type.get("postal_town")
+        or component_by_type.get("administrative_area_level_2")
+        or {}
+    )
+    neighborhood = (
+        component_by_type.get("neighborhood")
+        or component_by_type.get("sublocality_level_1")
+        or {}
+    )
+    cuisine_type = next(
+        (t for t in types if t.endswith("_restaurant") and t not in {"restaurant", "fast_food_restaurant"}),
+        None,
+    )
+    location = place.get("location", {})
+    return PlaceResult(
+        name=place.get("displayName", {}).get("text", ""),
+        address=place.get("formattedAddress", ""),
+        latitude=location.get("latitude", 0),
+        longitude=location.get("longitude", 0),
+        place_id=place.get("id", ""),
+        types=types,
+        rating=place.get("rating"),
+        rating_count=place.get("userRatingCount"),
+        price_level=price_level,
+        opening_hours=opening_hours,
+        description=description,
+        country_code=country.get("shortText"),
+        city=locality.get("longText"),
+        neighborhood=neighborhood.get("longText"),
+        primary_cuisine=(
+            cuisine_type.removesuffix("_restaurant").replace("_", " ").title()
+            if cuisine_type else None
+        ),
+    )
 
 
 async def search_places_from_text(

@@ -448,17 +448,19 @@ async def update_place(
         # Set visited_at timestamp and log to activity feed
         visited_at = datetime.utcnow().isoformat()
         repository.update_place(user.id, place_id, visited_at=visited_at)
-        repository.log_activity(
-            user_id=user.id,
-            activity_type="visited",
-            place_id=place_id,
-            metadata={
-                "place_name": place.get("name"),
-                "address": place.get("address"),
-                "google_place_id": place.get("google_place_id"),
-                "place_rating": place.get("place_rating"),
-            },
-        )
+        # Skip "visited" activity if a review exists — review endpoint already logged "reviewed"
+        if not existing_review:
+            repository.log_activity(
+                user_id=user.id,
+                activity_type="visited",
+                place_id=place_id,
+                metadata={
+                    "place_name": place.get("name"),
+                    "address": place.get("address"),
+                    "google_place_id": place.get("google_place_id"),
+                    "place_rating": place.get("place_rating"),
+                },
+            )
 
     return {"place": place_to_dict(place)}
 
@@ -562,8 +564,19 @@ async def create_place(
         primary_cuisine=place.primary_cuisine,
     )
 
-    # Only notify on new saves, not duplicates; cooldown-gated per recipient
+    # Only notify + log on new saves, not duplicates; cooldown-gated per recipient
     if outcome["created"]:
+        saved_place = outcome["place"]
+        repository.log_activity(
+            user_id=user.id,
+            activity_type="saved",
+            place_id=saved_place.get("id"),
+            metadata={
+                "place_name": place.name,
+                "address": place.address,
+                "google_place_id": place.google_place_id,
+            },
+        )
         background_tasks.add_task(
             _notify_friends_of_activity,
             user_id=user.id,
@@ -774,7 +787,7 @@ async def create_or_update_review(
         logger.warning("Could not record review_submitted analytics", exc_info=True)
 
     # Log to activity feed — pass review_id so feed can enrich with review photos/dishes
-    place = repository.get_place_by_id(user.id, place_id)
+    place = repository.get_place_by_id(user.id, place_id) or repository.get_group_place_by_id(place_id)
     repository.log_activity(
         user_id=user.id,
         activity_type="reviewed",
@@ -793,7 +806,7 @@ async def create_or_update_review(
 
     # Notify friends — reviews always fire (high signal), resets save cooldown
     if request.is_public:
-        saved_place = repository.get_place_by_id(user.id, place_id)
+        saved_place = repository.get_place_by_id(user.id, place_id) or repository.get_group_place_by_id(place_id)
         background_tasks.add_task(
             _notify_friends_of_activity,
             user_id=user.id,
@@ -1035,6 +1048,14 @@ async def search_users(q: str = "", user: TelegramUser = Depends(get_current_use
     return {"users": results}
 
 
+@router.get("/users/suggestions")
+@limiter.limit("30/minute")
+async def get_friend_suggestions(request: Request, user: TelegramUser = Depends(get_current_user)):
+    """Return suggested friends based on mutual connections."""
+    suggestions = repository.get_suggested_friends(user.id, limit=10)
+    return {"suggestions": suggestions}
+
+
 @router.get("/users/{target_user_id}/profile")
 async def get_user_profile(target_user_id: int, user: TelegramUser = Depends(get_current_user)):
     """Get another user's public profile. Friend view includes place/review summary."""
@@ -1255,7 +1276,8 @@ async def _notify_friend_request(requester_id: int, target_user_id: int):
     text = f"👤 *{actor}* sent you a friend request on Sprout!"
     payload: dict = {"chat_id": target_user_id, "text": text, "parse_mode": "Markdown"}
     if app_config.WEBAPP_URL:
-        payload["reply_markup"] = {"inline_keyboard": [[{"text": "Open Sprout 🌱", "web_app": {"url": app_config.WEBAPP_URL}}]]}
+        deep_url = build_webapp_url(app_config.WEBAPP_URL, "requests", "pending")
+        payload["reply_markup"] = {"inline_keyboard": [[{"text": "See request 👤", "web_app": {"url": deep_url}}]]}
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             await client.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json=payload)
@@ -1301,18 +1323,18 @@ async def _notify_friends_of_activity(
         return
 
     if activity_type == "save":
-        text = f"🌱 *{actor}* is building their food map!"
-        btn_label = "See their saves 🗺"
+        text = f"🌱 *{actor}* just saved *{place_name}* to their food map!"
+        btn_label = "See on Discover 🗺"
     elif activity_type == "review":
         text = f"⭐ *{actor}* reviewed *{place_name}* — check it out!"
-        btn_label = "See the review 👀"
+        btn_label = "See on Discover 🗺"
     else:  # visit
         text = f"🌱 *{actor}* just visited *{place_name}*!"
-        btn_label = "See their visit 👀"
+        btn_label = "See on Discover 🗺"
 
     reply_markup = None
-    if app_config.WEBAPP_URL and google_place_id:
-        app_url = build_webapp_url(app_config.WEBAPP_URL, "gplace", google_place_id)
+    if app_config.WEBAPP_URL:
+        app_url = build_webapp_url(app_config.WEBAPP_URL, "tab", "home")
         reply_markup = {"inline_keyboard": [[{"text": btn_label, "web_app": {"url": app_url}}]]}
 
     cooldown_hours = app_config.FRIEND_NOTIFICATION_COOLDOWN_HOURS

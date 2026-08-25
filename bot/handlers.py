@@ -38,6 +38,7 @@ from services.instagram_pipeline import (
     run_instagram_place_pipeline,
 )
 from services.tiktok_pipeline import run_tiktok_place_pipeline
+from services.gmaps import resolve_google_maps_url
 from services.deep_links import build_webapp_url
 from services.geo import haversine_distance
 from bot.telemetry import record_bot_event
@@ -393,12 +394,11 @@ async def notify_friends_of_review(
     for friend_id in friend_ids:
         try:
             keyboard = None
-            if bot_username and google_place_id:
-                app_url = build_webapp_url(config.WEBAPP_URL, "gplace", google_place_id) if config.WEBAPP_URL else None
-                if app_url:
-                    keyboard = InlineKeyboardMarkup([[
-                        InlineKeyboardButton("See Review 👀", web_app=WebAppInfo(url=app_url))
-                    ]])
+            if config.WEBAPP_URL:
+                app_url = build_webapp_url(config.WEBAPP_URL, "tab", "home")
+                keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("See on Discover 🗺", web_app=WebAppInfo(url=app_url))
+                ]])
             await context.bot.send_message(
                 chat_id=friend_id,
                 text=text,
@@ -1359,6 +1359,49 @@ async def _handle_tiktok_url(
         unresolved_message=build_unresolved_slot_message(unresolved_suggestions),
     )
     _clear_manual_place_pending(context)
+
+
+async def _handle_google_maps_url(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    status_msg,
+    *,
+    request_id: str | None = None,
+) -> None:
+    user_id = update.effective_user.id
+    await status_msg.edit_text("Looking up this place on Google Maps... 📍")
+
+    try:
+        place = await resolve_google_maps_url(text)
+    except Exception as exc:
+        logger.warning("Google Maps resolution error: user_id=%s error=%s", user_id, exc)
+        place = None
+
+    if not place:
+        log_failed_link(
+            user_id=user_id,
+            url=text,
+            platform="google_maps",
+            reason="no_google_match",
+            failure_stage="resolution",
+            request_id=request_id,
+        )
+        await status_msg.edit_text(
+            "I couldn't find that place. Make sure it's a restaurant or café link, then try again.",
+            reply_markup=None,
+        )
+        return
+
+    await _save_single_place_result(
+        update,
+        context,
+        user_id=user_id,
+        place=place,
+        source_url=text,
+        source_platform="google_maps",
+    )
+    await status_msg.delete()
 
 
 def get_match_source_label(video_meta: dict) -> str:
@@ -2424,6 +2467,9 @@ async def _start_private_url_extraction(
         if platform == "tiktok":
             await _handle_tiktok_url(update, context, text, status_msg, request_id=task_id)
             return
+        if platform == "google_maps":
+            await _handle_google_maps_url(update, context, text, status_msg, request_id=task_id)
+            return
         log_failed_link(
             user_id=user_id,
             url=text,
@@ -2433,7 +2479,7 @@ async def _start_private_url_extraction(
             request_id=task_id,
         )
         await status_msg.edit_text(
-            "I can only extract places from Instagram and TikTok links right now.",
+            "I can only extract places from Instagram, TikTok, and Google Maps links right now.",
             reply_markup=None,
         )
 
