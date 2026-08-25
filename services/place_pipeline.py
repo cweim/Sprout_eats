@@ -345,6 +345,9 @@ def is_address_only_name(name: str) -> bool:
     first_segment = normalized.split(",", 1)[0].strip()
     if "," in normalized and re.fullmatch(unit_pattern, first_segment, re.IGNORECASE):
         return True
+    # Leading street number (e.g. "27 Prince George's Pk") → address component, not venue name
+    if re.match(r"^\d+\s+\w", normalized):
+        return True
     return has_address_hint(normalized) and len(tokenize_meaningful_words(normalized)) <= 3
 
 
