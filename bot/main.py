@@ -14,6 +14,7 @@ from telegram.ext import (
 import config
 from bot.handlers import (
     start_command,
+    app_command,
     settings_command,
     notification_setting_callback,
     clear_callback,
@@ -75,6 +76,7 @@ async def post_init(application):
     """Set up bot commands menu after initialization."""
     await application.bot.set_my_commands([
         BotCommand("start", "\U0001f44b Start here"),
+        BotCommand("app", "\U0001f331 Open Sprout"),
         BotCommand("feedback", "\U0001f6e0\ufe0f Send feedback or report a bug"),
         BotCommand("settings", "\u2699\ufe0f Notification settings"),
     ])
@@ -114,6 +116,7 @@ def main():
 
     # Add handlers
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("app", app_command))
     app.add_handler(CommandHandler("settings", settings_command))
     app.add_handler(CallbackQueryHandler(notification_setting_callback, pattern=r"^notify:(on|off)$"))
     app.add_handler(CallbackQueryHandler(set_name_tg_callback, pattern="^set_name_tg$"))

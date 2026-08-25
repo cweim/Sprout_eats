@@ -533,9 +533,23 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         keyboard = []
         if config.WEBAPP_URL:
-            keyboard.append([InlineKeyboardButton("🗺️ Open My Map", web_app=WebAppInfo(url=config.WEBAPP_URL))])
+            keyboard.append([InlineKeyboardButton("🌱 Open in Sprout", web_app=WebAppInfo(url=config.WEBAPP_URL))])
 
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Open Sprout Mini App directly."""
+    ensure_bot_user(update)
+    if not config.WEBAPP_URL:
+        await update.message.reply_text("Sprout app isn't configured yet.")
+        return
+    await update.message.reply_text(
+        "Open your Sprout map 🌱",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🌱 Open in Sprout", web_app=WebAppInfo(url=config.WEBAPP_URL))
+        ]]),
+    )
 
 
 async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
