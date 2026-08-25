@@ -739,7 +739,7 @@ def get_menu_keyboard():
     if config.WEBAPP_URL:
         keyboard.append([
             InlineKeyboardButton(
-                "🗺️ Open My Map",
+                "🌱 Open in Sprout",
                 web_app=WebAppInfo(url=config.WEBAPP_URL)
             )
         ])

@@ -3911,6 +3911,10 @@ if (document.getElementById('review-sheet')?.style.display === 'flex') { closeRe
     // Check if empty
     if (places.length === 0) {
         showEmptyState();
+        // Still initialize nav and social state so tabs + friend requests work
+        currentTab = null;
+        switchTab('saved');
+        loadFriendRequests();
         return;
     }
 
