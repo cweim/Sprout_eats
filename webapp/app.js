@@ -6061,11 +6061,11 @@ function createVisitedCard(activity) {
     let mediaHtml = '';
     if (photos.length === 1) {
         mediaHtml = `<div class="fc-media-wrap" onclick="onFeedCardTap('${aid}','${gid}')">
-            <img class="fc-media-img" src="${escapeHtml(photos[0].file_url)}" alt="" loading="lazy">
+            <img class="fc-media-img" src="${escapeHtml(photos[0].file_url)}" alt="" loading="lazy" onclick="openImgViewer(this.src);event.stopPropagation()">
         </div>`;
     } else if (photos.length > 1) {
         const slides = photos.map(p =>
-            `<div class="fc-slide"><img class="fc-media-img" src="${escapeHtml(p.file_url)}" alt="" loading="lazy"></div>`
+            `<div class="fc-slide"><img class="fc-media-img" src="${escapeHtml(p.file_url)}" alt="" loading="lazy" onclick="openImgViewer(this.src);event.stopPropagation()"></div>`
         ).join('');
         const dots = photos.map((_, i) =>
             `<span class="fc-dot${i === 0 ? ' active' : ''}"></span>`
@@ -9371,7 +9371,7 @@ function renderRcHeroCarousel(containerEl, photos) {
         return;
     }
     const slides = photos.map((p, i) =>
-        `<div class="rc-hero-slide"><img class="rc-hero-slide-img" src="${safeUrl(p.url)}" alt="" loading="lazy" data-idx="${i}"></div>`
+        `<div class="rc-hero-slide"><img class="rc-hero-slide-img" src="${safeUrl(p.url)}" alt="" loading="lazy" data-idx="${i}" onclick="openImgViewer(this.src)"></div>`
     ).join('');
     const dotsHtml = photos.length > 1
         ? `<div class="rc-dots">${photos.map((_, i) => `<span class="rc-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
@@ -10238,4 +10238,118 @@ function openSharedRestaurant(activityId) {
         place_types:        activity.place_types,
         source_url:         activity.place_source_url       || null,
     }, { highlightUserId: activity.user_id, activity });
+}
+
+// ========== IMAGE VIEWER ==========
+
+let _ivScale = 1, _ivPrevScale = 1;
+let _ivTx = 0, _ivTy = 0;
+let _ivPinchDist0 = 0;
+let _ivPanOrigin = null;   // { x, y, tx, ty }
+let _ivDismissStart = null; // { y } when swipe-to-close begins
+let _ivLastTap = 0;
+let _ivTouchReady = false;
+
+function openImgViewer(src) {
+    const viewer = document.getElementById('img-viewer');
+    const img = document.getElementById('img-viewer-img');
+    if (!viewer || !img) return;
+    _ivScale = 1; _ivPrevScale = 1; _ivTx = 0; _ivTy = 0;
+    img.src = src;
+    img.style.transition = 'none';
+    img.style.transform = '';
+    viewer.style.background = '';
+    viewer.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    if (!_ivTouchReady) { _ivInitTouch(); _ivTouchReady = true; }
+}
+
+function closeImgViewer() {
+    const viewer = document.getElementById('img-viewer');
+    if (!viewer) return;
+    viewer.style.display = 'none';
+    document.body.style.overflow = '';
+    _ivScale = 1; _ivTx = 0; _ivTy = 0;
+}
+
+function _ivApply(animate) {
+    const img = document.getElementById('img-viewer-img');
+    if (!img) return;
+    img.style.transition = animate ? 'transform 0.2s ease' : 'none';
+    img.style.transform = `translate(${_ivTx}px,${_ivTy}px) scale(${_ivScale})`;
+}
+
+function _ivPinchDist(t) {
+    return Math.hypot(t[1].pageX - t[0].pageX, t[1].pageY - t[0].pageY);
+}
+
+function _ivInitTouch() {
+    const wrap = document.getElementById('img-viewer-wrap');
+    if (!wrap) return;
+
+    wrap.addEventListener('touchstart', e => {
+        e.preventDefault();
+        const t = e.touches;
+        _ivDismissStart = null;
+        if (t.length === 2) {
+            _ivPinchDist0 = _ivPinchDist(t);
+            _ivPrevScale = _ivScale;
+            _ivPanOrigin = null;
+        } else if (t.length === 1) {
+            const now = Date.now();
+            if (now - _ivLastTap < 280) {
+                // Double-tap: toggle 1x ↔ 2.5x
+                _ivLastTap = 0;
+                _ivScale = _ivScale > 1.2 ? 1 : 2.5;
+                _ivTx = 0; _ivTy = 0;
+                _ivApply(true);
+                return;
+            }
+            _ivLastTap = now;
+            _ivPanOrigin = { x: t[0].pageX, y: t[0].pageY, tx: _ivTx, ty: _ivTy };
+            if (_ivScale <= 1.05) _ivDismissStart = { y: t[0].pageY };
+        }
+    }, { passive: false });
+
+    wrap.addEventListener('touchmove', e => {
+        e.preventDefault();
+        const t = e.touches;
+        const viewer = document.getElementById('img-viewer');
+        if (t.length === 2 && _ivPinchDist0) {
+            const d = _ivPinchDist(t);
+            _ivScale = Math.max(1, Math.min(4, _ivPrevScale * (d / _ivPinchDist0)));
+            if (_ivScale <= 1) { _ivTx = 0; _ivTy = 0; }
+            _ivApply(false);
+        } else if (t.length === 1 && _ivPanOrigin) {
+            const dx = t[0].pageX - _ivPanOrigin.x;
+            const dy = t[0].pageY - _ivPanOrigin.y;
+            if (_ivDismissStart && _ivScale <= 1.05) {
+                _ivTy = dy;
+                _ivApply(false);
+                const progress = Math.min(1, Math.abs(dy) / 220);
+                if (viewer) viewer.style.background = `rgba(0,0,0,${0.95 - progress * 0.75})`;
+            } else if (_ivScale > 1.05) {
+                _ivTx = _ivPanOrigin.tx + dx;
+                _ivTy = _ivPanOrigin.ty + dy;
+                _ivApply(false);
+            }
+        }
+    }, { passive: false });
+
+    wrap.addEventListener('touchend', e => {
+        e.preventDefault();
+        const viewer = document.getElementById('img-viewer');
+        if (_ivDismissStart && _ivScale <= 1.05 && Math.abs(_ivTy) > 90) {
+            closeImgViewer();
+            return;
+        }
+        if (_ivDismissStart && _ivTy !== 0) {
+            _ivTy = 0;
+            if (viewer) viewer.style.background = '';
+            _ivApply(true);
+        }
+        if (_ivScale < 1) { _ivScale = 1; _ivTx = 0; _ivTy = 0; _ivApply(true); }
+        _ivPinchDist0 = 0;
+        _ivDismissStart = null;
+    }, { passive: false });
 }
