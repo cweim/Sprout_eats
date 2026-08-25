@@ -1131,8 +1131,6 @@ async function init() {
     bindContent();
     watchResponsiveTables();
     await validateAdminSession();
-    // Poll for new user replies every 15s when a report is open
-    setInterval(() => { if (activeReportId) loadFeedbackThread(activeReportId); }, 15000);
 }
 
 init().catch((error) => {
