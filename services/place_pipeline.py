@@ -21,7 +21,7 @@ ADDRESS_HINT_RE = re.compile(
     r"(?:Singapore|SG)\s*\d{6}"
     r"|\b\d{6}\b"
     r"|\b\d{5}\b.*(?:Malaysia|Selangor|Kuala\s*Lumpur|Petaling\s*Jaya|Ampang)"
-    r"|\b(?:road|rd|street|st|jalan|jln|lane|ln|drive|dr|bukit|plaza)\b"
+    r"|\b(?:road|rd|street|st|jalan|jln|lane|ln|drive|dr|bukit|plaza|avenue|ave|boulevard|blvd|crescent|cres|terrace|tce|park(?:way)?|pkwy|pk|close|cl|court|ct|walk|way|gardens?|gdn)\b"
     r")",
     re.IGNORECASE,
 )
@@ -345,8 +345,9 @@ def is_address_only_name(name: str) -> bool:
     first_segment = normalized.split(",", 1)[0].strip()
     if "," in normalized and re.fullmatch(unit_pattern, first_segment, re.IGNORECASE):
         return True
-    # Leading street number (e.g. "27 Prince George's Pk") → address component, not venue name
-    if re.match(r"^\d+\s+\w", normalized):
+    # Leading street number with 2+ meaningful words → address component, not venue name.
+    # e.g. "27 Prince George's Pk" → True, but "49 Seats" (1 meaningful word) → False.
+    if re.match(r"^\d+\s+\w", normalized) and len(tokenize_meaningful_words(normalized)) >= 2:
         return True
     return has_address_hint(normalized) and len(tokenize_meaningful_words(normalized)) <= 3
 
