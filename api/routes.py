@@ -1131,13 +1131,14 @@ async def get_friend_requests(request: Request, user: TelegramUser = Depends(get
 
 @router.post("/friends/request")
 @limiter.limit("20/minute")
-async def send_friend_request(request: Request, body: FriendRequestBody, user: TelegramUser = Depends(get_current_user)):
+async def send_friend_request(request: Request, body: FriendRequestBody, background_tasks: BackgroundTasks, user: TelegramUser = Depends(get_current_user)):
     """Send a friend request to another user."""
     if body.target_user_id == user.id:
         raise HTTPException(status_code=400, detail="Cannot add yourself")
     friendship = repository.send_friend_request(user.id, body.target_user_id)
     if not friendship:
         raise HTTPException(status_code=409, detail="Friend request already exists")
+    background_tasks.add_task(_notify_friend_request, user.id, body.target_user_id)
     try:
         repository.create_app_event(user.id, "invite_sent", "mini_app", "invite", str(friendship.get("id")), {})
     except Exception:
@@ -1147,11 +1148,14 @@ async def send_friend_request(request: Request, body: FriendRequestBody, user: T
 
 @router.post("/friends/{friendship_id}/accept")
 @limiter.limit("20/minute")
-async def accept_friend_request(request: Request, friendship_id: str, user: TelegramUser = Depends(get_current_user)):
+async def accept_friend_request(request: Request, friendship_id: str, background_tasks: BackgroundTasks, user: TelegramUser = Depends(get_current_user)):
     """Accept an incoming friend request."""
     result = repository.accept_friend_request(friendship_id, user.id)
     if not result:
         raise HTTPException(status_code=404, detail="Request not found or already handled")
+    requester_id = result.get("requester_id")
+    if requester_id and requester_id != user.id:
+        background_tasks.add_task(_notify_friend_accepted, user.id, requester_id)
     repository.log_activity(user.id, "friend_added", metadata={"friendship_id": friendship_id})
     try:
         repository.create_app_event(user.id, "friend_added", "mini_app", "invite", friendship_id, {})
@@ -1238,6 +1242,46 @@ async def get_invite_link(user: TelegramUser = Depends(get_current_user)):
 # =============================================================================
 # Log Visit (atomic: mark visited + review + activity + notify friends)
 # =============================================================================
+
+async def _notify_friend_request(requester_id: int, target_user_id: int):
+    """Notify target_user_id that requester_id sent them a friend request."""
+    requester = repository.get_user_by_id(requester_id)
+    if not requester:
+        return
+    actor = requester.get("display_name") or requester.get("first_name") or "Someone"
+    bot_token = app_config.TELEGRAM_BOT_TOKEN
+    if not bot_token:
+        return
+    text = f"👤 *{actor}* sent you a friend request on Sprout!"
+    payload: dict = {"chat_id": target_user_id, "text": text, "parse_mode": "Markdown"}
+    if app_config.WEBAPP_URL:
+        payload["reply_markup"] = {"inline_keyboard": [[{"text": "Open Sprout 🌱", "web_app": {"url": app_config.WEBAPP_URL}}]]}
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json=payload)
+    except Exception as exc:
+        logger.warning("friend request notify failed for %s: %s", target_user_id, exc)
+
+
+async def _notify_friend_accepted(accepter_id: int, requester_id: int):
+    """Notify requester_id that accepter_id accepted their friend request."""
+    accepter = repository.get_user_by_id(accepter_id)
+    if not accepter:
+        return
+    actor = accepter.get("display_name") or accepter.get("first_name") or "Someone"
+    bot_token = app_config.TELEGRAM_BOT_TOKEN
+    if not bot_token:
+        return
+    text = f"🎉 *{actor}* accepted your friend request!"
+    payload: dict = {"chat_id": requester_id, "text": text, "parse_mode": "Markdown"}
+    if app_config.WEBAPP_URL:
+        payload["reply_markup"] = {"inline_keyboard": [[{"text": "Open Sprout 🌱", "web_app": {"url": app_config.WEBAPP_URL}}]]}
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json=payload)
+    except Exception as exc:
+        logger.warning("friend accepted notify failed for %s: %s", requester_id, exc)
+
 
 async def _notify_friends_of_activity(
     user_id: int,
