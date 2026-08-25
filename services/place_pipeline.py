@@ -912,6 +912,22 @@ async def resolve_place_slots(
 
         accepted.sort(key=lambda item: (item.confidence_score, item.rating or 0, item.rating_count or 0), reverse=True)
 
+        # Detect chain: 2+ accepted candidates all sharing the same compact venue name
+        # (e.g. 5 McDonald's branches). Surface all to user instead of auto-picking one.
+        if len(accepted) >= 2:
+            nc = compact_name(slot.name_candidate)
+            if nc and all(
+                nc in compact_name(c.name) or compact_name(c.name) in nc
+                for c in accepted
+            ):
+                return PlaceSlotSuggestion(
+                    evidence=slot,
+                    status="chain",
+                    candidates=accepted[:8],
+                    selected=None,
+                    reason=f"Multiple branches found for '{slot.name_candidate}'",
+                )
+
         return PlaceSlotSuggestion(
             evidence=slot,
             status="resolved" if accepted else "unresolved",

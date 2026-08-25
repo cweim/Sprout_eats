@@ -785,8 +785,10 @@ async def prompt_tiktok_manual_fallback(
 ) -> None:
     _set_tiktok_fallback_pending(context, source_url)
     if unresolved_candidates:
+        is_chain = all(c.get("slot_status") == "chain" for c in unresolved_candidates)
+        cap = 8 if is_chain else 6
         session_id = uuid.uuid4().hex[:8] if user_id is not None else "legacy"
-        candidates = unresolved_candidates[:6]
+        candidates = unresolved_candidates[:cap]
         if user_id is not None:
             repository.save_bot_session_v2(
                 user_id,
@@ -800,10 +802,15 @@ async def prompt_tiktok_manual_fallback(
             )
         else:
             context.user_data["pending_unresolved_slots"] = candidates
+        if is_chain:
+            slot_name = unresolved_candidates[0].get("slot_name", "this place")
+            intro = f"Found multiple branches of {slot_name} — which one did you visit?"
+            footer = "Tap to save that branch."
+        else:
+            intro = "I found possible place matches, but couldn't verify them confidently enough to auto-save."
+            footer = "Tap a suggestion, or type the place name to search manually."
         await status_msg.edit_text(
-            "I found possible place matches, but couldn't verify them confidently enough to auto-save.\n"
-            f"{build_reviewable_candidate_message(unresolved_candidates)}\n\n"
-            "Tap a suggestion, or type the place name to search manually.",
+            f"{intro}\n{build_reviewable_candidate_message(unresolved_candidates)}\n\n{footer}",
             reply_markup=build_reviewable_candidate_keyboard(
                 unresolved_candidates,
                 session_id=session_id,
@@ -837,8 +844,10 @@ async def prompt_instagram_manual_fallback(
     context.user_data["pending_url"] = source_url
     context.user_data["pending_platform"] = "instagram"
     if unresolved_candidates:
+        is_chain = all(c.get("slot_status") == "chain" for c in unresolved_candidates)
+        cap = 8 if is_chain else 6
         session_id = uuid.uuid4().hex[:8] if user_id is not None else "legacy"
-        candidates = unresolved_candidates[:6]
+        candidates = unresolved_candidates[:cap]
         if user_id is not None:
             repository.save_bot_session_v2(
                 user_id,
@@ -852,10 +861,15 @@ async def prompt_instagram_manual_fallback(
             )
         else:
             context.user_data["pending_unresolved_slots"] = candidates
+        if is_chain:
+            slot_name = unresolved_candidates[0].get("slot_name", "this place")
+            intro = f"Found multiple branches of {slot_name} — which one did you visit?"
+            footer = "Tap to save that branch."
+        else:
+            intro = "I found possible place matches, but couldn't verify them confidently enough to auto-save."
+            footer = "Tap a suggestion to save it, or reply with the place name."
         await status_msg.edit_text(
-            "I found possible place matches, but couldn't verify them confidently enough to auto-save.\n"
-            f"{build_reviewable_candidate_message(unresolved_candidates)}\n\n"
-            "Tap a suggestion to save it, or reply with the place name.",
+            f"{intro}\n{build_reviewable_candidate_message(unresolved_candidates)}\n\n{footer}",
             reply_markup=build_reviewable_candidate_keyboard(
                 unresolved_candidates,
                 session_id=session_id,
@@ -1530,7 +1544,10 @@ def collect_reviewable_unresolved_candidates(unresolved_suggestions: list) -> li
     seen = set()
 
     for suggestion in unresolved_suggestions:
-        for candidate in getattr(suggestion, "candidates", [])[:3]:
+        slot_status = getattr(suggestion, "status", "")
+        # For chains, surface up to 8 branches; for regular unresolved, 3 is enough.
+        limit = 8 if slot_status == "chain" else 3
+        for candidate in getattr(suggestion, "candidates", [])[:limit]:
             place_id = getattr(candidate, "place_id", None)
             key = place_id or (
                 getattr(candidate, "name", ""),
@@ -1552,6 +1569,7 @@ def collect_reviewable_unresolved_candidates(unresolved_suggestions: list) -> li
                 "opening_hours": candidate.opening_hours,
                 "source": suggestion.evidence.source,
                 "slot_name": suggestion.evidence.name_candidate,
+                "slot_status": slot_status,
             })
 
     return candidates
@@ -1562,12 +1580,23 @@ def build_reviewable_candidate_message(candidates: list[dict]) -> str:
     if not candidates:
         return ""
 
-    lines = ["", "Possible places:"]
-    for candidate in candidates[:6]:
-        source = candidate.get("source", "").replace("_", " ")
-        lines.append(f"⬜ {candidate['name']} ({source})")
-    if len(candidates) > 6:
-        lines.append(f"⬜ {len(candidates) - 6} more possible places")
+    is_chain = candidates and all(c.get("slot_status") == "chain" for c in candidates)
+    limit = 8 if is_chain else 6
+    if is_chain:
+        lines = []
+        for candidate in candidates[:limit]:
+            address_short = (candidate.get("address") or "").split(",")[0]
+            label = f"{candidate['name']} · {address_short}" if address_short else candidate["name"]
+            lines.append(f"⬜ {label}")
+        if len(candidates) > limit:
+            lines.append(f"⬜ {len(candidates) - limit} more branches")
+    else:
+        lines = ["", "Possible places:"]
+        for candidate in candidates[:limit]:
+            source = candidate.get("source", "").replace("_", " ")
+            lines.append(f"⬜ {candidate['name']} ({source})")
+        if len(candidates) > limit:
+            lines.append(f"⬜ {len(candidates) - limit} more possible places")
     return "\n".join(lines)
 
 
@@ -1577,17 +1606,25 @@ def build_reviewable_candidate_keyboard(
     session_id: str = "legacy",
 ) -> InlineKeyboardMarkup:
     """Buttons for real Google Place candidates pending user confirmation."""
+    is_chain = candidates and all(c.get("slot_status") == "chain" for c in candidates)
+    limit = 8 if is_chain else 6
     keyboard = []
-    for index, candidate in enumerate(candidates[:6]):
-        label = candidate["name"][:28] + "..." if len(candidate["name"]) > 28 else candidate["name"]
+    for index, candidate in enumerate(candidates[:limit]):
+        if is_chain:
+            # Show address to distinguish branches (name alone is identical)
+            addr_part = (candidate.get("address") or "").split(",")[0][:30]
+            label = addr_part if addr_part else candidate["name"][:35]
+            button_text = f"📍 {label}"
+        else:
+            name = candidate["name"]
+            label = name[:28] + "..." if len(name) > 28 else name
+            button_text = f"Try: {label}"
         callback_data = (
             f"unresolved_pick_{index}"
             if session_id == "legacy"
             else f"ur:{session_id}:{index}"
         )
-        keyboard.append([
-            InlineKeyboardButton(f"Try: {label}", callback_data=callback_data)
-        ])
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
     return InlineKeyboardMarkup(keyboard)
 
 
