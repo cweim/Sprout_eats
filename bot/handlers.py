@@ -288,7 +288,7 @@ def build_saved_place_keyboard(
     if config.WEBAPP_URL:
         rows.append([InlineKeyboardButton(
             "🌱 Open in Sprout",
-            web_app=WebAppInfo(url=build_webapp_url(config.WEBAPP_URL, "place", saved_place_id)),
+            web_app=WebAppInfo(url=config.WEBAPP_URL),
         )])
     links = [InlineKeyboardButton("📍 Maps", url=build_google_maps_url(place))]
     if source_url:
