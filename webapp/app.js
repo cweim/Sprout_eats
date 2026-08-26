@@ -4307,9 +4307,13 @@ function showReviewValidationError(message, elements = []) {
 
 let pendingOverallPhotos = [];
 let pendingPhotoIdCounter = 0;
+let _reviewPhotos = [];          // single ordered source-of-truth for the photo grid
+let _pdSrc = null, _pdSrcIdx = -1, _pdTargetIdx = -1;  // drag state
+let _pdClone = null, _pdOffX = 0, _pdOffY = 0;
 
 function resetPendingReviewPhotos() {
     pendingOverallPhotos = [];
+    _reviewPhotos = [];
 }
 
 function getPendingPhotos() {
@@ -4823,11 +4827,85 @@ async function deletePhoto(reviewId, photoId) {
 /**
  * Update photo grid with photos and add button
  */
+function _pdAddDragListeners(thumb, container, maxPhotos, dishId) {
+    thumb.addEventListener('touchstart', e => {
+        if (e.target.closest('.photo-delete-btn') || e.touches.length !== 1) return;
+        const thumbs = [...container.querySelectorAll('.photo-thumb')];
+        _pdSrcIdx = thumbs.indexOf(thumb);
+        _pdSrc = thumb;
+        _pdTargetIdx = _pdSrcIdx;
+
+        const t = e.touches[0];
+        const rect = thumb.getBoundingClientRect();
+        _pdOffX = t.clientX - rect.left;
+        _pdOffY = t.clientY - rect.top;
+
+        _pdClone = thumb.cloneNode(true);
+        Object.assign(_pdClone.style, {
+            position: 'fixed',
+            width: rect.width + 'px', height: rect.height + 'px',
+            left: rect.left + 'px', top: rect.top + 'px',
+            zIndex: '9999', pointerEvents: 'none',
+            opacity: '0.92', transform: 'scale(1.1)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+            borderRadius: '12px', overflow: 'hidden', transition: 'none',
+        });
+        document.body.appendChild(_pdClone);
+        thumb.style.opacity = '0.25';
+
+        function onMove(ev) {
+            if (!_pdClone) return;
+            ev.preventDefault();
+            const touch = ev.touches[0];
+            _pdClone.style.left = (touch.clientX - _pdOffX) + 'px';
+            _pdClone.style.top = (touch.clientY - _pdOffY) + 'px';
+
+            _pdClone.style.visibility = 'hidden';
+            const el = document.elementFromPoint(touch.clientX, touch.clientY);
+            _pdClone.style.visibility = '';
+            const over = el?.closest('.photo-thumb');
+            if (over && over !== _pdSrc) {
+                const newIdx = [...container.querySelectorAll('.photo-thumb')].indexOf(over);
+                if (newIdx >= 0 && newIdx !== _pdTargetIdx) {
+                    _pdTargetIdx = newIdx;
+                    container.querySelectorAll('.photo-thumb').forEach((th, i) => {
+                        th.style.outline = (i === newIdx) ? '2px solid var(--sprout-green, #4caf50)' : '';
+                        th.style.opacity = (th === _pdSrc) ? '0.25' : '';
+                    });
+                }
+            }
+        }
+
+        function onEnd() {
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onEnd);
+            if (_pdClone) { _pdClone.remove(); _pdClone = null; }
+            if (_pdSrc) _pdSrc.style.opacity = '';
+            container.querySelectorAll('.photo-thumb').forEach(th => {
+                th.style.outline = '';
+                th.style.opacity = '';
+            });
+            if (_pdTargetIdx !== _pdSrcIdx && _pdTargetIdx >= 0 && _pdTargetIdx < _reviewPhotos.length) {
+                const moved = _reviewPhotos.splice(_pdSrcIdx, 1)[0];
+                _reviewPhotos.splice(_pdTargetIdx, 0, moved);
+                // Keep pendingOverallPhotos in sync with new pending order
+                const newPending = _reviewPhotos.filter(p => p.pending);
+                pendingOverallPhotos.splice(0, pendingOverallPhotos.length, ...newPending);
+                updatePhotoGrid(container, [..._reviewPhotos], maxPhotos, dishId);
+            }
+            _pdSrc = null; _pdSrcIdx = -1; _pdTargetIdx = -1;
+        }
+
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onEnd, { passive: true });
+    }, { passive: true });
+}
+
 function updatePhotoGrid(container, photos, maxPhotos, dishId = null) {
+    _reviewPhotos = [...photos];
     container.innerHTML = '';
 
-    // Add existing photos
-    photos.forEach((photo, index) => {
+    photos.forEach((photo) => {
         const thumb = document.createElement('div');
         thumb.className = 'photo-thumb';
         thumb.dataset.photoId = photo.id || photo.localId;
@@ -4836,70 +4914,65 @@ function updatePhotoGrid(container, photos, maxPhotos, dishId = null) {
             <button type="button" class="photo-delete-btn" aria-label="Remove photo">×</button>
         `;
 
-        // Delete handler
         thumb.querySelector('.photo-delete-btn').addEventListener('click', async (e) => {
             e.stopPropagation();
             if (photo.pending) {
                 removePendingPhoto(photo.localId);
-                const remaining = photos.filter(p => (p.id || p.localId) !== photo.localId);
-                updatePhotoGrid(container, remaining, maxPhotos, dishId);
+                _reviewPhotos = _reviewPhotos.filter(p => (p.id || p.localId) !== photo.localId);
+                updatePhotoGrid(container, [..._reviewPhotos], maxPhotos, dishId);
                 return;
             }
-
             if (!currentReview?.id) return;
             if (await deletePhoto(currentReview.id, photo.id)) {
-                thumb.remove();
-                // Show add button if under limit
-                if (container.querySelectorAll('.photo-thumb').length < maxPhotos) {
-                    const savedRemaining = photos.filter(p => p.id !== photo.id);
-                    addPhotoButton(container, savedRemaining, maxPhotos, dishId);
-                }
+                _reviewPhotos = _reviewPhotos.filter(p => p.id !== photo.id);
+                updatePhotoGrid(container, [..._reviewPhotos], maxPhotos, dishId);
             }
         });
 
-
+        _pdAddDragListeners(thumb, container, maxPhotos, dishId);
         container.appendChild(thumb);
     });
 
-    // Add "+" button if under limit
     if (photos.length < maxPhotos) {
-        addPhotoButton(container, photos.filter(p => !p.pending), maxPhotos, dishId);
+        addPhotoButton(container, maxPhotos, dishId);
     }
 }
 
 /**
  * Add photo upload button to grid
  */
-function addPhotoButton(container, savedPhotos, maxPhotos, dishId) {
-    // Don't add if already at limit or button exists
+function addPhotoButton(container, maxPhotos, dishId) {
     if (container.querySelector('.photo-add-btn')) return;
     if (container.querySelectorAll('.photo-thumb').length >= maxPhotos) return;
 
     const label = document.createElement('label');
     label.className = 'photo-add-btn';
-    label.setAttribute('aria-label', 'Add photo');
+    label.setAttribute('aria-label', 'Add photos');
     label.innerHTML = `
-        <input type="file" accept="image/*" hidden aria-label="Upload photo">
+        <input type="file" accept="image/*" multiple hidden aria-label="Upload photos">
         <span>+</span>
     `;
 
     label.querySelector('input').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        // Validate file before showing placeholder
-        const validation = validateImageFile(file);
-        if (!validation.valid) {
-            showToast(validation.error);
-            e.target.value = '';
-            return;
-        }
-        await queuePendingPhoto(file);
-        updatePhotoGrid(container, [...savedPhotos, ...getPendingPhotos()], maxPhotos, dishId);
-        showToast('Photo ready to save');
-
-        // Reset input
+        const files = [...e.target.files];
         e.target.value = '';
+        if (!files.length) return;
+
+        const slots = maxPhotos - _reviewPhotos.length;
+        if (slots <= 0) return;
+
+        let added = 0;
+        for (const file of files.slice(0, slots)) {
+            const validation = validateImageFile(file);
+            if (!validation.valid) { showToast(validation.error); continue; }
+            const newPhoto = await queuePendingPhoto(file);
+            _reviewPhotos.push(newPhoto);
+            added++;
+        }
+        if (added > 0) {
+            updatePhotoGrid(container, [..._reviewPhotos], maxPhotos, dishId);
+            showToast(added > 1 ? `${added} photos ready to save` : 'Photo ready to save');
+        }
     });
 
     container.appendChild(label);
