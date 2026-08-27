@@ -438,10 +438,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             requester_id = int(context.args[0].replace("addfriend_", ""))
         except ValueError:
             return
-        ensure_bot_user(update)
         addressee_id = update.effective_user.id
+        # Detect new user BEFORE ensure_bot_user creates them
+        is_new_user = repository.get_user_by_id(addressee_id) is None
+        ensure_bot_user(update)
         if requester_id == addressee_id:
             await update.message.reply_text("That's your own invite link! Share it with friends.")
+            return
+        # Existing users: silently do nothing — they can add friends inside the app
+        if not is_new_user:
             return
         requester = repository.get_user_by_id(requester_id)
         requester_name = (

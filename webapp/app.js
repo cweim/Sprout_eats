@@ -1990,7 +1990,11 @@ function sharePlace(placeId) {
         : '';
 
     const myName = document.getElementById('profile-display-name')?.textContent?.trim();
-    const botLink = `https://t.me/${BOT_USERNAME || 'sprout_eats_bot'}`;
+    const myTgId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    const botBase = BOT_USERNAME || 'sprout_eats_bot';
+    const botLink = myTgId
+        ? `https://t.me/${botBase}?start=addfriend_${myTgId}`
+        : `https://t.me/${botBase}`;
 
     // Telegram: url= becomes rich preview card → text has no raw Maps URL
     const tgLines = [];
