@@ -5908,6 +5908,7 @@ button:disabled,
 }
 [data-theme="dark"] .fr-accepted-badge { color: var(--sprout-green); }
 .btn-friends { background: var(--secondary-bg) !important; color: var(--hint-color) !important; }
+.modal-section-divider { border: none; border-top: 1px solid var(--border-color); margin: 12px 0 16px; }
 
 /* Add friend modal search bar */
 .modal-sheet--tall { max-height: 80vh; height: 80vh; }

@@ -2440,7 +2440,7 @@ def get_friends(user_id: int) -> List[Dict[str, Any]]:
 
 
 def get_pending_friend_requests(user_id: int) -> List[Dict[str, Any]]:
-    """Get pending incoming friend requests."""
+    """Get pending incoming friend requests, enriched with mutual friend count."""
     supabase = get_supabase()
     result = supabase.table("user_friendships").select(
         "id, requester_id, created_at"
@@ -2455,17 +2455,38 @@ def get_pending_friend_requests(user_id: int) -> List[Dict[str, Any]]:
     ).in_("id", requester_ids).execute()
     users_map = {u["id"]: u for u in (users_result.data or [])}
 
+    # Compute mutual friend counts
+    mutual_counts: Dict[int, int] = {}
+    my_friend_ids = get_friend_ids(user_id)
+    if my_friend_ids and requester_ids:
+        my_friends_set = set(my_friend_ids)
+        req_csv = ",".join(str(r) for r in requester_ids)
+        req_friends_result = supabase.table("user_friendships").select(
+            "requester_id, addressee_id"
+        ).or_(
+            f"requester_id.in.({req_csv}),addressee_id.in.({req_csv})"
+        ).eq("status", "accepted").execute()
+        requester_set = set(requester_ids)
+        for row in (req_friends_result.data or []):
+            req, addr = row["requester_id"], row["addressee_id"]
+            if req in requester_set and addr in my_friends_set:
+                mutual_counts[req] = mutual_counts.get(req, 0) + 1
+            if addr in requester_set and req in my_friends_set:
+                mutual_counts[addr] = mutual_counts.get(addr, 0) + 1
+
     out = []
     for row in result.data:
-        u = users_map.get(row["requester_id"], {})
+        rid = row["requester_id"]
+        u = users_map.get(rid, {})
         out.append({
             "friendship_id": row["id"],
-            "user_id": row["requester_id"],
+            "user_id": rid,
             "username": u.get("username"),
             "first_name": u.get("first_name"),
             "display_name": u.get("display_name"),
             "avatar_url": u.get("avatar_url"),
             "created_at": row["created_at"],
+            "mutual_friends_count": mutual_counts.get(rid) or None,
         })
     return out
 

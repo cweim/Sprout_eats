@@ -455,7 +455,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Open the app to accept their request.",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("Open Sprout 🌱", web_app=WebAppInfo(url=config.WEBAPP_URL))
+                    InlineKeyboardButton("Open Sprout 🌱", web_app=WebAppInfo(
+                        url=build_webapp_url(config.WEBAPP_URL, "requests", "pending")
+                    ))
                 ]]) if config.WEBAPP_URL else None,
             )
         else:

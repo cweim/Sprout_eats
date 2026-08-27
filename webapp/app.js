@@ -6521,6 +6521,11 @@ let _upCalMonthOffset = 0;
 
 async function openUserProfile(userId) {
     if (!userId) return;
+    const myId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    if (myId && Number(userId) === Number(myId)) {
+        switchTab('profile');
+        return;
+    }
     const overlay = document.getElementById('user-profile-overlay');
     if (overlay) overlay.style.display = 'flex';
     const sheet = document.getElementById('user-profile-sheet');
@@ -8484,6 +8489,7 @@ function openAddFriendModal() {
     const modal = document.getElementById('add-friend-modal');
     if (modal) modal.style.display = 'flex';
     document.getElementById('friend-search-input')?.focus();
+    loadPendingRequestsSection();
     loadSuggestedFriends();
 }
 
@@ -8500,6 +8506,8 @@ function closeAddFriendModal() {
     if (suggestions) suggestions.innerHTML = '';
     const section = document.getElementById('friend-suggestions-section');
     if (section) section.style.display = '';
+    const pendingSection = document.getElementById('pending-requests-section');
+    if (pendingSection) pendingSection.style.display = 'none';
 }
 
 function searchFriends(query) {
@@ -8553,22 +8561,20 @@ async function sendFriendRequest(userId, btn) {
     }
 }
 
-// ========== FRIEND REQUESTS MODAL ==========
+// ========== UNIFIED PEOPLE MODAL ==========
 
 function showFriendRequests() {
-    const modal = document.getElementById('friend-requests-modal');
-    if (modal) modal.style.display = 'flex';
-    loadFriendRequestsModal();
+    openAddFriendModal();
 }
 
 function closeFriendRequestsModal() {
-    const modal = document.getElementById('friend-requests-modal');
-    if (modal) modal.style.display = 'none';
+    closeAddFriendModal();
 }
 
-async function loadFriendRequestsModal() {
-    const listEl = document.getElementById('friend-requests-list');
-    if (!listEl) return;
+async function loadPendingRequestsSection() {
+    const section = document.getElementById('pending-requests-section');
+    const listEl = document.getElementById('pending-requests-list');
+    if (!section || !listEl) return;
 
     try {
         const res = await fetch('/api/friends/requests', { headers: getAuthHeaders() });
@@ -8577,23 +8583,27 @@ async function loadFriendRequestsModal() {
         const requests = data.requests || [];
 
         if (requests.length === 0) {
-            listEl.innerHTML = '<p style="padding:16px;color:var(--hint-color)">No pending requests.</p>';
+            section.style.display = 'none';
             return;
         }
 
+        section.style.display = '';
         listEl.innerHTML = requests.map(r => {
             const name = escapeHtml(r.display_name || r.first_name || 'User');
             const initials = (r.display_name || r.first_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
             const avatarHtml = r.avatar_url
                 ? `<div class="fr-avatar" style="background-image:url('${escapeHtml(r.avatar_url)}');background-size:cover;background-position:center"></div>`
                 : `<div class="fr-avatar fr-avatar--initials">${initials}</div>`;
+            const subLine = r.mutual_friends_count
+                ? `<p class="friend-username">${r.mutual_friends_count} mutual friend${r.mutual_friends_count > 1 ? 's' : ''}</p>`
+                : (r.username ? `<p class="friend-username">@${escapeHtml(r.username)}</p>` : '');
             return `
             <div class="friend-request-card" id="req-${r.friendship_id}">
-                <div class="fr-card-left" onclick="closeFriendRequestsModal();openUserProfile(${r.user_id})">
+                <div class="fr-card-left" onclick="closeAddFriendModal();openUserProfile(${r.user_id})">
                     ${avatarHtml}
                     <div class="friend-info">
                         <p class="friend-name">${name}</p>
-                        ${r.username ? `<p class="friend-username">@${escapeHtml(r.username)}</p>` : ''}
+                        ${subLine}
                     </div>
                 </div>
                 <div class="request-actions">
@@ -8603,14 +8613,13 @@ async function loadFriendRequestsModal() {
             </div>`;
         }).join('');
     } catch (err) {
-        console.error('loadFriendRequestsModal error:', err);
+        console.error('loadPendingRequestsSection error:', err);
     }
 }
 
 async function acceptFriendRequest(friendshipId) {
     try {
         await fetch(`/api/friends/${friendshipId}/accept`, { method: 'POST', headers: getAuthHeaders() });
-        // Update the card in-place to show "Friends" state
         const card = document.getElementById(`req-${friendshipId}`);
         if (card) {
             const actions = card.querySelector('.request-actions');
@@ -8620,6 +8629,15 @@ async function acceptFriendRequest(friendshipId) {
         _friendsCache = null;
         await loadFriends();
         await loadFriendRequests();
+        // After card removal: hide section if empty, refresh suggestions with new mutual friends
+        setTimeout(() => {
+            const list = document.getElementById('pending-requests-list');
+            const section = document.getElementById('pending-requests-section');
+            if (list && section && !list.querySelector('.friend-request-card')) {
+                section.style.display = 'none';
+            }
+            loadSuggestedFriends();
+        }, 1300);
     } catch (err) {
         console.error('acceptFriendRequest error:', err);
     }
@@ -8628,7 +8646,13 @@ async function acceptFriendRequest(friendshipId) {
 async function declineFriendRequest(friendshipId) {
     try {
         await fetch(`/api/friends/${friendshipId}`, { method: 'DELETE', headers: getAuthHeaders() });
-        document.getElementById(`req-${friendshipId}`)?.remove();
+        const card = document.getElementById(`req-${friendshipId}`);
+        if (card) card.remove();
+        const list = document.getElementById('pending-requests-list');
+        const section = document.getElementById('pending-requests-section');
+        if (list && section && !list.querySelector('.friend-request-card')) {
+            section.style.display = 'none';
+        }
         await loadFriendRequests();
     } catch (err) {
         console.error('declineFriendRequest error:', err);
