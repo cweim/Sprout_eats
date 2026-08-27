@@ -116,8 +116,18 @@ def strip_leading_marker(line: str) -> tuple[Optional[str], str]:
     return None, line.strip()
 
 
+_HANDLE_COUNTRY_SUFFIX_RE = re.compile(r"(?:sg|my|ph|id|th|vn|tw|hk|com)$", re.IGNORECASE)
+
+
 def normalize_handle(handle: str) -> str:
-    return re.sub(r"[._]+", " ", handle).strip()
+    name = re.sub(r"[._]+", " ", handle).strip()
+    # If still a single unbroken token, strip trailing country/TLD suffix so
+    # handles like "theacaitrucksg" become "theacairtruck" (better for search)
+    if " " not in name:
+        stripped = _HANDLE_COUNTRY_SUFFIX_RE.sub("", name).strip()
+        if stripped and len(stripped) >= 4:
+            name = stripped
+    return name
 
 
 def handle_tokens(handle: str) -> set[str]:
@@ -682,6 +692,26 @@ def extract_place_evidence_from_metadata(record: dict[str, Any]) -> list[PlaceEv
     if slots:
         return dedupe_slots(slots)
 
+    # Last resort: try the reel account handle itself as a venue name.
+    # Many food venues post their own reels (@theacaitrucksg, @allhands.cafe).
+    # Gate on food context so blogger handles don't fire on non-food posts.
+    uploader = (core.get("uploader") or "").strip()
+    if uploader and has_food_context(caption):
+        uploader_name = normalize_handle(uploader).title()
+        if uploader_name and has_place_name_shape(uploader_name):
+            country_hint = infer_country_hint(caption)
+            return dedupe_slots([
+                PlaceEvidence(
+                    slot_id="uploader_1",
+                    source="mention",
+                    raw_text=f"@{uploader}",
+                    name_candidate=uploader_name,
+                    area_candidate=country_hint,
+                    confidence="low",
+                    notes=["venue inferred from reel account handle"],
+                )
+            ])
+
     return []
 
 
@@ -897,6 +927,22 @@ async def resolve_place_slots(
         async with semaphore:
             results = await search_place(slot.query, max_results=per_slot_results)
         candidates = results if isinstance(results, list) else ([results] if results else [])
+        effective_query = slot.query
+
+        # Fallback 1: area hint may be too vague (e.g. "pgp", "cbd") — retry name-only
+        if not candidates and slot.area_candidate and slot.name_candidate:
+            effective_query = slot.name_candidate
+            async with semaphore:
+                r2 = await search_place(effective_query, max_results=per_slot_results)
+            candidates = r2 if isinstance(r2, list) else ([r2] if r2 else [])
+
+        # Fallback 2: mention handles with no area — retry "{name} food" to force food category
+        if not candidates and slot.source == "mention" and slot.name_candidate:
+            effective_query = f"{slot.name_candidate} food"
+            async with semaphore:
+                r3 = await search_place(effective_query, max_results=per_slot_results)
+            candidates = r3 if isinstance(r3, list) else ([r3] if r3 else [])
+
         accepted: list[PlaceResult] = []
 
         for candidate in candidates:
@@ -906,7 +952,7 @@ async def resolve_place_slots(
             candidate.confidence_score = score
             candidate.confidence_label = "high" if score >= 85 else "likely" if score >= 60 else "possible"
             candidate.confidence_reason = reason
-            candidate.matched_query = slot.query
+            candidate.matched_query = effective_query
             candidate.matched_source_type = slot.source
             accepted.append(candidate)
 
@@ -972,29 +1018,50 @@ async def resolve_place_slots(
     return suggestions
 
 
-async def extract_slots_via_llm(caption: str, platform: str = "") -> list[PlaceEvidence]:
-    """Claude Haiku fallback when all rule-based extractors return no slots."""
+async def extract_slots_via_llm(
+    caption: str,
+    platform: str = "",
+    uploader: str = "",
+    hashtags: list[str] | None = None,
+) -> list[PlaceEvidence]:
+    """Groq llama-3.1-8b-instant fallback when all rule-based extractors return no slots."""
     import config  # local import to avoid circular dependency
     if not getattr(config, "ENABLE_LLM_PLACE_FALLBACK", False):
+        return []
+    if not getattr(config, "GROQ_API_KEY", ""):
+        logger.warning("LLM place fallback enabled but GROQ_API_KEY not set — skipping")
         return []
     try:
         import json as _json
 
-        import anthropic
+        from groq import AsyncGroq
 
-        client = anthropic.AsyncAnthropic()
+        client = AsyncGroq(api_key=config.GROQ_API_KEY)
+
+        # Build context block with everything available
+        context_parts = []
+        if caption:
+            context_parts.append(f"Caption:\n{caption[:2000]}")
+        if uploader:
+            context_parts.append(f"Account handle: @{uploader}")
+        if hashtags:
+            context_parts.append(f"Hashtags: {' '.join(f'#{h}' for h in hashtags[:20])}")
+        context = "\n\n".join(context_parts)
+
         prompt = (
-            f"Extract restaurant/cafe/bar/venue names from this {platform} caption. "
+            f"Extract restaurant/cafe/bar/venue names from this {platform} reel. "
+            "Use ALL provided context — caption, account handle, and hashtags — as clues. "
             "Return ONLY a JSON array of objects with keys: name (string), address (string or null), area (string or null). "
-            "Return [] if no venues are clearly mentioned. No prose, no markdown.\n\nCaption:\n"
-            + caption[:2000]
+            "Return [] if no venues are clearly mentioned. No prose, no markdown.\n\n"
+            + context
         )
-        response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+        response = await client.chat.completions.create(
+            model="llama-3.1-8b-instant",
             max_tokens=256,
+            temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = response.content[0].text.strip()
+        raw = response.choices[0].message.content.strip()
         items = _json.loads(raw)
         if not isinstance(items, list):
             return []
@@ -1032,7 +1099,9 @@ async def extract_place_evidence_from_metadata_async(
     caption = "\n".join(
         part for part in [core.get("title") or "", core.get("description") or ""] if part
     )
-    return await extract_slots_via_llm(caption, platform=platform)
+    uploader = (core.get("uploader") or "").strip()
+    hashtags = [h for h in (core.get("tags") or []) if isinstance(h, str) and h]
+    return await extract_slots_via_llm(caption, platform=platform, uploader=uploader, hashtags=hashtags)
 
 
 async def run_slot_pipeline_for_metadata(

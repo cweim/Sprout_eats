@@ -76,8 +76,9 @@ BOT_PLACE_RESOLUTION_CONCURRENCY = int(os.getenv("BOT_PLACE_RESOLUTION_CONCURREN
 BOT_METADATA_PROGRESS_SECONDS = float(os.getenv("BOT_METADATA_PROGRESS_SECONDS", "15"))
 BOT_METADATA_STILL_WORKING_SECONDS = float(os.getenv("BOT_METADATA_STILL_WORKING_SECONDS", "45"))
 
-# Place extraction LLM fallback (Claude Haiku) — off by default due to cost
+# Place extraction LLM fallback (Groq llama-3.1-8b-instant) — requires GROQ_API_KEY
 ENABLE_LLM_PLACE_FALLBACK: bool = os.getenv("ENABLE_LLM_PLACE_FALLBACK", "false").lower() in {"1", "true", "yes", "on"}
+GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "").strip()
 
 # Friend activity notification cooldown
 FRIEND_NOTIFICATION_COOLDOWN_HOURS = int(os.getenv("FRIEND_NOTIFICATION_COOLDOWN_HOURS", "4"))
