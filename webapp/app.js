@@ -5970,15 +5970,16 @@ function openRestaurantCardFromSearch(place) {
 // ========== FEED ==========
 
 function _renderFeedActivities(list, empty, activities) {
-    if (activities.length === 0) {
+    const valid = activities.filter(a => a.place_name_resolved);
+    if (valid.length === 0) {
         list.innerHTML = '';
         if (empty) { empty.style.display = ''; populateFeedEmptyChips(); }
         return;
     }
     if (empty) empty.style.display = 'none';
     feedActivitiesMap = {};
-    activities.forEach(a => { feedActivitiesMap[a.id] = a; });
-    list.innerHTML = activities.map(a => createFeedCard(a)).join('');
+    valid.forEach(a => { feedActivitiesMap[a.id] = a; });
+    list.innerHTML = valid.map(a => createFeedCard(a)).join('');
 }
 
 async function loadFeed() {

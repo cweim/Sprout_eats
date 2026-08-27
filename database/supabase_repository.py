@@ -3080,7 +3080,8 @@ def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict
             activity["review_dishes"]  = dishes_map.get(rid, [])
         activity["is_own"] = row["user_id"] == user_id
         out.append(activity)
-    return out
+    # Drop activities where place couldn't be resolved — avoids "a place" ghost cards
+    return [a for a in out if a.get("place_name_resolved")]
 
 
 # ── Log Visit (atomic: mark visited + review + activity) ──────────────
