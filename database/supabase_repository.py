@@ -2916,10 +2916,13 @@ def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict
         return []
 
     # Fetch a large batch so we can apply the filter in Python
+    # Only place-linked activity types — friend_added has no place data and must not appear
     fetch_limit = max(limit + offset + 50, 100)
     result = supabase.table("user_activities").select(
         "id, user_id, activity_type, place_id, review_id, metadata, is_public, created_at"
-    ).in_("user_id", all_feed_user_ids).eq("is_public", True).order(
+    ).in_("user_id", all_feed_user_ids).eq("is_public", True).in_(
+        "activity_type", ["saved", "visited", "reviewed"]
+    ).order(
         "created_at", desc=True
     ).limit(fetch_limit).execute()
 
