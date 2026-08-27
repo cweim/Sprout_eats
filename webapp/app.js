@@ -646,7 +646,7 @@ function initMap() {
     }).setView([0, 0], 2);
 
     // Use CartoDB Voyager tiles (cute, colorful, clean)
-    L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_2a8c_1_f70e2bf61063463adc108ad7', {
+    L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_2dip_1_a547affd6e732c636841df27', {
         attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 20
     }).addTo(map);
@@ -6984,7 +6984,7 @@ function renderUpMap(places) {
     }
 
     const upMap = L.map(container, { zoomControl: false, attributionControl: false });
-    L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_2a8c_1_f70e2bf61063463adc108ad7', {
+    L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_2dip_1_a547affd6e732c636841df27', {
         maxZoom: 20
     }).addTo(upMap);
     _upLeafletMap = upMap;
