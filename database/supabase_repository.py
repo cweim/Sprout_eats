@@ -3202,6 +3202,80 @@ def get_activity_likes(activity_ids: List, viewer_id: int) -> Dict:
     return out
 
 
+def get_activity_likers(activity_id: str) -> List[Dict]:
+    """Return list of {display_name, avatar_url} for users who liked an activity."""
+    supabase = get_supabase()
+    try:
+        result = supabase.table("user_activity_likes").select(
+            "user_id, users(display_name, avatar_url)"
+        ).eq("activity_id", activity_id).execute()
+    except Exception:
+        return []
+    out = []
+    for row in result.data or []:
+        u = row.get("users") or {}
+        out.append({
+            "display_name": u.get("display_name") or "Sprout user",
+            "avatar_url": u.get("avatar_url"),
+        })
+    return out
+
+
+def get_activity_owner(activity_id: str) -> Optional[Dict]:
+    """Return {user_id, notify_friend_activity} for the owner of an activity."""
+    supabase = get_supabase()
+    try:
+        result = supabase.table("user_activities").select(
+            "user_id, users(notify_friend_activity)"
+        ).eq("id", activity_id).limit(1).execute()
+    except Exception:
+        return None
+    if not result.data:
+        return None
+    row = result.data[0]
+    u = row.get("users") or {}
+    return {
+        "user_id": row["user_id"],
+        "notify_friend_activity": u.get("notify_friend_activity") is not False,
+    }
+
+
+def is_engagement_notification_on_cooldown(
+    activity_id: str, notification_type: str, cooldown_minutes: int
+) -> bool:
+    """Return True if a like/comment notification was sent for this post within the cooldown window."""
+    from datetime import datetime, timezone, timedelta
+    supabase = get_supabase()
+    try:
+        result = supabase.table("activity_engagement_notifications").select(
+            "last_notified_at"
+        ).eq("activity_id", activity_id).eq("notification_type", notification_type).limit(1).execute()
+    except Exception:
+        return False
+    if not result.data:
+        return False
+    last = result.data[0]["last_notified_at"]
+    last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+    return datetime.now(timezone.utc) - last_dt < timedelta(minutes=cooldown_minutes)
+
+
+def record_engagement_notification_sent(activity_id: str, notification_type: str) -> None:
+    """Upsert last_notified_at for a like/comment notification on this activity."""
+    from datetime import datetime, timezone
+    supabase = get_supabase()
+    try:
+        supabase.table("activity_engagement_notifications").upsert(
+            {
+                "activity_id": activity_id,
+                "notification_type": notification_type,
+                "last_notified_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="activity_id,notification_type",
+        ).execute()
+    except Exception:
+        pass
+
+
 # ── Collections ───────────────────────────────────────────────────────────────
 
 def _is_collection_member(supabase, collection_id: int, user_id: int) -> bool:

@@ -85,8 +85,22 @@ async function routeStartParam(raw) {
     }
 
     if (route.target === 'activity') {
-        // Navigate to discover tab — no auto-open RC
-        setTimeout(() => switchTab('home'), 250);
+        switchTab('home');
+        // After feed renders, scroll to and briefly highlight the target card
+        const activityId = route.value;
+        if (activityId) {
+            const tryHighlight = (attempts) => {
+                const card = document.getElementById(`fc-${activityId}`);
+                if (card) {
+                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    card.classList.add('fc-highlight');
+                    setTimeout(() => card.classList.remove('fc-highlight'), 3000);
+                } else if (attempts > 0) {
+                    setTimeout(() => tryHighlight(attempts - 1), 500);
+                }
+            };
+            setTimeout(() => tryHighlight(6), 400);
+        }
         return;
     }
 
@@ -6242,7 +6256,7 @@ function createVisitedCard(activity) {
                             onclick="event.stopPropagation();likeActivity('${aid}', this)"
                             aria-label="Like">
                             ${FC_ICON_HEART}
-                            ${likesCount > 0 ? `<span class="fc-action-count">${likesCount}</span>` : ''}
+                            ${likesCount > 0 ? `<span class="fc-action-count fc-likes-count" onclick="event.stopPropagation();showLikersSheet('${aid}')">${likesCount}</span>` : ''}
                         </button>
                         <button class="fc-comment-btn" onclick="event.stopPropagation();onFcCommentBtnClick('${aid}')" aria-label="Comment">
                             ${FC_ICON_COMMENT}
@@ -9873,6 +9887,35 @@ async function likeActivity(activityId, btn) {
         btn.classList.toggle('liked', liked);
         if (countEl) countEl.textContent = currentCount > 0 ? currentCount : '';
     }
+}
+
+async function showLikersSheet(activityId) {
+    const overlay = document.getElementById('likers-overlay');
+    const list = document.getElementById('likers-list');
+    list.innerHTML = '<div class="likers-empty">Loading...</div>';
+    overlay.style.display = 'flex';
+    try {
+        const res = await fetch(`${API_URL}/api/activities/${activityId}/likers`, { headers: getAuthHeaders() });
+        const data = await res.json();
+        const likers = data.likers || [];
+        if (likers.length === 0) {
+            list.innerHTML = '<div class="likers-empty">No likes yet</div>';
+            return;
+        }
+        list.innerHTML = likers.map(u => `
+            <div class="likers-item">
+                <img class="likers-avatar" src="${u.avatar_url || ''}" alt="" onerror="this.style.display='none'">
+                <span class="likers-name">${escapeHtml(u.display_name || 'Sprout user')}</span>
+            </div>
+        `).join('');
+    } catch (e) {
+        list.innerHTML = '<div class="likers-empty">Couldn\'t load likes</div>';
+    }
+}
+
+function closeLikersSheet(e) {
+    if (e && e.target !== document.getElementById('likers-overlay')) return;
+    document.getElementById('likers-overlay').style.display = 'none';
 }
 
 function onFeedCardTap(activityId, googlePlaceId) {

@@ -1305,6 +1305,56 @@ async def _notify_friend_accepted(accepter_id: int, requester_id: int):
         logger.warning("friend accepted notify failed for %s: %s", requester_id, exc)
 
 
+async def _notify_activity_owner(
+    activity_id: str,
+    actor_id: int,
+    notification_type: str,  # 'like' | 'comment'
+) -> None:
+    """Notify the owner of an activity when someone likes or comments. Cooldown-gated."""
+    owner = repository.get_activity_owner(activity_id)
+    if not owner:
+        return
+    owner_id = owner["user_id"]
+    if owner_id == actor_id:
+        return  # don't notify self
+    if not owner.get("notify_friend_activity", True):
+        return  # owner has notifications off
+
+    cooldown_minutes = 60 if notification_type == "like" else 5
+    if repository.is_engagement_notification_on_cooldown(activity_id, notification_type, cooldown_minutes):
+        return
+
+    actor = repository.get_user_by_id(actor_id)
+    actor_name = (actor.get("display_name") or actor.get("first_name") or "Someone") if actor else "Someone"
+
+    if notification_type == "like":
+        text = f"❤️ *{actor_name}* liked your post on Sprout!"
+    else:
+        text = f"💬 *{actor_name}* commented on your post on Sprout!"
+
+    bot_token = app_config.TELEGRAM_BOT_TOKEN
+    if not bot_token:
+        return
+
+    app_url = build_webapp_url(app_config.WEBAPP_URL, "activity", activity_id)
+    reply_markup = {"inline_keyboard": [[{"text": "View post 🌱", "web_app": {"url": app_url}}]]}
+
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={
+                    "chat_id": owner_id,
+                    "text": text,
+                    "parse_mode": "Markdown",
+                    "reply_markup": reply_markup,
+                },
+            )
+        repository.record_engagement_notification_sent(activity_id, notification_type)
+    except Exception as exc:
+        logger.warning("engagement notify failed owner=%s type=%s: %s", owner_id, notification_type, exc)
+
+
 async def _notify_friends_of_activity(
     user_id: int,
     activity_type: str,
@@ -1399,11 +1449,29 @@ def _require_activity_access(user_id: int, activity_id: str) -> None:
             raise HTTPException(status_code=403, detail="Not authorized")
 
 
+@router.get("/activities/{activity_id}/likers")
+@limiter.limit("60/minute")
+async def get_activity_likers(
+    request: Request,
+    activity_id: str,
+    user: TelegramUser = Depends(get_current_user),
+):
+    _require_activity_access(user.id, activity_id)
+    likers = repository.get_activity_likers(activity_id)
+    return {"likers": likers}
+
+
 @router.post("/activities/{activity_id}/like")
 @limiter.limit("60/minute")
-async def like_activity(request: Request, activity_id: str, user: TelegramUser = Depends(get_current_user)):
+async def like_activity(
+    request: Request,
+    activity_id: str,
+    background_tasks: BackgroundTasks,
+    user: TelegramUser = Depends(get_current_user),
+):
     _require_activity_access(user.id, activity_id)
     repository.like_activity(user.id, activity_id)
+    background_tasks.add_task(_notify_activity_owner, activity_id, user.id, "like")
     return {"success": True}
 
 
@@ -1437,6 +1505,7 @@ async def add_comment(
     request: Request,
     activity_id: str,
     payload: dict,
+    background_tasks: BackgroundTasks,
     user: TelegramUser = Depends(get_current_user),
 ):
     _require_activity_access(user.id, activity_id)
@@ -1444,6 +1513,7 @@ async def add_comment(
     if not body:
         raise HTTPException(status_code=400, detail="Comment cannot be empty")
     comment = repository.add_activity_comment(user.id, activity_id, body)
+    background_tasks.add_task(_notify_activity_owner, activity_id, user.id, "comment")
     return {"comment": comment}
 
 

@@ -970,6 +970,17 @@ async def _save_single_place_result(
     saved_place = outcome.get("place")
     created = bool(outcome.get("created"))
     saved_place_id = get_saved_place_id(saved_place)
+    if created and saved_place_id:
+        repository.log_activity(
+            user_id=user_id,
+            activity_type="saved",
+            place_id=saved_place_id,
+            metadata={
+                "place_name": place.name,
+                "address": place.address,
+                "google_place_id": place.place_id or "",
+            },
+        )
     if not saved_place_id:
         log_failed_link(
             user_id=user_id,
@@ -1879,6 +1890,19 @@ async def save_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
                 details={"place_name": place_data["name"], "selection_mode": "selected"},
             )
         else:
+            if outcome.get("created"):
+                saved_place_id = get_saved_place_id(outcome.get("place"))
+                if saved_place_id:
+                    repository.log_activity(
+                        user_id=user_id,
+                        activity_type="saved",
+                        place_id=saved_place_id,
+                        metadata={
+                            "place_name": place_data["name"],
+                            "address": place_data.get("address", ""),
+                            "google_place_id": place_data.get("place_id") or "",
+                        },
+                    )
             (saved_names if outcome.get("created") else existing_names).append(place_data["name"])
 
     # Clear pending data

@@ -8641,3 +8641,31 @@ button:disabled,
     -webkit-tap-highlight-color: transparent;
     will-change: transform;
 }
+
+/* ── Likers sheet ─────────────────────────────────────────────────────────── */
+.likers-list-body { padding: 8px 0; max-height: 60vh; overflow-y: auto; }
+.likers-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px;
+}
+.likers-avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    object-fit: cover; background: var(--border-color); flex-shrink: 0;
+}
+.likers-name { font-size: 14px; font-weight: 500; }
+.likers-empty {
+    padding: 32px 16px; text-align: center;
+    color: var(--text-secondary); font-size: 14px;
+}
+.fc-likes-count { cursor: pointer; }
+.fc-likes-count:active { opacity: 0.6; }
+
+/* Feed card highlight — triggered when opening from bot notification deep link */
+@keyframes fc-highlight-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(74, 124, 89, 0.5); }
+    50%  { box-shadow: 0 0 0 8px rgba(74, 124, 89, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(74, 124, 89, 0); }
+}
+.fc-highlight {
+    animation: fc-highlight-pulse 1.5s ease-out 2;
+}
