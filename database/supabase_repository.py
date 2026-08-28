@@ -2509,6 +2509,21 @@ def get_friend_ids(user_id: int) -> List[int]:
     return ids
 
 
+def get_friend_ids_with_accepted_at(user_id: int) -> Dict[int, Any]:
+    """Return {friend_id: accepted_at_str} for all accepted friends."""
+    supabase = get_supabase()
+    result = supabase.table("user_friendships").select(
+        "requester_id, addressee_id, updated_at"
+    ).or_(
+        f"requester_id.eq.{user_id},addressee_id.eq.{user_id}"
+    ).eq("status", "accepted").execute()
+    out = {}
+    for row in (result.data or []):
+        friend_id = row["addressee_id"] if row["requester_id"] == user_id else row["requester_id"]
+        out[friend_id] = row.get("updated_at")
+    return out
+
+
 def get_suggested_friends(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
     """Return users who share mutual friends, sorted by mutual count. Excludes existing friends/pending."""
     my_friend_ids = get_friend_ids(user_id)
@@ -2900,16 +2915,19 @@ def count_friends_at_place(friend_ids: List[int], google_place_id: str) -> int:
 def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
     """Get activity feed from accepted friends.
 
-    7-day filter with 10-post minimum:
-    - Fetch a large batch (no date filter) sorted newest-first.
-    - Apply 7-day cutoff only if the result would still have >= 10 posts.
-    - Otherwise show all posts (no time restriction).
-    - Then apply offset/limit for pagination.
+    Per-friend grace window + cap:
+    - Post-friendship activities: always shown.
+    - Pre-friendship grace (up to 7 days before accepted_at): shown, capped at 5 per friend.
+    - Older than grace window: excluded.
+    - Own activities: no friendship filter.
+
+    After per-friend filtering, apply 7-day / 10-post fallback then pagination.
     """
     from datetime import datetime, timezone, timedelta
 
     supabase = get_supabase()
-    friend_ids = get_friend_ids(user_id)
+    friend_map = get_friend_ids_with_accepted_at(user_id)  # {friend_id: accepted_at_str}
+    friend_ids = list(friend_map.keys())
     # Include own activities — user sees their own posts alongside friends'
     all_feed_user_ids = friend_ids + [user_id]
     if not all_feed_user_ids:
@@ -2929,13 +2947,38 @@ def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict
     if not result.data:
         return []
 
-    # Apply 7-day filter only if it keeps >= 10 posts
-    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-
     def _parse_ts(ts: str) -> datetime:
         return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
-    all_rows = result.data
+    GRACE_DAYS = 7
+    GRACE_CAP = 5
+
+    # Apply per-friend grace window + cap; own activities pass through unchanged
+    grace_counts: Dict[int, int] = {}
+    filtered_rows = []
+    for row in result.data:
+        uid = row["user_id"]
+        if uid == user_id:
+            filtered_rows.append(row)
+            continue
+        accepted_str = friend_map.get(uid)
+        if not accepted_str:
+            continue  # shouldn't happen
+        accepted_at = _parse_ts(accepted_str)
+        created_at = _parse_ts(row["created_at"])
+        if created_at >= accepted_at:
+            # Post-friendship: always include
+            filtered_rows.append(row)
+        elif created_at >= accepted_at - timedelta(days=GRACE_DAYS):
+            # Pre-friendship grace window: cap at GRACE_CAP per friend
+            if grace_counts.get(uid, 0) < GRACE_CAP:
+                filtered_rows.append(row)
+                grace_counts[uid] = grace_counts.get(uid, 0) + 1
+        # else: older than grace window — exclude
+
+    # Apply 7-day filter only if it keeps >= 10 posts
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    all_rows = filtered_rows
     recent_rows = [r for r in all_rows if _parse_ts(r["created_at"]) >= cutoff]
     rows = recent_rows if len(recent_rows) >= 10 else all_rows
 
