@@ -1810,6 +1810,8 @@ body {
     color: var(--text-color);
     line-height: 1.35;
     font-style: italic;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 /* Legacy notes preview (for backwards compat) */

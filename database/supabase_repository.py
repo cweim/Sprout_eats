@@ -3008,8 +3008,7 @@ def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict
             for ph in (photos_res.data or []):
                 rid = ph["review_id"]
                 photos_map.setdefault(rid, [])
-                if len(photos_map[rid]) < 3:
-                    photos_map[rid].append({"file_url": ph["file_url"]})
+                photos_map[rid].append({"file_url": ph["file_url"]})
 
             dishes_res = supabase.table("review_dishes").select(
                 "review_id, dish_name, rating"
