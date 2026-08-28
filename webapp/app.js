@@ -3855,7 +3855,7 @@ function switchView(view) {
 
     // Invalidate map size when switching to map view
     if (view === 'map' && map) {
-        setTimeout(() => map.invalidateSize(), 100);
+        requestAnimationFrame(() => map.invalidateSize());
         setTimeout(() => map.invalidateSize(), 450);
     }
 }
@@ -5376,10 +5376,10 @@ function switchTab(tab) {
         // Restore empty state if user has no places
         if (places.length === 0) showEmptyState();
         if (map) {
-            // Double invalidateSize: 100ms catches most cases, 450ms covers
-            // slow CSS transitions and devices where the container is still
-            // animating at 100ms (root cause of intermittent blue-screen bug)
-            setTimeout(() => map.invalidateSize(), 100);
+            // rAF ensures the browser has finished painting the visible tab
+            // before Leaflet measures the container — fixes intermittent blue screen.
+            // The 450ms fallback covers devices with slow CSS transitions.
+            requestAnimationFrame(() => map.invalidateSize());
             setTimeout(() => map.invalidateSize(), 450);
             // Friend places intentionally excluded from saved map (personal map only)
             if (friendMarkersLayer) friendMarkersLayer.clearLayers();
