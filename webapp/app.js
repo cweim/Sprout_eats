@@ -7033,7 +7033,9 @@ function renderUpMap(places) {
         bounds.push([p.latitude, p.longitude]);
     });
 
-    if (bounds.length === 1) {
+    if (userLocation) {
+        upMap.setView([userLocation.lat, userLocation.lng], 14);
+    } else if (bounds.length === 1) {
         upMap.setView(bounds[0], 14);
     } else {
         upMap.fitBounds(bounds, { padding: [30, 30] });
