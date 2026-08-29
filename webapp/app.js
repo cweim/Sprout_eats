@@ -1211,12 +1211,19 @@ function displayPlacesOnMap(fitBounds = true) {
 
     // Fit map to show all markers only if requested
     if (fitBounds && markersLayer.getLayers().length > 0) {
-        const bounds = L.latLngBounds(
-            markersLayer.getLayers()
-                .filter(m => m.getLatLng)
-                .map(m => m.getLatLng())
-        );
-        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+        if (!_mapInitialCentered && userLocation) {
+            // First load: center on user's location so they see what's near them
+            map.setView([userLocation.lat, userLocation.lng], 14);
+            _mapInitialCentered = true;
+        } else {
+            const bounds = L.latLngBounds(
+                markersLayer.getLayers()
+                    .filter(m => m.getLatLng)
+                    .map(m => m.getLatLng())
+            );
+            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+            _mapInitialCentered = true;
+        }
     }
 
     updatePlacePreviewVisibility();
@@ -1225,6 +1232,7 @@ function displayPlacesOnMap(fitBounds = true) {
 // Debounced map render — use in filter handlers to avoid O(n) marker recreation per rapid click.
 // Keep direct displayPlacesOnMap() for data-mutation callers (save, review, fetch).
 let _mapRenderTimer = null;
+let _mapInitialCentered = false; // true after first user-location centering
 function debouncedDisplayPlacesOnMap(fitBounds = false) {
     clearTimeout(_mapRenderTimer);
     _mapRenderTimer = setTimeout(() => displayPlacesOnMap(fitBounds), 100);
