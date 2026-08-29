@@ -5375,9 +5375,11 @@ function switchTab(tab) {
     document.getElementById('feed-view')?.classList.toggle('active', tab === 'home');
     document.getElementById('profile-view')?.classList.toggle('active', tab === 'profile');
 
-    // Show/hide saved toggle FAB
+    // Show/hide saved toggle + search FABs
     const savedFab = document.getElementById('btn-saved-toggle');
     if (savedFab) savedFab.style.display = tab === 'saved' ? 'flex' : 'none';
+    const searchFab = document.getElementById('btn-saved-search');
+    if (searchFab) searchFab.style.display = tab === 'saved' ? 'flex' : 'none';
 
     if (tab === 'saved') {
         updateSavedToggleIcon(currentView);

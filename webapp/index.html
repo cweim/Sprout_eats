@@ -19,7 +19,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <!-- App styles - Forest Green & Cream theme -->
-    <link rel="stylesheet" href="styles.css?v=102">
+    <link rel="stylesheet" href="styles.css?v=103">
 </head>
 <body>
     <header class="app-header" id="app-header" style="display:none">
@@ -30,6 +30,12 @@
     </header>
 
     <main class="app-main">
+        <!-- Search FAB (above toggle, only shown on Saved tab) -->
+        <button id="btn-saved-search" class="saved-search-fab" onclick="openSearchModal()" aria-label="Search restaurants" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+        </button>
         <!-- Saved view toggle FAB (fixed bottom-right, only shown on Saved tab) -->
         <button id="btn-saved-toggle" class="saved-toggle-fab" onclick="toggleSavedView()" aria-label="Toggle map/list view" style="display:none">
             <svg id="saved-toggle-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -159,8 +165,11 @@
 
         <!-- Empty State -->
         <div id="empty-state" class="empty-state" style="display: none;">
-            <p>No places yet!</p>
-            <p class="hint">Send a video link to the bot to save places 🗺️</p>
+            <div class="empty-state-icon">🌱</div>
+            <p class="empty-state-title">Your food map is empty</p>
+            <p class="empty-state-sub">Search for a restaurant you've visited and save it to your map</p>
+            <button class="empty-state-cta" onclick="openSearchModal()">🔍 Search for a restaurant</button>
+            <p class="empty-state-hint">Or send a TikTok / IG reel to the bot to auto-save</p>
         </div>
 
         <!-- Error State -->
@@ -1094,6 +1103,6 @@
     </div>
 
     <script src="analytics.js?v=1"></script>
-    <script src="app.js?v=143"></script>
+    <script src="app.js?v=144"></script>
 </body>
 </html>
