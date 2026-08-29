@@ -691,15 +691,7 @@ function truncatePreviewText(text, maxLength = 48) {
 
 
 function createMarkerPreviewContent(place) {
-    const review = getPlaceReview(place.id);
-    const text = place.notes || review?.caption || review?.overall_remarks || null;
-    if (!text) return '';
-
-    return `
-        <div class="place-preview-bubble">
-            <div class="place-preview-text">${truncatePreviewText(text, 56)}</div>
-        </div>
-    `;
+    return ''; // caption bubbles removed — captions are always too long for map labels
 }
 
 
@@ -7036,6 +7028,10 @@ function renderUpMap(places) {
     });
 
     if (userLocation) {
+        L.circleMarker([userLocation.lat, userLocation.lng], {
+            radius: 8, fillColor: '#4285f4', color: '#fff',
+            weight: 2, opacity: 1, fillOpacity: 1
+        }).addTo(upMap);
         upMap.setView([userLocation.lat, userLocation.lng], 14);
     } else if (bounds.length === 1) {
         upMap.setView(bounds[0], 14);
