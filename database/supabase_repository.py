@@ -3263,7 +3263,7 @@ def get_activity_likers(activity_id: str) -> List[Dict]:
     return out
 
 
-def get_activity_owner(activity_id: str) -> Optional[Dict]:
+def get_activity_owner_info(activity_id: str) -> Optional[Dict]:
     """Return {user_id, notify_friend_activity} for the owner of an activity."""
     supabase = get_supabase()
     try:

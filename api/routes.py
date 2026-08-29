@@ -1311,7 +1311,7 @@ async def _notify_activity_owner(
     notification_type: str,  # 'like' | 'comment'
 ) -> None:
     """Notify the owner of an activity when someone likes or comments. Cooldown-gated."""
-    owner = repository.get_activity_owner(activity_id)
+    owner = repository.get_activity_owner_info(activity_id)
     if not owner:
         return
     owner_id = owner["user_id"]
