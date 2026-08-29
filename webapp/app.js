@@ -9908,9 +9908,12 @@ async function showLikersSheet(activityId) {
             return;
         }
         list.innerHTML = likers.map(u => `
-            <div class="likers-item">
-                <img class="likers-avatar" src="${u.avatar_url || ''}" alt="" onerror="this.style.display='none'">
+            <div class="likers-item" onclick="document.getElementById('likers-overlay').style.display='none';openUserProfile(${u.user_id})" style="cursor:pointer">
+                <img class="likers-avatar" src="${escapeHtml(u.avatar_url || '')}" alt="" onerror="this.style.display='none'">
                 <span class="likers-name">${escapeHtml(u.display_name || 'Sprout user')}</span>
+                ${!u.is_self && !u.is_friend
+                    ? `<button class="likers-add-btn" onclick="event.stopPropagation();sendFriendRequest(${u.user_id},this)">+ Add</button>`
+                    : ''}
             </div>
         `).join('');
     } catch (e) {

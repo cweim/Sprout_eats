@@ -3244,8 +3244,8 @@ def get_activity_likes(activity_ids: List, viewer_id: int) -> Dict:
     return out
 
 
-def get_activity_likers(activity_id: str) -> List[Dict]:
-    """Return list of {display_name, avatar_url} for users who liked an activity."""
+def get_activity_likers(activity_id: str, viewer_id: int = 0) -> List[Dict]:
+    """Return list of {user_id, display_name, avatar_url, is_friend} for users who liked an activity."""
     supabase = get_supabase()
     try:
         result = supabase.table("user_activity_likes").select(
@@ -3253,12 +3253,20 @@ def get_activity_likers(activity_id: str) -> List[Dict]:
         ).eq("activity_id", activity_id).execute()
     except Exception:
         return []
+    if not result.data:
+        return []
+    liker_ids = [row["user_id"] for row in result.data]
+    friend_ids = set(get_friend_ids(viewer_id)) if viewer_id else set()
     out = []
-    for row in result.data or []:
+    for row in result.data:
         u = row.get("users") or {}
+        uid = row["user_id"]
         out.append({
+            "user_id": uid,
             "display_name": u.get("display_name") or "Sprout user",
             "avatar_url": u.get("avatar_url"),
+            "is_friend": uid in friend_ids,
+            "is_self": uid == viewer_id,
         })
     return out
 

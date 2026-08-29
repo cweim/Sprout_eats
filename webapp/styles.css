@@ -8654,7 +8654,15 @@ button:disabled,
     width: 40px; height: 40px; border-radius: 50%;
     object-fit: cover; background: var(--border-color); flex-shrink: 0;
 }
-.likers-name { font-size: 14px; font-weight: 500; }
+.likers-name { font-size: 14px; font-weight: 500; flex: 1; }
+.likers-add-btn {
+    font-size: 12px; font-weight: 600;
+    padding: 5px 12px; border-radius: 20px;
+    border: 1.5px solid var(--sprout-forest);
+    color: var(--sprout-forest); background: transparent;
+    cursor: pointer; flex-shrink: 0;
+}
+.likers-add-btn:active { background: var(--sprout-forest); color: #fff; }
 .likers-empty {
     padding: 32px 16px; text-align: center;
     color: var(--text-secondary); font-size: 14px;

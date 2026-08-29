@@ -1457,7 +1457,7 @@ async def get_activity_likers(
     user: TelegramUser = Depends(get_current_user),
 ):
     _require_activity_access(user.id, activity_id)
-    likers = repository.get_activity_likers(activity_id)
+    likers = repository.get_activity_likers(activity_id, viewer_id=user.id)
     return {"likers": likers}
 
 
