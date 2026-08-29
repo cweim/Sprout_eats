@@ -8644,6 +8644,19 @@ button:disabled,
     will-change: transform;
 }
 
+/* ── Image viewer dots ────────────────────────────────────────────────────── */
+#img-viewer-dots {
+    position: absolute; bottom: 20px; left: 0; right: 0;
+    display: flex; justify-content: center; gap: 6px;
+    pointer-events: none;
+}
+.iv-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(255,255,255,0.45);
+    transition: background 0.2s;
+}
+.iv-dot-active { background: #fff; }
+
 /* ── Likers sheet ─────────────────────────────────────────────────────────── */
 .likers-list-body { padding: 8px 0; max-height: 60vh; overflow-y: auto; }
 .likers-item {

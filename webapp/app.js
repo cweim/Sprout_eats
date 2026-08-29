@@ -6155,13 +6155,14 @@ function createVisitedCard(activity) {
 
     // Photos — carousel (multiple) or single image, full-bleed
     let mediaHtml = '';
+    const _fcAllUrls = JSON.stringify(photos.map(p => p.file_url));
     if (photos.length === 1) {
         mediaHtml = `<div class="fc-media-wrap" onclick="onFeedCardTap('${aid}','${gid}')">
-            <img class="fc-media-img" src="${escapeHtml(photos[0].file_url)}" alt="" loading="lazy" onclick="openImgViewer(this.src);event.stopPropagation()">
+            <img class="fc-media-img" src="${escapeHtml(photos[0].file_url)}" alt="" loading="lazy" onclick="openImgViewer(this.src,${_fcAllUrls},0);event.stopPropagation()">
         </div>`;
     } else if (photos.length > 1) {
-        const slides = photos.map(p =>
-            `<div class="fc-slide"><img class="fc-media-img" src="${escapeHtml(p.file_url)}" alt="" loading="lazy" onclick="openImgViewer(this.src);event.stopPropagation()"></div>`
+        const slides = photos.map((p, i) =>
+            `<div class="fc-slide"><img class="fc-media-img" src="${escapeHtml(p.file_url)}" alt="" loading="lazy" onclick="openImgViewer(this.src,${_fcAllUrls},${i});event.stopPropagation()"></div>`
         ).join('');
         const dots = photos.map((_, i) =>
             `<span class="fc-dot${i === 0 ? ' active' : ''}"></span>`
@@ -9495,8 +9496,9 @@ function renderRcHeroCarousel(containerEl, photos) {
         containerEl.style.display = 'none';
         return;
     }
+    const _rcAllUrls = JSON.stringify(photos.map(p => p.url));
     const slides = photos.map((p, i) =>
-        `<div class="rc-hero-slide"><img class="rc-hero-slide-img" src="${safeUrl(p.url)}" alt="" loading="lazy" data-idx="${i}" onclick="openImgViewer(this.src)"></div>`
+        `<div class="rc-hero-slide"><img class="rc-hero-slide-img" src="${safeUrl(p.url)}" alt="" loading="lazy" data-idx="${i}" onclick="openImgViewer(this.src,${_rcAllUrls},${i})"></div>`
     ).join('');
     const dotsHtml = photos.length > 1
         ? `<div class="rc-dots">${photos.map((_, i) => `<span class="rc-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
@@ -10406,19 +10408,43 @@ let _ivPanOrigin = null;   // { x, y, tx, ty }
 let _ivDismissStart = null; // { y } when swipe-to-close begins
 let _ivLastTap = 0;
 let _ivTouchReady = false;
+let _ivImages = [];        // gallery: all image URLs
+let _ivIndex = 0;          // gallery: current index
+let _ivSwipeStartX = null; // gallery: horizontal swipe tracking
 
-function openImgViewer(src) {
+function openImgViewer(src, srcs, idx) {
     const viewer = document.getElementById('img-viewer');
     const img = document.getElementById('img-viewer-img');
     if (!viewer || !img) return;
+    _ivImages = (Array.isArray(srcs) && srcs.length > 0) ? srcs : [src];
+    _ivIndex  = (typeof idx === 'number' && idx >= 0 && idx < _ivImages.length) ? idx : Math.max(0, _ivImages.indexOf(src));
     _ivScale = 1; _ivPrevScale = 1; _ivTx = 0; _ivTy = 0;
-    img.src = src;
+    img.src = _ivImages[_ivIndex];
     img.style.transition = 'none';
     img.style.transform = '';
     viewer.style.background = '';
     viewer.style.display = 'flex';
     document.body.style.overflow = 'hidden';
+    _ivUpdateDots();
     if (!_ivTouchReady) { _ivInitTouch(); _ivTouchReady = true; }
+}
+
+function _ivUpdateDots() {
+    const el = document.getElementById('img-viewer-dots');
+    if (!el) return;
+    if (_ivImages.length <= 1) { el.innerHTML = ''; return; }
+    el.innerHTML = _ivImages.map((_, i) =>
+        `<span class="iv-dot${i === _ivIndex ? ' iv-dot-active' : ''}"></span>`
+    ).join('');
+}
+
+function _ivNavigate(delta) {
+    if (_ivImages.length <= 1) return;
+    _ivIndex = (_ivIndex + delta + _ivImages.length) % _ivImages.length;
+    const img = document.getElementById('img-viewer-img');
+    if (img) { img.src = _ivImages[_ivIndex]; }
+    _ivScale = 1; _ivTx = 0; _ivTy = 0; _ivApply(false);
+    _ivUpdateDots();
 }
 
 function closeImgViewer() {
@@ -10464,7 +10490,12 @@ function _ivInitTouch() {
             }
             _ivLastTap = now;
             _ivPanOrigin = { x: t[0].pageX, y: t[0].pageY, tx: _ivTx, ty: _ivTy };
-            if (_ivScale <= 1.05) _ivDismissStart = { y: t[0].pageY };
+            if (_ivScale <= 1.05) {
+                _ivDismissStart = { y: t[0].pageY };
+                _ivSwipeStartX = t[0].pageX;
+            } else {
+                _ivSwipeStartX = null;
+            }
         }
     }, { passive: false });
 
@@ -10500,6 +10531,17 @@ function _ivInitTouch() {
             closeImgViewer();
             return;
         }
+        // Horizontal swipe to navigate gallery (only at 1x zoom, multi-image)
+        if (_ivSwipeStartX !== null && _ivScale <= 1.05 && _ivImages.length > 1 && e.changedTouches.length === 1) {
+            const dx = e.changedTouches[0].pageX - _ivSwipeStartX;
+            const dy = _ivPanOrigin ? (e.changedTouches[0].pageY - _ivPanOrigin.y) : 0;
+            if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
+                _ivTy = 0; if (viewer) viewer.style.background = '';
+                _ivNavigate(dx < 0 ? 1 : -1);
+                _ivPinchDist0 = 0; _ivDismissStart = null; _ivSwipeStartX = null;
+                return;
+            }
+        }
         if (_ivDismissStart && _ivTy !== 0) {
             _ivTy = 0;
             if (viewer) viewer.style.background = '';
@@ -10508,5 +10550,6 @@ function _ivInitTouch() {
         if (_ivScale < 1) { _ivScale = 1; _ivTx = 0; _ivTy = 0; _ivApply(true); }
         _ivPinchDist0 = 0;
         _ivDismissStart = null;
+        _ivSwipeStartX = null;
     }, { passive: false });
 }
