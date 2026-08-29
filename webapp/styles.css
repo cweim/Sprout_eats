@@ -1765,6 +1765,8 @@ body {
     visibility: hidden;
     transition: opacity 0.18s ease, visibility 0.18s ease;
     pointer-events: none;
+    white-space: normal !important;
+    max-width: 160px !important;
 }
 
 .place-preview-tooltip::before {
