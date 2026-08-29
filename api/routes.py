@@ -1084,14 +1084,27 @@ async def get_user_profile(target_user_id: int, user: TelegramUser = Depends(get
         visited = [p for p in all_places if p.get("is_visited")]
         saved_count = len([p for p in all_places if not p.get("is_visited")])
 
-        # Fetch review scores for friend's places (lightweight — no dishes/photos)
+        # Fetch review scores + first photo per review for friend's places
         _supabase = get_supabase()
         _reviews_res = _supabase.table("reviews").select(
-            "place_id,food_score,vibe_score,value_score,sentiment,overall_rating,caption,is_public"
+            "id,place_id,food_score,vibe_score,value_score,sentiment,overall_rating,caption,is_public"
         ).eq("user_id", target_user_id).execute()
         reviews_by_place: dict = {}
+        review_ids = []
         for rv in (_reviews_res.data or []):
             reviews_by_place[rv["place_id"]] = rv
+            review_ids.append(rv["id"])
+
+        # Batch-fetch one photo per review (sort_order asc → first photo)
+        first_photo_by_review: dict = {}
+        if review_ids:
+            _photos_res = _supabase.table("review_photos").select(
+                "review_id, file_url, sort_order"
+            ).in_("review_id", review_ids).order("sort_order").execute()
+            for ph in (_photos_res.data or []):
+                rid = ph["review_id"]
+                if rid not in first_photo_by_review:
+                    first_photo_by_review[rid] = ph["file_url"]
 
         def _friend_place_dict(p: dict) -> dict:
             d = place_to_dict(p)
@@ -1104,6 +1117,7 @@ async def get_user_profile(target_user_id: int, user: TelegramUser = Depends(get
                 d["overall_rating"] = rv.get("overall_rating")
                 if rv.get("is_public", True):
                     d["caption"] = (rv.get("caption") or "")[:120]
+                d["photo_url"] = first_photo_by_review.get(rv["id"])
             return d
 
         response["friend_places"] = [_friend_place_dict(p) for p in all_places[:60]]

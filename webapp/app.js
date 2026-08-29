@@ -6787,6 +6787,11 @@ function renderUpPhotoGrid(places) {
         const gid = escapeHtml(p.google_place_id || '');
         const pJson = escapeHtml(JSON.stringify(p));
         const safeName = escapeHtml(p.name || '');
+        if (p.photo_url) {
+            return `<div class="vg-tile" style="background-image:url('${escapeHtml(p.photo_url)}');background-size:cover;background-position:center" onclick="onDiscoverResultTap('${gid}',${pJson})">
+                <div class="vg-tile-overlay"><span class="vg-tile-name">${safeName}</span></div>
+            </div>`;
+        }
         const emoji = _upTileEmoji(p);
         return `<div class="vg-tile vg-tile--emoji" onclick="onDiscoverResultTap('${gid}',${pJson})">
             <span class="vg-tile-emoji">${emoji}</span>
