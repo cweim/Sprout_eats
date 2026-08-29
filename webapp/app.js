@@ -6259,13 +6259,15 @@ function createVisitedCard(activity) {
 
                 <div class="fc-action-row">
                     <div class="fc-action-left">
-                        <button class="fc-like-btn ${userLiked ? 'liked' : ''}"
-                            data-liked="${userLiked}"
-                            onclick="event.stopPropagation();likeActivity('${aid}', this)"
-                            aria-label="Like">
-                            ${FC_ICON_HEART}
+                        <div class="fc-like-wrap">
+                            <button class="fc-like-btn ${userLiked ? 'liked' : ''}"
+                                data-liked="${userLiked}"
+                                onclick="event.stopPropagation();likeActivity('${aid}', this)"
+                                aria-label="Like">
+                                ${FC_ICON_HEART}
+                            </button>
                             ${likesCount > 0 ? `<span class="fc-action-count fc-likes-count" onclick="event.stopPropagation();showLikersSheet('${aid}')">${likesCount}</span>` : ''}
-                        </button>
+                        </div>
                         <button class="fc-comment-btn" onclick="event.stopPropagation();onFcCommentBtnClick('${aid}')" aria-label="Comment">
                             ${FC_ICON_COMMENT}
                             ${commentsCount > 0 ? `<span class="fc-action-count">${commentsCount}</span>` : ''}
