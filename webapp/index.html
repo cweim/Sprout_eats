@@ -19,7 +19,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <!-- App styles - Forest Green & Cream theme -->
-    <link rel="stylesheet" href="styles.css?v=104">
+    <link rel="stylesheet" href="styles.css?v=106">
 </head>
 <body>
     <header class="app-header" id="app-header" style="display:none">
@@ -397,13 +397,22 @@
     <div id="search-modal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="search-modal-title">
         <div class="modal-content search-modal-content">
             <div class="modal-header">
-                <h2 id="search-modal-title">🔍 Discover Places</h2>
+                <h2 id="search-modal-title">Find a place</h2>
                 <button id="search-modal-close" class="modal-close-btn" aria-label="Close">×</button>
             </div>
             <div class="modal-body">
-                <div class="search-modal-input">
-                    <input type="text" id="google-search-input" placeholder="Search restaurants, cafes...">
-                    <button id="google-search-btn" class="search-btn">Search</button>
+                <div class="search-bar search-modal-bar">
+                    <span class="search-icon" aria-hidden="true">
+                        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                            <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+                            <line x1="10.5" y1="10.5" x2="13.5" y2="13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                    </span>
+                    <input type="text" id="google-search-input"
+                           placeholder="Search restaurants, cafes…"
+                           enterkeyhint="search"
+                           autocomplete="off">
+                    <button id="google-search-clear" class="search-clear-btn" style="display:none" aria-label="Clear">×</button>
                 </div>
                 <div id="search-type-chips" class="search-type-chips"></div>
                 <div id="search-results" class="search-results">
@@ -411,11 +420,11 @@
                 </div>
                 <div id="search-loading" class="search-loading" style="display: none;">
                     <div class="loading-spinner small"></div>
-                    <p>Finding places nearby...</p>
+                    <p>Finding places nearby…</p>
                 </div>
                 <div id="search-empty" class="search-empty" style="display: none;">
                     <p>No results found</p>
-                    <p class="hint">Try a different search or category 🔍</p>
+                    <p class="hint">Try a different search or category</p>
                 </div>
             </div>
         </div>
@@ -1103,6 +1112,6 @@
     </div>
 
     <script src="analytics.js?v=1"></script>
-    <script src="app.js?v=146"></script>
+    <script src="app.js?v=149"></script>
 </body>
 </html>

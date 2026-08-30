@@ -3187,6 +3187,8 @@ function openSearchModal(prefill = '') {
 
     // Clear input and results
     input.value = '';
+    const _clr = document.getElementById('google-search-clear');
+    if (_clr) _clr.style.display = 'none';
     resultsContainer.innerHTML = '';
     document.getElementById('search-loading').style.display = 'none';
     document.getElementById('search-empty').style.display = 'none';
@@ -3441,7 +3443,6 @@ async function addPlaceFromSearch(place) {
 // Setup search modal
 function setupSearchModal() {
     document.getElementById('search-modal-close').onclick = closeSearchModal;
-    document.getElementById('google-search-btn').onclick = searchGooglePlaces;
 
     const openModal = () => openSearchModal();
     ['btn-search-google', 'btn-search-empty'].forEach((id) => {
@@ -3449,9 +3450,31 @@ function setupSearchModal() {
         if (button) button.onclick = openModal;
     });
 
-    // Search on Enter
+    // Clear button
+    const clearBtn = document.getElementById('google-search-clear');
+    if (clearBtn) {
+        clearBtn.onclick = () => {
+            const input = document.getElementById('google-search-input');
+            input.value = '';
+            clearBtn.style.display = 'none';
+            document.getElementById('search-results').innerHTML = '';
+            document.getElementById('search-empty').style.display = 'none';
+            document.querySelectorAll('.search-type-chip').forEach(c => c.classList.remove('active'));
+            input.focus();
+            if (userLocation) {
+                searchNearbyPlaces('restaurant');
+                document.querySelector('.search-type-chip[data-type="restaurant"]')?.classList.add('active');
+            }
+        };
+    }
+
+    // Search on Enter; show/hide clear button on input
     const searchInput = document.getElementById('google-search-input');
     if (!searchInput.dataset.bound) {
+        searchInput.addEventListener('input', () => {
+            const cb = document.getElementById('google-search-clear');
+            if (cb) cb.style.display = searchInput.value ? 'block' : 'none';
+        });
         searchInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') searchGooglePlaces();
         });
@@ -6133,6 +6156,7 @@ function createVisitedCard(activity) {
     const likesCount     = activity.likes_count    || 0;
     const commentsCount  = activity.comments_count || 0;
     const userLiked      = activity.user_liked  || false;
+    const firstLikerName = activity.first_liker_name || null;
     const latestComment  = activity.latest_comment || null;
     const state         = activity.user_place_state || {};
     const photos        = activity.review_photos || [];
@@ -6157,7 +6181,7 @@ function createVisitedCard(activity) {
 
     // Photos — carousel (multiple) or single image, full-bleed
     let mediaHtml = '';
-    const _fcAllUrls = JSON.stringify(photos.map(p => p.file_url));
+    const _fcAllUrls = escapeHtml(JSON.stringify(photos.map(p => p.file_url)));
     if (photos.length === 1) {
         mediaHtml = `<div class="fc-media-wrap" onclick="onFeedCardTap('${aid}','${gid}')">
             <img class="fc-media-img" src="${escapeHtml(photos[0].file_url)}" alt="" loading="lazy" onclick="openImgViewer(this.src,${_fcAllUrls},0);event.stopPropagation()">
@@ -6266,7 +6290,6 @@ function createVisitedCard(activity) {
                                 aria-label="Like">
                                 ${FC_ICON_HEART}
                             </button>
-                            ${likesCount > 0 ? `<span class="fc-action-count fc-likes-count" onclick="event.stopPropagation();showLikersSheet('${aid}')">${likesCount}</span>` : ''}
                         </div>
                         <button class="fc-comment-btn" onclick="event.stopPropagation();onFcCommentBtnClick('${aid}')" aria-label="Comment">
                             ${FC_ICON_COMMENT}
@@ -6275,6 +6298,12 @@ function createVisitedCard(activity) {
                     </div>
                     ${stateCta}
                 </div>
+                ${(() => {
+                    const _lbText = likesCount > 0
+                        ? `Liked by <strong>${escapeHtml(firstLikerName || 'someone')}</strong>${likesCount > 1 ? ` and <strong>${likesCount - 1} other${likesCount - 1 !== 1 ? 's' : ''}</strong>` : ''}`
+                        : '';
+                    return `<div class="fc-liked-by" id="fc-lb-${aid}" data-count="${likesCount}" style="${likesCount > 0 ? '' : 'display:none'}" onclick="event.stopPropagation();showLikersSheet('${aid}')">${_lbText}</div>`;
+                })()}
 
                 ${latestComment ? `
                 <div class="fc-preview-comment" id="fcp-prev-${aid}" onclick="event.stopPropagation()">
@@ -6385,9 +6414,16 @@ function collapseFcComments(activityId) {
 function onFcCommentBtnClick(activityId) {
     const listEl = document.getElementById(`fcl-${activityId}`);
     if (listEl && listEl.children.length > 0) {
+        // Already expanded — collapse
         collapseFcComments(activityId);
     } else {
-        focusFcComment(activityId);
+        // If preview comment is visible, load all comments (and focus input after)
+        const prevEl = document.getElementById(`fcp-prev-${activityId}`);
+        if (prevEl && prevEl.style.display !== 'none') {
+            loadFcComments(activityId);
+        } else {
+            focusFcComment(activityId);
+        }
     }
 }
 
@@ -9506,7 +9542,7 @@ function renderRcHeroCarousel(containerEl, photos) {
         containerEl.style.display = 'none';
         return;
     }
-    const _rcAllUrls = JSON.stringify(photos.map(p => p.url));
+    const _rcAllUrls = escapeHtml(JSON.stringify(photos.map(p => p.url)));
     const slides = photos.map((p, i) =>
         `<div class="rc-hero-slide"><img class="rc-hero-slide-img" src="${safeUrl(p.url)}" alt="" loading="lazy" data-idx="${i}" onclick="openImgViewer(this.src,${_rcAllUrls},${i})"></div>`
     ).join('');
@@ -9880,22 +9916,29 @@ function applyFiltersToList(allPlaces) {
 // Feed like/unlike
 async function likeActivity(activityId, btn) {
     const liked = btn.dataset.liked === 'true';
-    let countEl = btn.querySelector('.fc-action-count');
-    const currentCount = parseInt(countEl?.textContent || '0');
+    const card = btn.closest('.fc-card');
+    const lbEl = card?.querySelector('.fc-liked-by');
+    const currentCount = lbEl ? parseInt(lbEl.dataset.count || '0') : 0;
     const newCount = liked ? currentCount - 1 : currentCount + 1;
 
     // Optimistic update
     btn.dataset.liked = liked ? 'false' : 'true';
     btn.classList.toggle('liked', !liked);
-    if (newCount > 0) {
-        if (!countEl) {
-            countEl = document.createElement('span');
-            countEl.className = 'fc-action-count';
-            btn.appendChild(countEl);
+    if (lbEl) {
+        lbEl.dataset.count = newCount;
+        if (newCount <= 0) {
+            lbEl.style.display = 'none';
+        } else {
+            lbEl.style.display = '';
+            if (!liked) {
+                // just liked — viewer is now first
+                const others = newCount - 1;
+                lbEl.innerHTML = `Liked by <strong>you</strong>${others > 0 ? ` and <strong>${others} other${others !== 1 ? 's' : ''}</strong>` : ''}`;
+            } else {
+                // just unliked — no name available client-side
+                lbEl.innerHTML = `<strong>${newCount}</strong> like${newCount !== 1 ? 's' : ''}`;
+            }
         }
-        countEl.textContent = newCount;
-    } else if (countEl) {
-        countEl.textContent = '';
     }
 
     try {
@@ -9907,7 +9950,10 @@ async function likeActivity(activityId, btn) {
         // Revert on error
         btn.dataset.liked = liked ? 'true' : 'false';
         btn.classList.toggle('liked', liked);
-        if (countEl) countEl.textContent = currentCount > 0 ? currentCount : '';
+        if (lbEl) {
+            lbEl.dataset.count = currentCount;
+            lbEl.style.display = currentCount > 0 ? '' : 'none';
+        }
     }
 }
 

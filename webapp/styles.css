@@ -348,7 +348,8 @@ body {
 
 #search-input,
 #reviews-search-input,
-#discover-search-input {
+#discover-search-input,
+#google-search-input {
     flex: 1;
     min-width: 0;
     padding: 10px 40px 10px 8px;
@@ -364,8 +365,14 @@ body {
 
 #search-input::placeholder,
 #reviews-search-input::placeholder,
-#discover-search-input::placeholder {
+#discover-search-input::placeholder,
+#google-search-input::placeholder {
     color: var(--hint-color);
+}
+
+.search-modal-bar {
+    margin-bottom: 12px;
+    flex-shrink: 0;
 }
 
 .search-clear-btn {
@@ -4240,7 +4247,7 @@ button:disabled,
 }
 
 [data-theme="dark"] #google-search-input {
-    background-color: var(--secondary-bg);
+    background-color: transparent;
     color: var(--text-color);
 }
 
@@ -8129,6 +8136,13 @@ button:disabled,
     display: flex;
     align-items: center;
     gap: 4px;
+}
+.fc-liked-by {
+    font-size: 12px;
+    color: var(--text-secondary, #666);
+    margin-top: 4px;
+    cursor: pointer;
+    line-height: 1.4;
 }
 .fc-like-btn,
 .fc-comment-btn {

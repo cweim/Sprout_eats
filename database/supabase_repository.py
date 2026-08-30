@@ -3090,7 +3090,7 @@ def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict
     out = []
     for row in rows:
         u = users_map.get(row["user_id"], {})
-        likes = likes_map.get(row["id"], {"count": 0, "user_liked": False})
+        likes = likes_map.get(row["id"], {"count": 0, "user_liked": False, "first_liker_name": None})
         activity = {
             **row,
             "actor_name": u.get("display_name") or u.get("first_name") or "Friend",
@@ -3098,6 +3098,7 @@ def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict
             "actor_avatar_url": u.get("avatar_url"),
             "likes_count": likes["count"],
             "user_liked": likes["user_liked"],
+            "first_liker_name": likes.get("first_liker_name"),
             "comments_count": comments_count_map.get(row["id"], 0),
             "latest_comment": latest_comment_map.get(row["id"]),
         }
@@ -3223,24 +3224,47 @@ def unlike_activity(user_id: int, activity_id: int) -> bool:
 
 
 def get_activity_likes(activity_ids: List, viewer_id: int) -> Dict:
-    """Return {activity_id: {count, user_liked}} for a batch of activity IDs."""
+    """Return {activity_id: {count, user_liked, first_liker_name}} for a batch of activity IDs."""
     if not activity_ids:
         return {}
     supabase = get_supabase()
     try:
         result = supabase.table("user_activity_likes").select(
-            "activity_id, user_id"
+            "activity_id, user_id, users(display_name)"
         ).in_("activity_id", activity_ids).execute()
     except Exception:
-        return {aid: {"count": 0, "user_liked": False} for aid in activity_ids}
+        return {aid: {"count": 0, "user_liked": False, "first_liker_name": None} for aid in activity_ids}
 
-    out = {aid: {"count": 0, "user_liked": False} for aid in activity_ids}
+    # Group rows per activity
+    grouped: Dict[str, List] = {}
     for row in result.data or []:
-        aid = row["activity_id"]
-        if aid in out:
-            out[aid]["count"] += 1
-            if row["user_id"] == viewer_id:
-                out[aid]["user_liked"] = True
+        grouped.setdefault(row["activity_id"], []).append(row)
+
+    friend_ids = set(get_friend_ids(viewer_id)) if viewer_id else set()
+
+    out = {}
+    for aid in activity_ids:
+        rows = grouped.get(aid, [])
+        count = len(rows)
+        user_liked = any(r["user_id"] == viewer_id for r in rows)
+
+        # Pick best name: viewer first, then a friend, then anyone
+        first_liker_name = None
+        if rows:
+            def _priority(r):
+                if r["user_id"] == viewer_id:
+                    return 0
+                if r["user_id"] in friend_ids:
+                    return 1
+                return 2
+            best = min(rows, key=_priority)
+            if best["user_id"] == viewer_id:
+                first_liker_name = "you"
+            else:
+                u = best.get("users") or {}
+                first_liker_name = u.get("display_name") or "someone"
+
+        out[aid] = {"count": count, "user_liked": user_liked, "first_liker_name": first_liker_name}
     return out
 
 
