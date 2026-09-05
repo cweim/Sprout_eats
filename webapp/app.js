@@ -3205,58 +3205,61 @@ function openSearchModal(prefill = '') {
     // Pre-fill and search if a query was provided (from Discover tab chips)
     if (prefill) {
         input.value = prefill;
+        const cb = document.getElementById('google-search-clear');
+        if (cb) cb.style.display = 'block';
+        hideSearchModalSuggestions();
         searchGooglePlaces();
         return;
     }
 
-    // Auto-load nearby restaurants if location available
+    // Show suggestions panel (recent + explore pills)
+    showSearchModalSuggestions();
+
+    // Auto-load nearby restaurants in background (populates results when user hides suggestions)
     if (userLocation) {
         searchNearbyPlaces('restaurant');
-        // Mark restaurant chip as active
         document.querySelector('.search-type-chip[data-type="restaurant"]')?.classList.add('active');
     }
 }
 
-// Search for nearby places by type
+// Search for nearby places by type — dual endpoint (social DB + Google Places)
 async function searchNearbyPlaces(type) {
     const resultsContainer = document.getElementById('search-results');
     const loadingEl = document.getElementById('search-loading');
     const emptyEl = document.getElementById('search-empty');
 
-    const query = type;
-
-    // Show loading
     resultsContainer.innerHTML = '';
     loadingEl.style.display = 'flex';
     emptyEl.style.display = 'none';
 
     try {
-        const response = await fetch(buildSearchUrl(query, 10), {
-            headers: getAuthHeaders()
-        });
-        if (!response.ok) throw new Error('Search failed');
+        const gParams  = new URLSearchParams({ q: type, max_results: 10 });
+        const dbParams = new URLSearchParams({ q: type });
+        if (userLocation?.lat) {
+            gParams.set('lat', userLocation.lat);  gParams.set('lng', userLocation.lng);
+            dbParams.set('lat', userLocation.lat); dbParams.set('lng', userLocation.lng);
+        }
+        const [gRes, dbRes] = await Promise.allSettled([
+            fetch(`${API_URL}/api/search?${gParams}`,                  { headers: getAuthHeaders() }),
+            fetch(`${API_URL}/api/places/discover-search?${dbParams}`, { headers: getAuthHeaders() }),
+        ]);
+        let gResults = [], dbResults = [];
+        if (gRes.status  === 'fulfilled' && gRes.value.ok)
+            gResults  = ((await gRes.value.json()).results  || []).map(r => ({ ...r, friends_count: 0 }));
+        if (dbRes.status === 'fulfilled' && dbRes.value.ok)
+            dbResults = (await dbRes.value.json()).results || [];
 
-        const data = await response.json();
+        // DB first (social context), Google deduped
+        const seen   = new Set(dbResults.map(r => r.google_place_id).filter(Boolean));
+        const merged = [...dbResults];
+        for (const gr of gResults) {
+            if (!gr.google_place_id || !seen.has(gr.google_place_id)) merged.push(gr);
+        }
+        if (userLocation) merged.sort((a, b) => (getPlaceDistance(a) ?? Infinity) - (getPlaceDistance(b) ?? Infinity));
+
         loadingEl.style.display = 'none';
-
-        if (data.results.length === 0) {
-            emptyEl.style.display = 'flex';
-            return;
-        }
-
-        // Sort by distance if location available
-        let results = data.results;
-        if (userLocation) {
-            results = results.sort((a, b) => {
-                const distA = (a.latitude && a.longitude) ? calculateDistance(userLocation.lat, userLocation.lng, a.latitude, a.longitude) : Infinity;
-                const distB = (b.latitude && b.longitude) ? calculateDistance(userLocation.lat, userLocation.lng, b.latitude, b.longitude) : Infinity;
-                return distA - distB;
-            });
-        }
-
-        // Render results
-        renderSearchResults(results);
-
+        if (merged.length === 0) { emptyEl.style.display = 'flex'; return; }
+        renderSearchResults(merged);
     } catch (error) {
         console.error('Search error:', error);
         loadingEl.style.display = 'none';
@@ -3264,55 +3267,10 @@ async function searchNearbyPlaces(type) {
     }
 }
 
-// Render search results (shared function)
+// Render search results — reuses Discover card design (rich chips, card-tap, already-saved state)
 function renderSearchResults(results) {
     const resultsContainer = document.getElementById('search-results');
-
-    resultsContainer.innerHTML = results.map(place => {
-        let mapsUrl = '';
-        if (place.google_place_id) {
-            const encodedName = encodeURIComponent(place.name);
-            mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedName}&query_place_id=${place.google_place_id}`;
-        } else if (place.latitude && place.longitude) {
-            mapsUrl = `https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`;
-        }
-
-        // Calculate distance if user location available
-        let distanceHtml = '';
-        if (userLocation && place.latitude && place.longitude) {
-            const dist = calculateDistance(userLocation.lat, userLocation.lng, place.latitude, place.longitude);
-            distanceHtml = `<span class="search-result-distance">📍 ${formatDistance(dist)}</span>`;
-        }
-
-        // Format place types
-        let typesHtml = '';
-        if (place.place_types) {
-            const types = place.place_types.split(',').slice(0, 2)
-                .map(t => t.trim().replace(/_/g, ' '))
-                .map(t => t.charAt(0).toUpperCase() + t.slice(1));
-            typesHtml = `<span class="search-result-types">${types.join(' · ')}</span>`;
-        }
-
-        return `
-            <div class="search-result-card">
-                <div class="search-result-header">
-                    <div class="search-result-info">
-                        <div class="search-result-name">${escapeHtml(place.name)}</div>
-                        <div class="search-result-address">${escapeHtml(place.address || '')}</div>
-                    </div>
-                    <div class="search-result-actions">
-                        ${mapsUrl ? `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="search-result-maps" onclick="event.stopPropagation()">Maps</a>` : ''}
-                        <button class="search-result-add" onclick="event.stopPropagation(); addPlaceFromSearch(${JSON.stringify(place).replace(/"/g, '&quot;')})">+ Add</button>
-                    </div>
-                </div>
-                <div class="search-result-meta">
-                    ${place.place_rating ? `<span class="search-result-rating">⭐ ${place.place_rating}${place.place_rating_count ? ` (${Number(place.place_rating_count).toLocaleString()})` : ''}</span>` : ''}
-                    ${typesHtml}
-                    ${distanceHtml}
-                </div>
-            </div>
-        `;
-    }).join('');
+    resultsContainer.innerHTML = results.map(r => createDiscoverResultCard({ ...r, friends_count: 0 })).join('');
 }
 
 
@@ -3325,55 +3283,51 @@ function closeSearchModal() {
     _prevFocusEl = null;
 }
 
-// Search Google Places API
+// Search Google Places + social DB in parallel, merge results
 async function searchGooglePlaces() {
     const input = document.getElementById('google-search-input');
     const query = input.value.trim();
+    if (!query || query.length < 2) { showToast('Type at least 2 characters'); return; }
 
-    if (!query || query.length < 2) {
-        showToast('Type at least 2 characters');
-        return;
-    }
-
-    // Clear active state from type chips when doing custom search
     document.querySelectorAll('.search-type-chip').forEach(c => c.classList.remove('active'));
+    hideSearchModalSuggestions();
+    _saveDiscoverRecentSearch(query);
 
     const resultsContainer = document.getElementById('search-results');
     const loadingEl = document.getElementById('search-loading');
-    const emptyEl = document.getElementById('search-empty');
-
-    // Show loading
+    const emptyEl   = document.getElementById('search-empty');
     resultsContainer.innerHTML = '';
     loadingEl.style.display = 'flex';
     emptyEl.style.display = 'none';
 
     try {
-        const response = await fetch(buildSearchUrl(query, 10), {
-            headers: getAuthHeaders()
-        });
-        if (!response.ok) throw new Error('Search failed');
+        const gParams  = new URLSearchParams({ q: query, max_results: 10 });
+        const dbParams = new URLSearchParams({ q: query });
+        if (userLocation?.lat) {
+            gParams.set('lat', userLocation.lat);  gParams.set('lng', userLocation.lng);
+            dbParams.set('lat', userLocation.lat); dbParams.set('lng', userLocation.lng);
+        }
+        const [gRes, dbRes] = await Promise.allSettled([
+            fetch(`${API_URL}/api/search?${gParams}`,                  { headers: getAuthHeaders() }),
+            fetch(`${API_URL}/api/places/discover-search?${dbParams}`, { headers: getAuthHeaders() }),
+        ]);
+        let gResults = [], dbResults = [];
+        if (gRes.status  === 'fulfilled' && gRes.value.ok)
+            gResults  = ((await gRes.value.json()).results  || []).map(r => ({ ...r, friends_count: 0 }));
+        if (dbRes.status === 'fulfilled' && dbRes.value.ok)
+            dbResults = (await dbRes.value.json()).results || [];
 
-        const data = await response.json();
+        // DB first (social context), Google deduped
+        const seen   = new Set(dbResults.map(r => r.google_place_id).filter(Boolean));
+        const merged = [...dbResults];
+        for (const gr of gResults) {
+            if (!gr.google_place_id || !seen.has(gr.google_place_id)) merged.push(gr);
+        }
+        if (userLocation) merged.sort((a, b) => (getPlaceDistance(a) ?? Infinity) - (getPlaceDistance(b) ?? Infinity));
+
         loadingEl.style.display = 'none';
-
-        if (data.results.length === 0) {
-            emptyEl.style.display = 'flex';
-            return;
-        }
-
-        // Sort by distance if location available
-        let results = data.results;
-        if (userLocation) {
-            results = results.sort((a, b) => {
-                const distA = (a.latitude && a.longitude) ? calculateDistance(userLocation.lat, userLocation.lng, a.latitude, a.longitude) : Infinity;
-                const distB = (b.latitude && b.longitude) ? calculateDistance(userLocation.lat, userLocation.lng, b.latitude, b.longitude) : Infinity;
-                return distA - distB;
-            });
-        }
-
-        // Render results using shared function
-        renderSearchResults(results);
-
+        if (merged.length === 0) { emptyEl.style.display = 'flex'; return; }
+        renderSearchResults(merged);
     } catch (error) {
         console.error('Search error:', error);
         loadingEl.style.display = 'none';
@@ -3450,33 +3404,40 @@ function setupSearchModal() {
         if (button) button.onclick = openModal;
     });
 
-    // Clear button
+    // Clear button — return to suggestions state
     const clearBtn = document.getElementById('google-search-clear');
     if (clearBtn) {
         clearBtn.onclick = () => {
             const input = document.getElementById('google-search-input');
+            clearTimeout(_searchModalTimer);
             input.value = '';
             clearBtn.style.display = 'none';
             document.getElementById('search-results').innerHTML = '';
             document.getElementById('search-empty').style.display = 'none';
             document.querySelectorAll('.search-type-chip').forEach(c => c.classList.remove('active'));
+            showSearchModalSuggestions();
             input.focus();
-            if (userLocation) {
-                searchNearbyPlaces('restaurant');
-                document.querySelector('.search-type-chip[data-type="restaurant"]')?.classList.add('active');
-            }
         };
     }
 
-    // Search on Enter; show/hide clear button on input
+    // Live debounced search + show/hide clear button on input
     const searchInput = document.getElementById('google-search-input');
     if (!searchInput.dataset.bound) {
         searchInput.addEventListener('input', () => {
             const cb = document.getElementById('google-search-clear');
             if (cb) cb.style.display = searchInput.value ? 'block' : 'none';
+            clearTimeout(_searchModalTimer);
+            if (searchInput.value.trim().length >= 2) {
+                hideSearchModalSuggestions();
+                _searchModalTimer = setTimeout(() => searchGooglePlaces(), 400);
+            } else if (!searchInput.value) {
+                document.getElementById('search-results').innerHTML = '';
+                document.getElementById('search-empty').style.display = 'none';
+                showSearchModalSuggestions();
+            }
         });
         searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') searchGooglePlaces();
+            if (e.key === 'Enter') { clearTimeout(_searchModalTimer); searchGooglePlaces(); }
         });
         searchInput.dataset.bound = 'true';
     }
@@ -3514,6 +3475,90 @@ function setupSearchModal() {
         });
         modal.dataset.bound = 'true';
     }
+}
+
+// ========== SEARCH MODAL SUGGESTIONS ==========
+
+function showSearchModalSuggestions() {
+    const el = document.getElementById('search-modal-suggestions');
+    if (!el) return;
+    _loadSmsRecents();
+    _buildSmsPills();
+    el.style.display = '';
+    // Hide type chips while suggestions are shown (pills duplicate the functionality)
+    const chips = document.getElementById('search-type-chips');
+    if (chips) chips.style.display = 'none';
+}
+
+function hideSearchModalSuggestions() {
+    const el = document.getElementById('search-modal-suggestions');
+    if (el) el.style.display = 'none';
+    const chips = document.getElementById('search-type-chips');
+    if (chips) chips.style.display = '';
+}
+
+function _loadSmsRecents() {
+    const section = document.getElementById('sms-recent-section');
+    const listEl  = document.getElementById('sms-recent-list');
+    if (!section || !listEl) return;
+    try {
+        const list = JSON.parse(localStorage.getItem(_DSS_KEY) || '[]');
+        if (!list.length) { section.style.display = 'none'; return; }
+        section.style.display = '';
+        listEl.innerHTML = list.map((q, i) => `
+            <div class="dss-recent-item" onclick="_runSmsRecent(${i})">
+                <span class="dss-recent-icon">🕐</span>
+                <span class="dss-recent-text">${escapeHtml(q)}</span>
+                <button class="dss-recent-del" onclick="event.stopPropagation();_deleteSmsRecent(${i})">✕</button>
+            </div>`).join('');
+    } catch (_) { section.style.display = 'none'; }
+}
+
+function _buildSmsPills() {
+    const container = document.getElementById('sms-pills');
+    if (!container) return;
+    const types = DEFAULT_DISCOVER_TYPES.slice(0, 6);
+    container.innerHTML = types.map(t =>
+        `<button class="dss-pill" onclick="_runSmsPill('${t.query}')">${t.emoji} ${t.label}</button>`
+    ).join('');
+}
+
+function _runSmsRecent(idx) {
+    try {
+        const list = JSON.parse(localStorage.getItem(_DSS_KEY) || '[]');
+        const q = list[idx]; if (!q) return;
+        const input = document.getElementById('google-search-input');
+        if (input) {
+            input.value = q;
+            const cb = document.getElementById('google-search-clear');
+            if (cb) cb.style.display = 'block';
+        }
+        hideSearchModalSuggestions();
+        searchGooglePlaces();
+    } catch (_) {}
+}
+
+function _runSmsPill(query) {
+    const input = document.getElementById('google-search-input');
+    if (input) {
+        input.value = query;
+        const cb = document.getElementById('google-search-clear');
+        if (cb) cb.style.display = 'block';
+    }
+    hideSearchModalSuggestions();
+    document.querySelectorAll('.search-type-chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.type === query);
+    });
+    searchNearbyPlaces(query);
+}
+
+function _deleteSmsRecent(idx) {
+    try {
+        let list = JSON.parse(localStorage.getItem(_DSS_KEY) || '[]');
+        list.splice(idx, 1);
+        localStorage.setItem(_DSS_KEY, JSON.stringify(list));
+        _loadSmsRecents();
+    } catch (_) {}
 }
 
 // ========== FILTER DRAWER ==========
@@ -5394,7 +5439,7 @@ function switchTab(tab) {
     const savedFab = document.getElementById('btn-saved-toggle');
     if (savedFab) savedFab.style.display = tab === 'saved' ? 'flex' : 'none';
     const searchFab = document.getElementById('btn-saved-search');
-    if (searchFab) searchFab.style.display = tab === 'saved' ? 'flex' : 'none';
+    if (searchFab) searchFab.style.display = (tab === 'saved' && currentView === 'map') ? 'flex' : 'none';
 
     if (tab === 'saved') {
         updateSavedToggleIcon(currentView);
@@ -5430,6 +5475,9 @@ function switchSavedView(view) {
     document.getElementById('list-view')?.classList.toggle('active', view === 'list');
     document.getElementById('map-view')?.classList.toggle('active', view === 'map');
     updateSavedToggleIcon(view);
+    // Search FAB only visible on map view
+    const searchFab = document.getElementById('btn-saved-search');
+    if (searchFab) searchFab.style.display = view === 'map' ? 'flex' : 'none';
     if (view === 'map' && map) {
         setTimeout(() => map.invalidateSize(), 100);
         if (friendMarkersLayer) friendMarkersLayer.clearLayers();
@@ -5526,6 +5574,7 @@ async function saveFriendPlace(placeJsonStr) {
 // ========== DISCOVER SEARCH ==========
 
 let _discoverSearchTimer = null;
+let _searchModalTimer = null;
 
 function onDiscoverSearchInput(value) {
     const clearBtn = document.getElementById('discover-search-clear');
@@ -5994,6 +6043,12 @@ async function saveDiscoverPlace(place, btn) {
         }
         if (btn) btn.outerHTML = `<span class="drc-saved-badge">🔖 Saved</span>`;
         showToast('Saved to your list!');
+        // If triggered from search modal (saved map FAB), close it and switch to map
+        const _sm = document.getElementById('search-modal');
+        if (_sm && _sm.style.display !== 'none') {
+            closeSearchModal();
+            switchView('map');
+        }
         fetchPlaces(); // background full sync
     } catch (err) {
         console.error('saveDiscoverPlace error:', err);
@@ -6002,6 +6057,10 @@ async function saveDiscoverPlace(place, btn) {
 }
 
 function openRestaurantCardFromSearch(place) {
+    // Close search modal if it was the entry point (saved map FAB search)
+    const _sm = document.getElementById('search-modal');
+    if (_sm && _sm.style.display !== 'none') closeSearchModal();
+
     openRestaurantCardGuest({
         name:               place.name               || '',
         address:            place.address            || '',

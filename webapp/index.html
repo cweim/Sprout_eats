@@ -19,7 +19,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <!-- App styles - Forest Green & Cream theme -->
-    <link rel="stylesheet" href="styles.css?v=106">
+    <link rel="stylesheet" href="styles.css?v=107">
 </head>
 <body>
     <header class="app-header" id="app-header" style="display:none">
@@ -413,6 +413,20 @@
                            enterkeyhint="search"
                            autocomplete="off">
                     <button id="google-search-clear" class="search-clear-btn" style="display:none" aria-label="Clear">×</button>
+                </div>
+                <!-- Suggestions: recent searches + explore pills (shown when input empty) -->
+                <div id="search-modal-suggestions" style="display:none">
+                    <div id="sms-recent-section" style="display:none">
+                        <div class="dss-section-hd">
+                            <span>Recent</span>
+                            <button onclick="clearDiscoverRecentSearches(); _loadSmsRecents()">Clear</button>
+                        </div>
+                        <div id="sms-recent-list"></div>
+                    </div>
+                    <div class="dss-section">
+                        <div class="dss-section-hd"><span>Explore</span></div>
+                        <div class="dss-pills" id="sms-pills"></div>
+                    </div>
                 </div>
                 <div id="search-type-chips" class="search-type-chips"></div>
                 <div id="search-results" class="search-results">
@@ -1112,6 +1126,6 @@
     </div>
 
     <script src="analytics.js?v=1"></script>
-    <script src="app.js?v=149"></script>
+    <script src="app.js?v=150"></script>
 </body>
 </html>
