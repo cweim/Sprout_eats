@@ -6192,10 +6192,12 @@ function createSavedRow(activity) {
 
     const snSourceUrl  = safeUrl(activity.place_source_url || '');
     const snReelIcon   = snSourceUrl.includes('instagram') ? '📸' : snSourceUrl.includes('tiktok') ? '📱' : '🔗';
-    const snMapsUrl    = gid ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(gid)}` : '';
+    const snMapsUrl    = gid
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(placeName)}&query_place_id=${gid}`
+        : (activity.place_lat && activity.place_lng ? `https://www.google.com/maps/search/?api=1&query=${activity.place_lat},${activity.place_lng}` : '');
     const _snExtBtns   = [
-        snMapsUrl   ? `<button class="fc-ext-link" onclick="event.stopPropagation();openExternalLink(this.dataset.url)" data-url="${escapeHtml(snMapsUrl)}">🗺 Maps</button>` : '',
-        snSourceUrl ? `<button class="fc-ext-link" onclick="event.stopPropagation();openExternalLink(this.dataset.url)" data-url="${escapeHtml(snSourceUrl)}">${snReelIcon} Reel</button>` : '',
+        snMapsUrl   ? `<a class="fc-ext-link" href="${escapeHtml(snMapsUrl)}" target="_blank" onclick="event.stopPropagation()">🗺 Maps</a>` : '',
+        snSourceUrl ? `<a class="fc-ext-link" href="${escapeHtml(snSourceUrl)}" target="_blank" onclick="event.stopPropagation()">${snReelIcon} Reel</a>` : '',
     ].filter(Boolean).join('');
     const extLinksHtml = _snExtBtns ? `<div class="fc-ext-links">${_snExtBtns}</div>` : '';
 
@@ -6242,9 +6244,11 @@ function createVisitedCard(activity) {
     const aid           = activity.id;
     const sourceUrl     = safeUrl(activity.place_source_url || '');
     const reelIcon      = sourceUrl.includes('instagram') ? '📸' : sourceUrl.includes('tiktok') ? '📱' : '🔗';
-    const _mapsUrl      = gid ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(gid)}` : '';
-    const mapsBtn       = _mapsUrl  ? `<button class="fc-action-link" onclick="event.stopPropagation();openExternalLink(this.dataset.url)" data-url="${escapeHtml(_mapsUrl)}" aria-label="Google Maps">🗺</button>` : '';
-    const reelBtn       = sourceUrl ? `<button class="fc-action-link" onclick="event.stopPropagation();openExternalLink(this.dataset.url)" data-url="${escapeHtml(sourceUrl)}" aria-label="View reel">${reelIcon}</button>` : '';
+    const _mapsUrl      = gid
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(placeName)}&query_place_id=${gid}`
+        : (activity.place_lat && activity.place_lng ? `https://www.google.com/maps/search/?api=1&query=${activity.place_lat},${activity.place_lng}` : '');
+    const mapsBtn       = _mapsUrl  ? `<a class="fc-action-link" href="${escapeHtml(_mapsUrl)}" target="_blank" onclick="event.stopPropagation()" aria-label="Google Maps">🗺</a>` : '';
+    const reelBtn       = sourceUrl ? `<a class="fc-action-link" href="${escapeHtml(sourceUrl)}" target="_blank" onclick="event.stopPropagation()" aria-label="View reel">${reelIcon}</a>` : '';
 
     // Avatar
     const avatarUrl = activity.actor_avatar_url || null;
