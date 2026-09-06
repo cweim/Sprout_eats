@@ -53,6 +53,15 @@ function safeUrl(url) {
     return /^https?:\/\//i.test(trimmed) ? trimmed : '';
 }
 
+// Open external URL via Telegram WebApp API when available, fallback to new tab
+function openExternalLink(url) {
+    if (window.Telegram?.WebApp?.openLink) {
+        window.Telegram.WebApp.openLink(url);
+    } else {
+        window.open(url, '_blank');
+    }
+}
+
 function parseStartParam(raw) {
     const value = String(raw || '');
     const separator = value.indexOf('_');
@@ -6181,6 +6190,15 @@ function createSavedRow(activity) {
     const snAddrParts = [address ? escapeHtml(address) : '', snDist !== null ? `📍 ${formatDistance(snDist)}` : ''].filter(Boolean);
     const snAddrHtml = snAddrParts.length ? `<div class="fc-notif-addr">${snAddrParts.join(' · ')}</div>` : '';
 
+    const snSourceUrl  = safeUrl(activity.place_source_url || '');
+    const snReelIcon   = snSourceUrl.includes('instagram') ? '📸' : snSourceUrl.includes('tiktok') ? '📱' : '🔗';
+    const snMapsUrl    = gid ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(gid)}` : '';
+    const _snExtBtns   = [
+        snMapsUrl   ? `<button class="fc-ext-link" onclick="event.stopPropagation();openExternalLink(this.dataset.url)" data-url="${escapeHtml(snMapsUrl)}">🗺 Maps</button>` : '',
+        snSourceUrl ? `<button class="fc-ext-link" onclick="event.stopPropagation();openExternalLink(this.dataset.url)" data-url="${escapeHtml(snSourceUrl)}">${snReelIcon} Reel</button>` : '',
+    ].filter(Boolean).join('');
+    const extLinksHtml = _snExtBtns ? `<div class="fc-ext-links">${_snExtBtns}</div>` : '';
+
     return `
         <div class="fc-notif" id="fc-${activity.id}" onclick="onFeedCardTap('${activity.id}', '${gid}')">
             ${avatarHtml}
@@ -6192,6 +6210,7 @@ function createSavedRow(activity) {
                 </div>
                 ${stateBadge}
                 ${snAddrHtml}
+                ${extLinksHtml}
             </div>
             <div class="fc-notif-right">
                 <span class="fc-notif-time">${timeAgo}</span>
@@ -6221,6 +6240,11 @@ function createVisitedCard(activity) {
     const photos        = activity.review_photos || [];
     const dishes        = activity.review_dishes || [];
     const aid           = activity.id;
+    const sourceUrl     = safeUrl(activity.place_source_url || '');
+    const reelIcon      = sourceUrl.includes('instagram') ? '📸' : sourceUrl.includes('tiktok') ? '📱' : '🔗';
+    const _mapsUrl      = gid ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(gid)}` : '';
+    const mapsBtn       = _mapsUrl  ? `<button class="fc-action-link" onclick="event.stopPropagation();openExternalLink(this.dataset.url)" data-url="${escapeHtml(_mapsUrl)}" aria-label="Google Maps">🗺</button>` : '';
+    const reelBtn       = sourceUrl ? `<button class="fc-action-link" onclick="event.stopPropagation();openExternalLink(this.dataset.url)" data-url="${escapeHtml(sourceUrl)}" aria-label="View reel">${reelIcon}</button>` : '';
 
     // Avatar
     const avatarUrl = activity.actor_avatar_url || null;
@@ -6354,6 +6378,7 @@ function createVisitedCard(activity) {
                             ${FC_ICON_COMMENT}
                             ${commentsCount > 0 ? `<span class="fc-action-count">${commentsCount}</span>` : ''}
                         </button>
+                        ${mapsBtn}${reelBtn}
                     </div>
                     ${stateCta}
                 </div>
