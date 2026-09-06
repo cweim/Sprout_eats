@@ -583,6 +583,7 @@ async def create_place(
             activity_type="save",
             place_name=place.name,
             google_place_id=place.google_place_id,
+            source_url=place.source_url,
         )
 
     return {
@@ -813,6 +814,7 @@ async def create_or_update_review(
             activity_type="review",
             place_name=(saved_place.get("name") if saved_place else None) or "a place",
             google_place_id=(saved_place.get("google_place_id") if saved_place else None),
+            source_url=(saved_place.get("source_url") if saved_place else None),
         )
 
     return {"review": review_to_dict(review), "message": "Review saved!"}
@@ -1374,8 +1376,9 @@ async def _notify_friends_of_activity(
     activity_type: str,
     place_name: str,
     google_place_id: Optional[str] = None,
+    source_url: Optional[str] = None,
 ):
-    """Fire-and-forget: notify friends of a save, review, or visit. Saves are cooldown-gated."""
+    """Fire-and-forget: notify friends of a save, review, or visit."""
     friend_ids = repository.get_friend_ids(user_id)
     friend_ids = repository.filter_friend_activity_notification_recipients(friend_ids)
     if not friend_ids:
@@ -1388,25 +1391,37 @@ async def _notify_friends_of_activity(
 
     if activity_type == "save":
         text = f"🌱 *{actor}* just saved *{place_name}* to their food map!"
-        btn_label = "See on Discover 🗺"
     elif activity_type == "review":
         text = f"⭐ *{actor}* reviewed *{place_name}* — check it out!"
-        btn_label = "See on Discover 🗺"
     else:  # visit
         text = f"🌱 *{actor}* just visited *{place_name}*!"
-        btn_label = "See on Discover 🗺"
 
-    reply_markup = None
+    # Build keyboard: Sprout app (always) + Google Maps + IG/TikTok reel (if available)
+    buttons = []
     if app_config.WEBAPP_URL:
         app_url = build_webapp_url(app_config.WEBAPP_URL, "tab", "home")
-        reply_markup = {"inline_keyboard": [[{"text": btn_label, "web_app": {"url": app_url}}]]}
+        buttons.append([{"text": "Open Sprout 🌱", "web_app": {"url": app_url}}])
 
-    cooldown_hours = app_config.FRIEND_NOTIFICATION_COOLDOWN_HOURS
+    extra_row = []
+    if google_place_id:
+        maps_url = f"https://www.google.com/maps/place/?q=place_id:{google_place_id}"
+        extra_row.append({"text": "Google Maps 🗺", "url": maps_url})
+    if source_url:
+        if "instagram" in source_url:
+            reel_label = "View Reel 📸"
+        elif "tiktok" in source_url:
+            reel_label = "Watch on TikTok 📱"
+        else:
+            reel_label = "View Source 🔗"
+        extra_row.append({"text": reel_label, "url": source_url})
+    if extra_row:
+        buttons.append(extra_row)
+
+    reply_markup = {"inline_keyboard": buttons} if buttons else None
+
     notified: list = []
     async with httpx.AsyncClient(timeout=5) as client:
         for fid in friend_ids:
-            if activity_type == "save" and repository.is_notification_on_cooldown(user_id, fid, cooldown_hours):
-                continue
             try:
                 payload: dict = {"chat_id": fid, "text": text, "parse_mode": "Markdown"}
                 if reply_markup:
@@ -1444,6 +1459,7 @@ async def log_visit_place(
         activity_type="visit",
         place_name=result.get("place_name", "a place"),
         google_place_id=result.get("google_place_id"),
+        source_url=result.get("source_url"),
     )
     return {"success": True, **result}
 

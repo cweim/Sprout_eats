@@ -9975,7 +9975,7 @@ function applyFiltersToList(allPlaces) {
 // Feed like/unlike
 async function likeActivity(activityId, btn) {
     const liked = btn.dataset.liked === 'true';
-    const card = btn.closest('.fc-card');
+    const card = btn.closest('.fc');
     const lbEl = card?.querySelector('.fc-liked-by');
     const currentCount = lbEl ? parseInt(lbEl.dataset.count || '0') : 0;
     const newCount = liked ? currentCount - 1 : currentCount + 1;

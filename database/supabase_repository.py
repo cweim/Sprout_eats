@@ -3145,7 +3145,7 @@ def log_visit(
 
     # Verify place belongs to user
     place_res = supabase.table("places").select(
-        "id, name, address, google_place_id"
+        "id, name, address, google_place_id, source_url"
     ).eq("id", place_id).eq("user_id", user_id).maybe_single().execute()
     if not place_res.data:
         return None
@@ -3199,6 +3199,7 @@ def log_visit(
         "activity_id": activity_id,
         "place_name": place_data.get("name"),
         "google_place_id": place_data.get("google_place_id"),
+        "source_url": place_data.get("source_url"),
     }
 
 
