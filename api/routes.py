@@ -611,7 +611,7 @@ class DishRequest(BaseModel):
     """Request model for a dish in a review."""
     id: Optional[int] = None
     name: str = Field(..., min_length=1)
-    rating: Optional[int] = Field(None, ge=1, le=10)
+    price: Optional[float] = Field(None, ge=0)
     remarks: Optional[str] = None
 
 
@@ -653,7 +653,7 @@ class DishResponse(BaseModel):
     """Response model for a dish in a review."""
     id: int
     name: str
-    rating: Optional[int] = None
+    price: Optional[float] = None
     remarks: Optional[str] = None
     updated_at: Optional[str] = None
     photos: List[PhotoResponse] = []
@@ -699,7 +699,7 @@ def review_to_dict(review: dict) -> dict:
             dishes.append({
                 "id": dish["id"],
                 "name": dish.get("dish_name"),
-                "rating": dish.get("rating"),
+                "price": dish.get("dish_price"),
                 "remarks": dish.get("remarks"),
                 "updated_at": dish.get("updated_at"),
                 "photos": dish_photos
@@ -754,7 +754,7 @@ async def create_or_update_review(
         {
             "id": d.id,
             "name": d.name,
-            "rating": d.rating,
+            "price": d.price,
             "remarks": d.remarks
         }
         for d in request.dishes

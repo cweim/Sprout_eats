@@ -3097,18 +3097,35 @@ body {
     margin-bottom: 6px;
 }
 
-.dish-score-circles {
+.dish-price-wrap {
     display: flex;
-    gap: 3px;
-    padding-left: 2px;
+    align-items: center;
+    gap: 2px;
+    padding-left: 4px;
+    margin-top: 3px;
 }
-
-.score-circle--dish {
-    width: 24px !important;
-    height: 24px !important;
-    font-size: 0.65rem !important;
-    min-width: unset !important;
+.dish-price-prefix {
+    font-size: 12px;
+    color: var(--hint-color);
+    font-weight: 500;
+    line-height: 1;
 }
+.dish-price-input {
+    width: 90px;
+    border: none;
+    border-bottom: 1px solid var(--border-color, #e0e0e0);
+    background: transparent;
+    color: var(--text-color);
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+    padding: 2px 4px;
+}
+.dish-price-input:focus { border-bottom-color: var(--sprout-forest); }
+.dish-price-input::placeholder { color: var(--hint-color); font-size: 11px; }
+.dish-price-input::-webkit-outer-spin-button,
+.dish-price-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.dish-price-input[type=number] { -moz-appearance: textfield; }
 
 .dish-chip {
     display: inline-flex;
@@ -7818,13 +7835,12 @@ button:disabled,
     flex-shrink: 0;
 }
 .fc-dish-name { font-weight: 600; color: var(--text-color); }
-.fc-dish-score, .rcfr-dish-score {
-    font-weight: 700;
+.fc-dish-price, .rcfr-dish-score {
+    font-weight: 600;
     font-size: 0.75rem;
+    color: var(--hint-color);
+    margin-left: 3px;
 }
-.dish-high { color: #2e7d32; }
-.dish-mid  { color: #e65100; }
-.dish-low  { color: #c62828; }
 /* Subtle outline on chip itself when a score class is applied */
 .fc-dish-chip.dish-high  { border-color: rgba(46,125,50,0.4);  color: #2e7d32; }
 .fc-dish-chip.dish-mid   { border-color: rgba(230,81,0,0.4);   color: #e65100; }
@@ -8035,9 +8051,10 @@ button:disabled,
     color: var(--sprout-green);
     border-color: var(--sprout-green);
 }
-.fc-dish-score {
+.fc-dish-price {
     font-weight: 600;
-    color: var(--sprout-forest);
+    color: var(--hint-color);
+    margin-left: 3px;
 }
 
 /* ════════════════════════════════════════════════════════════════

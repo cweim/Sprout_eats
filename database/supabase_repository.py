@@ -859,16 +859,15 @@ def create_or_update_review(
 
         for dish_data in dishes:
             dish_id = dish_data.get("id")
-            dish_rating = dish_data.get("rating")  # None = no rating (nullable column)
+            dish_price = dish_data.get("price")  # None = no price entered (nullable column)
             if dish_id and dish_id in existing_dish_ids:
                 # Update existing dish
                 update_payload = {
                     "dish_name": dish_data["name"],
                     "remarks": dish_data.get("remarks"),
                     "updated_at": now,
+                    "dish_price": dish_price,
                 }
-                if dish_rating is not None:
-                    update_payload["rating"] = dish_rating
                 supabase.table("review_dishes").update(update_payload).eq("id", dish_id).execute()
                 updated_dish_ids.add(dish_id)
             else:
@@ -877,9 +876,8 @@ def create_or_update_review(
                     "review_id": review_id,
                     "dish_name": dish_data["name"],
                     "remarks": dish_data.get("remarks"),
+                    "dish_price": dish_price,
                 }
-                if dish_rating is not None:
-                    insert_payload["rating"] = dish_rating
                 supabase.table("review_dishes").insert(insert_payload).execute()
 
         # Delete removed dishes
@@ -2714,12 +2712,12 @@ def get_friend_reviews_for_place(user_id: int, google_place_id: str) -> List[Dic
     review_ids = [r["id"] for r in reviews_result.data]
 
     all_dishes = supabase.table("review_dishes").select(
-        "review_id, dish_name, rating"
+        "review_id, dish_name, dish_price"
     ).in_("review_id", review_ids).execute()
     dishes_by_review: Dict[int, List[Dict]] = {}
     for d in (all_dishes.data or []):
         dishes_by_review.setdefault(d["review_id"], []).append(
-            {"dish_name": d["dish_name"], "rating": d["rating"]}
+            {"dish_name": d["dish_name"], "dish_price": d.get("dish_price")}
         )
 
     all_photos = supabase.table("review_photos").select(
@@ -3054,12 +3052,12 @@ def get_friend_feed(user_id: int, limit: int = 20, offset: int = 0) -> List[Dict
                 photos_map[rid].append({"file_url": ph["file_url"]})
 
             dishes_res = supabase.table("review_dishes").select(
-                "review_id, dish_name, rating"
+                "review_id, dish_name, dish_price"
             ).in_("review_id", list(reviews_map.keys())).execute()
             for d in (dishes_res.data or []):
                 rid = d["review_id"]
                 dishes_map.setdefault(rid, [])
-                dishes_map[rid].append({"dish_name": d["dish_name"], "rating": d.get("rating")})
+                dishes_map[rid].append({"dish_name": d["dish_name"], "dish_price": d.get("dish_price")})
 
     # Detect user's own save/visit state for each place in the feed (by google_place_id)
     feed_gids = list({

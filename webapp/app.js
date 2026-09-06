@@ -53,6 +53,14 @@ function safeUrl(url) {
     return /^https?:\/\//i.test(trimmed) ? trimmed : '';
 }
 
+// Format a dish price as "$X" or "$X.XX"
+function formatDishPrice(p) {
+    if (p == null) return '';
+    const n = parseFloat(p);
+    if (isNaN(n) || n < 0) return '';
+    return '$' + (Number.isInteger(n) ? n : n.toFixed(2));
+}
+
 // Open external URL via Telegram WebApp API when available, fallback to new tab
 function openExternalLink(url) {
     if (window.Telegram?.WebApp?.openLink) {
@@ -798,9 +806,8 @@ function createPopupContent(place) {
             const overflow = dishes.length - MAX_VISIBLE;
             html += `<div class="popup-dishes">`;
             visible.forEach(d => {
-                const sc = d.rating != null ? (d.rating >= 8 ? 'dish-high' : d.rating >= 5 ? 'dish-mid' : 'dish-low') : '';
-                const scoreSpan = d.rating != null ? `<span class="popup-dish-score ${sc}">${d.rating}</span>` : '';
-                html += `<span class="popup-dish-chip ${sc}">${escapeHtml(d.name)}${scoreSpan}</span>`;
+                const priceStr = formatDishPrice(d.price);
+                html += `<span class="popup-dish-chip">${escapeHtml(d.name)}${priceStr ? `<span class="popup-dish-score">${priceStr}</span>` : ''}</span>`;
             });
             if (overflow > 0) {
                 html += `<span class="popup-dish-chip popup-dish-chip--more">+${overflow}</span>`;
@@ -1782,8 +1789,8 @@ function createPersonalPlaceCard(place) {
         // Dish chips with ratings
         if (review?.dishes?.length > 0) {
             const chips = review.dishes.map(d => {
-                const sc = d.rating != null ? (d.rating >= 8 ? 'dish-high' : d.rating >= 5 ? 'dish-mid' : 'dish-low') : '';
-                return `<span class="pcard-dish-chip ${sc}">${escapeHtml(d.name)}${d.rating != null ? `<span class="pcard-dish-score ${sc}"> ${d.rating}</span>` : ''}</span>`;
+                const priceStr = formatDishPrice(d.price);
+                return `<span class="pcard-dish-chip">${escapeHtml(d.name)}${priceStr ? `<span class="pcard-dish-score">${priceStr}</span>` : ''}</span>`;
             }).join('');
             body.innerHTML += `<div class="pcard-dishes">${chips}</div>`;
         }
@@ -4119,10 +4126,10 @@ function initPriceRating(container, onChange) {
 
 // ========== DISH CHIPS ==========
 
-function addDishChip(name, persistedId = null, rating = null) {
+function addDishChip(name, persistedId = null, price = null) {
     if (!name.trim()) return;
     const localId = `chip-${++chipIdCounter}`;
-    dishChips.push({ localId, persistedId, name: name.trim(), rating });
+    dishChips.push({ localId, persistedId, name: name.trim(), price });
     renderDishChips();
 }
 
@@ -4146,35 +4153,28 @@ function renderDishChips() {
         chipEl.innerHTML = `<span class="dish-chip-name">${escapeHtml(chip.name)}</span><button type="button" class="dish-chip-remove" aria-label="Remove ${escapeHtml(chip.name)}">×</button>`;
         chipEl.querySelector('.dish-chip-remove').addEventListener('click', () => removeDishChip(chip.localId));
 
-        // Score circles row (1-10, optional)
-        const scoreRow = document.createElement('div');
-        scoreRow.className = 'dish-score-circles';
-        for (let i = 1; i <= 10; i++) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'score-circle score-circle--dish';
-            btn.dataset.val = i;
-            btn.textContent = i;
-            if (chip.rating) {
-                if (i === chip.rating) btn.classList.add('active');
-                else if (i < chip.rating) btn.classList.add('filled');
-            }
-            btn.addEventListener('click', () => {
-                chip.rating = chip.rating === i ? null : i;
-                scoreRow.querySelectorAll('.score-circle--dish').forEach(c => {
-                    const val = parseInt(c.dataset.val);
-                    c.classList.remove('active', 'filled');
-                    if (chip.rating) {
-                        if (val === chip.rating) c.classList.add('active');
-                        else if (val < chip.rating) c.classList.add('filled');
-                    }
-                });
-            });
-            scoreRow.appendChild(btn);
-        }
+        // Price input row (optional)
+        const priceRow = document.createElement('div');
+        priceRow.className = 'dish-price-wrap';
+        const pricePrefix = document.createElement('span');
+        pricePrefix.className = 'dish-price-prefix';
+        pricePrefix.textContent = '$';
+        const priceInput = document.createElement('input');
+        priceInput.type = 'number';
+        priceInput.min = '0';
+        priceInput.step = '0.01';
+        priceInput.placeholder = 'Price (optional)';
+        priceInput.className = 'dish-price-input';
+        if (chip.price != null) priceInput.value = chip.price;
+        priceInput.addEventListener('input', () => {
+            const val = parseFloat(priceInput.value);
+            chip.price = isNaN(val) || val < 0 ? null : Math.round(val * 100) / 100;
+        });
+        priceRow.appendChild(pricePrefix);
+        priceRow.appendChild(priceInput);
 
         wrap.appendChild(chipEl);
-        wrap.appendChild(scoreRow);
+        wrap.appendChild(priceRow);
         container.insertBefore(wrap, trigger);
     });
 }
@@ -4329,7 +4329,7 @@ function getReviewFormPayload() {
         overall_remarks: caption,
         dishes: dishChips.map(c => {
             const d = c.persistedId ? { id: c.persistedId, name: c.name } : { name: c.name };
-            if (c.rating != null) d.rating = c.rating;
+            if (c.price != null) d.price = c.price;
             return d;
         }),
     };
@@ -4358,7 +4358,7 @@ function populateReviewForm() {
     // Dish chips
     dishChips = [];
     chipIdCounter = 0;
-    (currentReview?.dishes || []).forEach(d => addDishChip(d.name, d.id, d.rating ?? null));
+    (currentReview?.dishes || []).forEach(d => addDishChip(d.name, d.id, d.price ?? null));
     renderDishChips();
 
     // Photos
@@ -6317,8 +6317,8 @@ function createVisitedCard(activity) {
         const overflow = dishes.length > 3
             ? `<span class="fc-dish-chip fc-dish-chip--more">+${dishes.length - 3}</span>` : '';
         dishesHtml = `<div class="fc-dish-chips">${shown.map(d => {
-            const sc = d.rating != null ? (d.rating >= 8 ? 'dish-high' : d.rating >= 5 ? 'dish-mid' : 'dish-low') : '';
-            return `<span class="fc-dish-chip ${sc}">${escapeHtml(d.dish_name)}${d.rating != null ? `<span class="fc-dish-score ${sc}"> ${d.rating}</span>` : ''}</span>`;
+            const priceStr = formatDishPrice(d.dish_price);
+            return `<span class="fc-dish-chip">${escapeHtml(d.dish_name)}${priceStr ? `<span class="fc-dish-price">${priceStr}</span>` : ''}</span>`;
         }).join('')}${overflow}</div>`;
     }
 
@@ -7517,11 +7517,11 @@ function computeTopDishes() {
     (allReviews || []).forEach(r => {
         const place = (places || []).find(p => p.id === r.place_id);
         if (!place) return;
-        (r.dishes || []).filter(d => d.rating != null).forEach(d => {
+        (r.dishes || []).forEach(d => {
             out.push({ dish: d, place, review: r });
         });
     });
-    return out.sort((a, b) => b.dish.rating - a.dish.rating);
+    return out;
 }
 
 function computeProfileStats() {
@@ -9603,7 +9603,7 @@ function renderRcYourVisit(place, review) {
             html += `<div class="fc-dishes" style="margin-bottom:4px;">${dishes.map(d =>
                 `<div class="fc-dish-pill">
                     <span class="fc-dish-name">${escapeHtml(d.name)}</span>
-                    ${d.rating != null ? `<span class="fc-dish-score">${d.rating}</span>` : ''}
+                    ${d.price != null ? `<span class="fc-dish-price">${formatDishPrice(d.price)}</span>` : ''}
                 </div>`
             ).join('')}</div>`;
         }
@@ -10162,7 +10162,7 @@ function openFriendReviewDetail(reviewJson) {
     if (dishesEl) {
         const dishes = r.dishes || [];
         dishesEl.innerHTML = dishes.map(d =>
-            `<span class="fc-dish-chip">${escapeHtml(d.dish_name)}${d.rating != null ? ` · ${d.rating}` : ''}</span>`
+            `<span class="fc-dish-chip">${escapeHtml(d.dish_name)}${d.dish_price != null ? `<span class="fc-dish-price"> ${formatDishPrice(d.dish_price)}</span>` : ''}</span>`
         ).join('');
         dishesEl.style.display = dishes.length ? '' : 'none';
     }
