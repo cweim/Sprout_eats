@@ -5467,6 +5467,12 @@ function switchTab(tab) {
         // Hide empty-state overlay so it doesn't cover non-saved tabs
         hideEmptyState();
         if (tab === 'home') {
+            // Always dismiss discover search state when navigating to/re-tapping home
+            hideDiscoverResults();
+            const _dsi = document.getElementById('discover-search-input');
+            if (_dsi) { _dsi.value = ''; _dsi.blur(); }
+            const _dsc = document.getElementById('discover-search-clear');
+            if (_dsc) _dsc.style.display = 'none';
             if (prevTab === 'home') {
                 // Re-tap: scroll to top and force-refresh feed
                 document.getElementById('feed-view')?.scrollTo({ top: 0, behavior: 'smooth' });
