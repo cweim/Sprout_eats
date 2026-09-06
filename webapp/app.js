@@ -10031,9 +10031,10 @@ async function likeActivity(activityId, btn) {
 
     try {
         const method = liked ? 'DELETE' : 'POST';
-        await fetch(`${API_URL}/api/activities/${activityId}/like`, {
+        const res = await fetch(`${API_URL}/api/activities/${activityId}/like`, {
             method, headers: getAuthHeaders()
         });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (e) {
         // Revert on error
         btn.dataset.liked = liked ? 'true' : 'false';
@@ -10042,6 +10043,7 @@ async function likeActivity(activityId, btn) {
             lbEl.dataset.count = currentCount;
             lbEl.style.display = currentCount > 0 ? '' : 'none';
         }
+        showToast('Could not update like. Try again.');
     }
 }
 

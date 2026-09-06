@@ -1500,9 +1500,10 @@ async def like_activity(
     user: TelegramUser = Depends(get_current_user),
 ):
     _require_activity_access(user.id, activity_id)
-    repository.like_activity(user.id, activity_id)
-    background_tasks.add_task(_notify_activity_owner, activity_id, user.id, "like")
-    return {"success": True}
+    liked = repository.like_activity(user.id, activity_id)
+    if liked:
+        background_tasks.add_task(_notify_activity_owner, activity_id, user.id, "like")
+    return {"success": True, "already_liked": not liked}
 
 
 @router.delete("/activities/{activity_id}/like")

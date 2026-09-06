@@ -3203,15 +3203,19 @@ def log_visit(
 
 # ── Activity Likes ────────────────────────────────────────────────────
 
-def like_activity(user_id: int, activity_id: int) -> bool:
+def like_activity(user_id: int, activity_id: str) -> bool:
+    """Insert like row. Returns True on success, False if already liked (duplicate). Raises on other errors."""
     supabase = get_supabase()
     try:
         supabase.table("user_activity_likes").insert(
             {"user_id": user_id, "activity_id": activity_id}
         ).execute()
         return True
-    except Exception:
-        return False  # unique constraint: already liked
+    except Exception as e:
+        msg = str(e).lower()
+        if "duplicate" in msg or "unique" in msg or "23505" in msg:
+            return False  # already liked — not an error
+        raise  # propagate real errors (type mismatch, FK violation, etc.)
 
 
 def unlike_activity(user_id: int, activity_id: int) -> bool:
@@ -3228,8 +3232,11 @@ def get_activity_likes(activity_ids: List, viewer_id: int) -> Dict:
         return {}
     supabase = get_supabase()
     try:
+        # Avoid FK-dependent join (users(display_name)) which silently fails
+        # when the FK relationship is not set up in Supabase — that would cause
+        # the entire query to raise and return empty results for all activities.
         result = supabase.table("user_activity_likes").select(
-            "activity_id, user_id, users(display_name)"
+            "activity_id, user_id"
         ).in_("activity_id", activity_ids).execute()
     except Exception:
         return {aid: {"count": 0, "user_liked": False, "first_liker_name": None} for aid in activity_ids}
@@ -3240,6 +3247,16 @@ def get_activity_likes(activity_ids: List, viewer_id: int) -> Dict:
         grouped.setdefault(row["activity_id"], []).append(row)
 
     friend_ids = set(get_friend_ids(viewer_id)) if viewer_id else set()
+
+    # Batch-fetch display names only for the liker users we need
+    all_liker_ids = list({r["user_id"] for rows in grouped.values() for r in rows} - {viewer_id})
+    liker_names: Dict[int, str] = {}
+    if all_liker_ids:
+        try:
+            n_res = supabase.table("users").select("id, display_name").in_("id", all_liker_ids).execute()
+            liker_names = {u["id"]: u.get("display_name") or "someone" for u in (n_res.data or [])}
+        except Exception:
+            pass
 
     out = {}
     for aid in activity_ids:
@@ -3260,8 +3277,7 @@ def get_activity_likes(activity_ids: List, viewer_id: int) -> Dict:
             if best["user_id"] == viewer_id:
                 first_liker_name = "you"
             else:
-                u = best.get("users") or {}
-                first_liker_name = u.get("display_name") or "someone"
+                first_liker_name = liker_names.get(best["user_id"], "someone")
 
         out[aid] = {"count": count, "user_liked": user_liked, "first_liker_name": first_liker_name}
     return out
