@@ -796,33 +796,44 @@ async def prompt_tiktok_manual_fallback(
         cap = 8 if is_chain else 6
         session_id = uuid.uuid4().hex[:8] if user_id is not None else "legacy"
         candidates = unresolved_candidates[:cap]
-        if user_id is not None:
-            repository.save_bot_session_v2(
-                user_id,
-                "unresolved_selection",
-                session_id,
-                {
-                    "pending_unresolved_slots": candidates,
-                    "pending_url": source_url,
-                    "pending_platform": "tiktok",
-                },
-            )
-        else:
-            context.user_data["pending_unresolved_slots"] = candidates
         if is_chain:
+            # Chain: single-pick branch selector (unchanged behaviour)
+            if user_id is not None:
+                repository.save_bot_session_v2(
+                    user_id,
+                    "unresolved_selection",
+                    session_id,
+                    {
+                        "pending_unresolved_slots": candidates,
+                        "pending_url": source_url,
+                        "pending_platform": "tiktok",
+                    },
+                )
+            else:
+                context.user_data["pending_unresolved_slots"] = candidates
             slot_name = unresolved_candidates[0].get("slot_name", "this place")
             intro = f"Found multiple branches of {slot_name} — which one did you visit?"
-            footer = "Tap to save that branch."
+            await status_msg.edit_text(
+                f"{intro}\n{build_reviewable_candidate_message(candidates)}\n\nTap to save that branch.",
+                reply_markup=build_reviewable_candidate_keyboard(candidates, session_id=session_id),
+            )
         else:
-            intro = "I found possible place matches, but couldn't verify them confidently enough to auto-save."
-            footer = "Tap a suggestion, or type the place name to search manually."
-        await status_msg.edit_text(
-            f"{intro}\n{build_reviewable_candidate_message(unresolved_candidates)}\n\n{footer}",
-            reply_markup=build_reviewable_candidate_keyboard(
-                unresolved_candidates,
-                session_id=session_id,
-            ),
-        )
+            # Possible matches: multi-select toggle keyboard (same as high-confidence flow)
+            session = {
+                "pending_places": candidates,
+                "selected_indices": [],
+                "pending_video_meta": {},
+                "pending_url": source_url,
+                "pending_platform": "tiktok",
+            }
+            if user_id is not None:
+                repository.save_bot_session_v2(user_id, "place_selection", session_id, session)
+            else:
+                _persist_place_session(context, user_id, "legacy", session)
+            header = f"Found {len(candidates)} possible place matches — tap to select, then save."
+            msg = build_selection_message(candidates, set(), {}, header=header)
+            keyboard = build_selection_keyboard(candidates, set(), session_id=session_id)
+            await status_msg.edit_text(msg, reply_markup=keyboard)
     else:
         await status_msg.edit_text(
             "I couldn't find a place in this TikTok.\n\n"
@@ -855,33 +866,44 @@ async def prompt_instagram_manual_fallback(
         cap = 8 if is_chain else 6
         session_id = uuid.uuid4().hex[:8] if user_id is not None else "legacy"
         candidates = unresolved_candidates[:cap]
-        if user_id is not None:
-            repository.save_bot_session_v2(
-                user_id,
-                "unresolved_selection",
-                session_id,
-                {
-                    "pending_unresolved_slots": candidates,
-                    "pending_url": source_url,
-                    "pending_platform": "instagram",
-                },
-            )
-        else:
-            context.user_data["pending_unresolved_slots"] = candidates
         if is_chain:
+            # Chain: single-pick branch selector (unchanged behaviour)
+            if user_id is not None:
+                repository.save_bot_session_v2(
+                    user_id,
+                    "unresolved_selection",
+                    session_id,
+                    {
+                        "pending_unresolved_slots": candidates,
+                        "pending_url": source_url,
+                        "pending_platform": "instagram",
+                    },
+                )
+            else:
+                context.user_data["pending_unresolved_slots"] = candidates
             slot_name = unresolved_candidates[0].get("slot_name", "this place")
             intro = f"Found multiple branches of {slot_name} — which one did you visit?"
-            footer = "Tap to save that branch."
+            await status_msg.edit_text(
+                f"{intro}\n{build_reviewable_candidate_message(candidates)}\n\nTap to save that branch.",
+                reply_markup=build_reviewable_candidate_keyboard(candidates, session_id=session_id),
+            )
         else:
-            intro = "I found possible place matches, but couldn't verify them confidently enough to auto-save."
-            footer = "Tap a suggestion to save it, or reply with the place name."
-        await status_msg.edit_text(
-            f"{intro}\n{build_reviewable_candidate_message(unresolved_candidates)}\n\n{footer}",
-            reply_markup=build_reviewable_candidate_keyboard(
-                unresolved_candidates,
-                session_id=session_id,
-            ),
-        )
+            # Possible matches: multi-select toggle keyboard (same as high-confidence flow)
+            session = {
+                "pending_places": candidates,
+                "selected_indices": [],
+                "pending_video_meta": {},
+                "pending_url": source_url,
+                "pending_platform": "instagram",
+            }
+            if user_id is not None:
+                repository.save_bot_session_v2(user_id, "place_selection", session_id, session)
+            else:
+                _persist_place_session(context, user_id, "legacy", session)
+            header = f"Found {len(candidates)} possible place matches — tap to select, then save."
+            msg = build_selection_message(candidates, set(), {}, header=header)
+            keyboard = build_selection_keyboard(candidates, set(), session_id=session_id)
+            await status_msg.edit_text(msg, reply_markup=keyboard)
         return
 
     retry_markup = None
@@ -1483,16 +1505,25 @@ def format_selection_place_summary(
     return "\n".join(lines)
 
 
-def build_selection_message(places: list, selected_indices: set, video_meta: dict) -> str:
+def build_selection_message(
+    places: list,
+    selected_indices: set,
+    video_meta: dict,
+    *,
+    header: str | None = None,
+) -> str:
     """Build the ranked review message for multiple candidate places."""
     source_label = get_match_source_label(video_meta)
     selected_count = len(selected_indices)
 
-    lines = [
-        f"Found {len(places)} likely food places from this {source_label}.",
-        "High-confidence matches are preselected.",
-        "",
-    ]
+    if header is not None:
+        lines = [header, ""]
+    else:
+        lines = [
+            f"Found {len(places)} likely food places from this {source_label}.",
+            "High-confidence matches are preselected.",
+            "",
+        ]
 
     for i, place in enumerate(places):
         lines.append(
